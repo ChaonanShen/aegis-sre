@@ -157,6 +157,27 @@ func (e PlaybookStatus) Valid() bool {
 	}
 }
 
+// Defines values for PlaybookApprovalDecisionDecision.
+const (
+	Approve PlaybookApprovalDecisionDecision = "approve"
+	Reject  PlaybookApprovalDecisionDecision = "reject"
+	Rewind  PlaybookApprovalDecisionDecision = "rewind"
+)
+
+// Valid indicates whether the value is a known member of the PlaybookApprovalDecisionDecision enum.
+func (e PlaybookApprovalDecisionDecision) Valid() bool {
+	switch e {
+	case Approve:
+		return true
+	case Reject:
+		return true
+	case Rewind:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PlaybookRunStatus.
 const (
 	PlaybookRunStatusCancelled          PlaybookRunStatus = "cancelled"
@@ -184,6 +205,39 @@ func (e PlaybookRunStatus) Valid() bool {
 	case PlaybookRunStatusWaitingForApproval:
 		return true
 	case PlaybookRunStatusWaitingForInput:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for PlaybookStepStatus.
+const (
+	PlaybookStepStatusCancelled          PlaybookStepStatus = "cancelled"
+	PlaybookStepStatusFailed             PlaybookStepStatus = "failed"
+	PlaybookStepStatusQueued             PlaybookStepStatus = "queued"
+	PlaybookStepStatusRunning            PlaybookStepStatus = "running"
+	PlaybookStepStatusSucceeded          PlaybookStepStatus = "succeeded"
+	PlaybookStepStatusWaitingForApproval PlaybookStepStatus = "waiting_for_approval"
+	PlaybookStepStatusWaitingForInput    PlaybookStepStatus = "waiting_for_input"
+)
+
+// Valid indicates whether the value is a known member of the PlaybookStepStatus enum.
+func (e PlaybookStepStatus) Valid() bool {
+	switch e {
+	case PlaybookStepStatusCancelled:
+		return true
+	case PlaybookStepStatusFailed:
+		return true
+	case PlaybookStepStatusQueued:
+		return true
+	case PlaybookStepStatusRunning:
+		return true
+	case PlaybookStepStatusSucceeded:
+		return true
+	case PlaybookStepStatusWaitingForApproval:
+		return true
+	case PlaybookStepStatusWaitingForInput:
 		return true
 	default:
 		return false
@@ -276,6 +330,24 @@ type ApprovalDecision struct {
 
 // ApprovalDecisionDecision defines model for ApprovalDecision.Decision.
 type ApprovalDecisionDecision string
+
+// Artifact defines model for Artifact.
+type Artifact struct {
+	MediaType string `json:"media_type"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Size      int64  `json:"size"`
+}
+
+// ArtifactPreview defines model for ArtifactPreview.
+type ArtifactPreview struct {
+	MediaType string `json:"media_type"`
+	Name      string `json:"name"`
+	Path      string `json:"path"`
+	Size      int64  `json:"size"`
+	Text      string `json:"text"`
+	Truncated bool   `json:"truncated"`
+}
 
 // BusinessID defines model for BusinessID.
 type BusinessID = string
@@ -379,16 +451,24 @@ type PageMetadata struct {
 
 // Playbook defines model for Playbook.
 type Playbook struct {
-	CreatedAt time.Time      `json:"created_at"`
 	FolderUid *string        `json:"folder_uid,omitempty"`
 	Id        BusinessID     `json:"id"`
 	Name      string         `json:"name"`
+	Source    *string        `json:"source,omitempty"`
 	Status    PlaybookStatus `json:"status"`
-	UpdatedAt time.Time      `json:"updated_at"`
 }
 
 // PlaybookStatus defines model for Playbook.Status.
 type PlaybookStatus string
+
+// PlaybookApprovalDecision defines model for PlaybookApprovalDecision.
+type PlaybookApprovalDecision struct {
+	Decision PlaybookApprovalDecisionDecision `json:"decision"`
+	Inputs   *map[string]string               `json:"inputs,omitempty"`
+}
+
+// PlaybookApprovalDecisionDecision defines model for PlaybookApprovalDecision.Decision.
+type PlaybookApprovalDecisionDecision string
 
 // PlaybookPage defines model for PlaybookPage.
 type PlaybookPage struct {
@@ -405,11 +485,26 @@ type PlaybookRun struct {
 	Sequence   int64             `json:"sequence"`
 	StartedAt  time.Time         `json:"started_at"`
 	Status     PlaybookRunStatus `json:"status"`
+	Steps      *[]PlaybookStep   `json:"steps,omitempty"`
 	UpdatedAt  time.Time         `json:"updated_at"`
 }
 
 // PlaybookRunStatus defines model for PlaybookRun.Status.
 type PlaybookRunStatus string
+
+// PlaybookStep defines model for PlaybookStep.
+type PlaybookStep struct {
+	Approval  *map[string]interface{} `json:"approval,omitempty"`
+	EndedAt   *time.Time              `json:"ended_at,omitempty"`
+	HumanTask *map[string]interface{} `json:"human_task,omitempty"`
+	Id        string                  `json:"id"`
+	Name      string                  `json:"name"`
+	StartedAt *time.Time              `json:"started_at,omitempty"`
+	Status    PlaybookStepStatus      `json:"status"`
+}
+
+// PlaybookStepStatus defines model for PlaybookStep.Status.
+type PlaybookStepStatus string
 
 // Problem defines model for Problem.
 type Problem struct {
@@ -499,6 +594,9 @@ type ValidationResult struct {
 // ApprovalID defines model for ApprovalID.
 type ApprovalID = BusinessID
 
+// ArtifactPath defines model for ArtifactPath.
+type ArtifactPath = string
+
 // Cursor defines model for Cursor.
 type Cursor = string
 
@@ -522,6 +620,9 @@ type RunID = BusinessID
 
 // SessionID defines model for SessionID.
 type SessionID = BusinessID
+
+// StepID defines model for StepID.
+type StepID = string
 
 // ListKnowledgeBasesParams defines parameters for ListKnowledgeBases.
 type ListKnowledgeBasesParams struct {
@@ -563,9 +664,37 @@ type StartPlaybookRunParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// ResolvePlaybookApprovalParams defines parameters for ResolvePlaybookApproval.
+type ResolvePlaybookApprovalParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// DownloadPlaybookArtifactParams defines parameters for DownloadPlaybookArtifact.
+type DownloadPlaybookArtifactParams struct {
+	Path ArtifactPath `form:"path" json:"path"`
+}
+
+// PreviewPlaybookArtifactParams defines parameters for PreviewPlaybookArtifact.
+type PreviewPlaybookArtifactParams struct {
+	Path ArtifactPath `form:"path" json:"path"`
+}
+
 // StreamPlaybookRunEventsParams defines parameters for StreamPlaybookRunEvents.
 type StreamPlaybookRunEventsParams struct {
 	AfterSequence *int64 `form:"after_sequence,omitempty" json:"after_sequence,omitempty"`
+}
+
+// CompletePlaybookHumanTaskJSONBody defines parameters for CompletePlaybookHumanTask.
+type CompletePlaybookHumanTaskJSONBody map[string]interface{}
+
+// CompletePlaybookHumanTaskParams defines parameters for CompletePlaybookHumanTask.
+type CompletePlaybookHumanTaskParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// RetryPlaybookRunParams defines parameters for RetryPlaybookRun.
+type RetryPlaybookRunParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
 // ListServicesParams defines parameters for ListServices.
@@ -604,6 +733,12 @@ type CreateDocumentJSONRequestBody = CreateDocumentRequest
 
 // StartPlaybookRunJSONRequestBody defines body for StartPlaybookRun for application/json ContentType.
 type StartPlaybookRunJSONRequestBody = StartPlaybookRunRequest
+
+// ResolvePlaybookApprovalJSONRequestBody defines body for ResolvePlaybookApproval for application/json ContentType.
+type ResolvePlaybookApprovalJSONRequestBody = PlaybookApprovalDecision
+
+// CompletePlaybookHumanTaskJSONRequestBody defines body for CompletePlaybookHumanTask for application/json ContentType.
+type CompletePlaybookHumanTaskJSONRequestBody CompletePlaybookHumanTaskJSONBody
 
 // CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
 type CreateSessionJSONRequestBody = CreateSessionRequest

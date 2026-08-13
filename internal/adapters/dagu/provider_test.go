@@ -80,3 +80,27 @@ func TestMapRunPreservesHumanTaskAndApproval(t *testing.T) {
 		t.Fatalf("state = %#v", state)
 	}
 }
+
+func TestProviderResolvesRunNameFromDaguWithoutMappingStore(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v1/dag-runs":
+			if request.URL.Query().Get("dagRunId") != "run_abcdefgh" {
+				t.Errorf("query = %q", request.URL.RawQuery)
+			}
+			_, _ = w.Write([]byte(`{"dagRuns":[{"dagRunId":"run_abcdefgh","name":"pbk_abcdefgh","statusLabel":"running"}]}`))
+		case "/api/v1/dag-runs/pbk_abcdefgh/run_abcdefgh":
+			_, _ = w.Write([]byte(`{"dagRunDetails":{"dagRunId":"run_abcdefgh","name":"pbk_abcdefgh","statusLabel":"running"}}`))
+		default:
+			t.Errorf("path = %q", request.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	provider, _ := NewProvider(client)
+	state, err := provider.GetRun(context.Background(), domain.ActorContext{}, ports.PlaybookRunRef{ID: "run_abcdefgh"})
+	if err != nil || state.Ref.PlaybookID != "pbk_abcdefgh" {
+		t.Fatalf("state = %#v, err = %v", state, err)
+	}
+}

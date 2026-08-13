@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
+	"github.com/1024XEngineer/aegis-sre/internal/ports"
 )
 
 const (
@@ -22,9 +23,23 @@ type healthResponse struct {
 	Capabilities map[string]string `json:"capabilities,omitempty"`
 }
 
-func New(cfg config.Config, logger *slog.Logger) *http.Server {
+type dependencies struct {
+	playbooks ports.PlaybookProvider
+}
+
+type Option func(*dependencies)
+
+func WithPlaybookProvider(provider ports.PlaybookProvider) Option {
+	return func(deps *dependencies) { deps.playbooks = provider }
+}
+
+func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	deps := dependencies{}
+	for _, option := range options {
+		option(&deps)
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
@@ -46,7 +61,7 @@ func New(cfg config.Config, logger *slog.Logger) *http.Server {
 		}
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ready", Capabilities: capabilities})
 	})
-	mux.Handle("/api/v1/", apiHandler(cfg))
+	mux.Handle("/api/v1/", apiHandler(cfg, deps))
 
 	return &http.Server{
 		Addr:              cfg.HTTPAddress,

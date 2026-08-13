@@ -179,6 +179,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/playbooks/{playbook_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playbook_id: components["parameters"]["PlaybookID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getPlaybook"];
+        put: operations["updatePlaybook"];
+        post?: never;
+        delete: operations["deletePlaybook"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/playbooks/{playbook_id}/runs": {
         parameters: {
             query?: never;
@@ -207,6 +225,144 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getPlaybookRun"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}:cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: components["parameters"]["RunID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelPlaybookRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}:retry": {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                run_id: components["parameters"]["RunID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["retryPlaybookRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/human-tasks/{step_id}:complete": {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                run_id: components["parameters"]["RunID"];
+                step_id: components["parameters"]["StepID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completePlaybookHumanTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/approvals/{step_id}:resolve": {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                run_id: components["parameters"]["RunID"];
+                step_id: components["parameters"]["StepID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["resolvePlaybookApproval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: components["parameters"]["RunID"];
+            };
+            cookie?: never;
+        };
+        get: operations["listPlaybookArtifacts"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/artifacts/preview": {
+        parameters: {
+            query: {
+                path: components["parameters"]["ArtifactPath"];
+            };
+            header?: never;
+            path: {
+                run_id: components["parameters"]["RunID"];
+            };
+            cookie?: never;
+        };
+        get: operations["previewPlaybookArtifact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/artifacts/download": {
+        parameters: {
+            query: {
+                path: components["parameters"]["ArtifactPath"];
+            };
+            header?: never;
+            path: {
+                run_id: components["parameters"]["RunID"];
+            };
+            cookie?: never;
+        };
+        get: operations["downloadPlaybookArtifact"];
         put?: never;
         post?: never;
         delete?: never;
@@ -365,10 +521,7 @@ export interface components {
             folder_uid?: string;
             /** @enum {string} */
             status: "active" | "disabled";
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            updated_at: string;
+            source?: string;
         };
         PlaybookPage: components["schemas"]["PageMetadata"] & {
             items: components["schemas"]["Playbook"][];
@@ -398,6 +551,41 @@ export interface components {
             updated_at: string;
             /** Format: date-time */
             ended_at?: string;
+            steps?: components["schemas"]["PlaybookStep"][];
+        };
+        PlaybookStep: {
+            id: string;
+            name: string;
+            /** @enum {string} */
+            status: "queued" | "running" | "waiting_for_input" | "waiting_for_approval" | "succeeded" | "failed" | "cancelled";
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            ended_at?: string;
+            human_task?: {
+                [key: string]: unknown;
+            };
+            approval?: {
+                [key: string]: unknown;
+            };
+        };
+        PlaybookApprovalDecision: {
+            /** @enum {string} */
+            decision: "approve" | "reject" | "rewind";
+            inputs?: {
+                [key: string]: string;
+            };
+        };
+        Artifact: {
+            name: string;
+            path: string;
+            media_type: string;
+            /** Format: int64 */
+            size: number;
+        };
+        ArtifactPreview: components["schemas"]["Artifact"] & {
+            text: string;
+            truncated: boolean;
         };
     };
     responses: {
@@ -421,6 +609,8 @@ export interface components {
         KnowledgeBaseID: components["schemas"]["BusinessID"];
         PlaybookID: components["schemas"]["BusinessID"];
         RunID: components["schemas"]["BusinessID"];
+        StepID: string;
+        ArtifactPath: string;
     };
     requestBodies: never;
     headers: never;
@@ -841,6 +1031,77 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    getPlaybook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playbook_id: components["parameters"]["PlaybookID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Playbook with its native Dagu YAML source */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Playbook"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updatePlaybook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playbook_id: components["parameters"]["PlaybookID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/yaml": string;
+            };
+        };
+        responses: {
+            /** @description Updated playbook */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Playbook"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deletePlaybook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playbook_id: components["parameters"]["PlaybookID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Playbook deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     startPlaybookRun: {
         parameters: {
             query?: never;
@@ -888,6 +1149,185 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlaybookRun"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    cancelPlaybookRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: components["parameters"]["RunID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run cancelled */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    retryPlaybookRun: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                run_id: components["parameters"]["RunID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Retry accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaybookRun"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    completePlaybookHumanTask: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                run_id: components["parameters"]["RunID"];
+                step_id: components["parameters"]["StepID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Human task completed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    resolvePlaybookApproval: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                run_id: components["parameters"]["RunID"];
+                step_id: components["parameters"]["StepID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlaybookApprovalDecision"];
+            };
+        };
+        responses: {
+            /** @description Approval resolved */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listPlaybookArtifacts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: components["parameters"]["RunID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run artifacts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["Artifact"][];
+                    };
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    previewPlaybookArtifact: {
+        parameters: {
+            query: {
+                path: components["parameters"]["ArtifactPath"];
+            };
+            header?: never;
+            path: {
+                run_id: components["parameters"]["RunID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Text artifact preview */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactPreview"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    downloadPlaybookArtifact: {
+        parameters: {
+            query: {
+                path: components["parameters"]["ArtifactPath"];
+            };
+            header?: never;
+            path: {
+                run_id: components["parameters"]["RunID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Artifact content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
                 };
             };
             default: components["responses"]["Problem"];

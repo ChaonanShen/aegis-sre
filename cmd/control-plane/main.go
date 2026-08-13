@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/1024XEngineer/aegis-sre/internal/adapters/dagu"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/httpserver"
 )
@@ -21,7 +23,28 @@ func main() {
 		os.Exit(1)
 	}
 
-	server := httpserver.New(cfg, logger)
+	var serverOptions []httpserver.Option
+	if endpoint := cfg.Endpoints[config.CapabilityPlaybook]; endpoint != "" {
+		var tokenSource dagu.TokenSource
+		if cfg.DaguTokenFile != "" {
+			tokenSource = func() (string, error) {
+				content, err := os.ReadFile(cfg.DaguTokenFile)
+				return string(content), err
+			}
+		}
+		client, err := dagu.NewClient(endpoint, &http.Client{Timeout: 45 * time.Second}, dagu.WithTokenSource(tokenSource))
+		if err != nil {
+			logger.Error("configure Dagu client", "error", err)
+			os.Exit(1)
+		}
+		provider, err := dagu.NewProvider(client)
+		if err != nil {
+			logger.Error("configure Dagu provider", "error", err)
+			os.Exit(1)
+		}
+		serverOptions = append(serverOptions, httpserver.WithPlaybookProvider(provider))
+	}
+	server := httpserver.New(cfg, logger, serverOptions...)
 	runCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

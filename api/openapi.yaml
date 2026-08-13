@@ -275,6 +275,44 @@ paths:
                 $ref: '#/components/schemas/ValidationResult'
         default:
           $ref: '#/components/responses/Problem'
+  /playbooks/{playbook_id}:
+    parameters:
+      - $ref: '#/components/parameters/PlaybookID'
+    get:
+      operationId: getPlaybook
+      responses:
+        '200':
+          description: Playbook with its native Dagu YAML source
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Playbook'
+        default:
+          $ref: '#/components/responses/Problem'
+    put:
+      operationId: updatePlaybook
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Updated playbook
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Playbook'
+        default:
+          $ref: '#/components/responses/Problem'
+    delete:
+      operationId: deletePlaybook
+      responses:
+        '204':
+          description: Playbook deleted
+        default:
+          $ref: '#/components/responses/Problem'
   /playbooks/{playbook_id}/runs:
     parameters:
       - $ref: '#/components/parameters/PlaybookID'
@@ -309,6 +347,120 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PlaybookRun'
+        default:
+          $ref: '#/components/responses/Problem'
+  /runs/{run_id}:cancel:
+    parameters:
+      - $ref: '#/components/parameters/RunID'
+    post:
+      operationId: cancelPlaybookRun
+      responses:
+        '204':
+          description: Run cancelled
+        default:
+          $ref: '#/components/responses/Problem'
+  /runs/{run_id}:retry:
+    parameters:
+      - $ref: '#/components/parameters/RunID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      operationId: retryPlaybookRun
+      responses:
+        '202':
+          description: Retry accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybookRun'
+        default:
+          $ref: '#/components/responses/Problem'
+  /runs/{run_id}/human-tasks/{step_id}:complete:
+    parameters:
+      - $ref: '#/components/parameters/RunID'
+      - $ref: '#/components/parameters/StepID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      operationId: completePlaybookHumanTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '204':
+          description: Human task completed
+        default:
+          $ref: '#/components/responses/Problem'
+  /runs/{run_id}/approvals/{step_id}:resolve:
+    parameters:
+      - $ref: '#/components/parameters/RunID'
+      - $ref: '#/components/parameters/StepID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      operationId: resolvePlaybookApproval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaybookApprovalDecision'
+      responses:
+        '204':
+          description: Approval resolved
+        default:
+          $ref: '#/components/responses/Problem'
+  /runs/{run_id}/artifacts:
+    parameters:
+      - $ref: '#/components/parameters/RunID'
+    get:
+      operationId: listPlaybookArtifacts
+      responses:
+        '200':
+          description: Run artifacts
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Artifact'
+        default:
+          $ref: '#/components/responses/Problem'
+  /runs/{run_id}/artifacts/preview:
+    parameters:
+      - $ref: '#/components/parameters/RunID'
+      - $ref: '#/components/parameters/ArtifactPath'
+    get:
+      operationId: previewPlaybookArtifact
+      responses:
+        '200':
+          description: Text artifact preview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactPreview'
+        default:
+          $ref: '#/components/responses/Problem'
+  /runs/{run_id}/artifacts/download:
+    parameters:
+      - $ref: '#/components/parameters/RunID'
+      - $ref: '#/components/parameters/ArtifactPath'
+    get:
+      operationId: downloadPlaybookArtifact
+      responses:
+        '200':
+          description: Artifact content
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
         default:
           $ref: '#/components/responses/Problem'
   /runs/{run_id}/events:
@@ -393,6 +545,21 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/BusinessID'
+    StepID:
+      name: step_id
+      in: path
+      required: true
+      schema:
+        type: string
+        pattern: '^[A-Za-z][A-Za-z0-9_-]{0,127}$'
+    ArtifactPath:
+      name: path
+      in: query
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 1024
   responses:
     Problem:
       description: Stable product error
@@ -685,7 +852,7 @@ components:
     Playbook:
       type: object
       additionalProperties: false
-      required: [id, name, status, created_at, updated_at]
+      required: [id, name, status]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
@@ -696,12 +863,8 @@ components:
         status:
           type: string
           enum: [active, disabled]
-        created_at:
+        source:
           type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
     PlaybookPage:
       allOf:
         - $ref: '#/components/schemas/PageMetadata'
@@ -763,3 +926,54 @@ components:
         ended_at:
           type: string
           format: date-time
+        steps:
+          type: array
+          items:
+            $ref: '#/components/schemas/PlaybookStep'
+    PlaybookStep:
+      type: object
+      additionalProperties: false
+      required: [id, name, status]
+      properties:
+        id: {type: string}
+        name: {type: string}
+        status:
+          type: string
+          enum: [queued, running, waiting_for_input, waiting_for_approval, succeeded, failed, cancelled]
+        started_at: {type: string, format: date-time}
+        ended_at: {type: string, format: date-time}
+        human_task:
+          type: object
+          additionalProperties: true
+        approval:
+          type: object
+          additionalProperties: true
+    PlaybookApprovalDecision:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approve, reject, rewind]
+        inputs:
+          type: object
+          additionalProperties:
+            type: string
+    Artifact:
+      type: object
+      additionalProperties: false
+      required: [name, path, media_type, size]
+      properties:
+        name: {type: string}
+        path: {type: string}
+        media_type: {type: string}
+        size: {type: integer, format: int64, minimum: 0}
+    ArtifactPreview:
+      allOf:
+        - $ref: '#/components/schemas/Artifact'
+        - type: object
+          required: [text, truncated]
+          properties:
+            text: {type: string}
+            truncated: {type: boolean}

@@ -32,7 +32,7 @@ type capability struct {
 	Reason string `json:"reason,omitempty"`
 }
 
-func apiHandler(cfg config.Config) http.Handler {
+func apiHandler(cfg config.Config, deps dependencies) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/v1/capabilities", func(w http.ResponseWriter, _ *http.Request) {
 		items := []capability{
@@ -44,6 +44,7 @@ func apiHandler(cfg config.Config) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"items": items})
 	})
+	registerPlaybookHandlers(mux, deps.playbooks)
 	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, request *http.Request) {
 		writeAPIProblem(w, request, http.StatusServiceUnavailable, "capability_unavailable", "capability is not configured", false)
 	})

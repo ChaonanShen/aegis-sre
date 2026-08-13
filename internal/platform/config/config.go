@@ -15,6 +15,7 @@ const (
 	EnvShutdownTimeout = "AEGIS_SHUTDOWN_TIMEOUT"
 	EnvAgentURL        = "AEGIS_AGENT_URL"
 	EnvDaguURL         = "AEGIS_DAGU_URL"
+	EnvDaguTokenFile   = "AEGIS_DAGU_TOKEN_FILE"
 	EnvRAGFlowURL      = "AEGIS_RAGFLOW_URL"
 	EnvGrafanaMCPURL   = "AEGIS_GRAFANA_MCP_URL"
 	EnvPluginTokenFile = "AEGIS_PLUGIN_TOKEN_FILE"
@@ -36,6 +37,7 @@ type Config struct {
 	ShutdownTimeout time.Duration
 	Endpoints       map[Capability]string
 	PluginToken     string
+	DaguTokenFile   string
 }
 
 func Load(getenv func(string) string) (Config, error) {
@@ -90,5 +92,13 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken}, nil
+	daguTokenFile := strings.TrimSpace(getenv(EnvDaguTokenFile))
+	if daguTokenFile != "" {
+		info, err := os.Stat(daguTokenFile)
+		if err != nil || !info.Mode().IsRegular() {
+			return Config{}, fmt.Errorf("%w: %s must point to a readable regular file", ErrInvalid, EnvDaguTokenFile)
+		}
+	}
+
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile}, nil
 }

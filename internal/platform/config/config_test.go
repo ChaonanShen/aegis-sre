@@ -2,6 +2,8 @@ package config
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -16,6 +18,22 @@ func TestLoadDefaultsWithoutProviders(t *testing.T) {
 	}
 	if len(cfg.Endpoints) != 0 {
 		t.Fatalf("providers must remain optional: %+v", cfg.Endpoints)
+	}
+}
+
+func TestLoadKeepsDaguTokenAsRotatingFileReference(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dagu-token")
+	if err := os.WriteFile(path, []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(func(key string) string {
+		if key == EnvDaguTokenFile {
+			return path
+		}
+		return ""
+	})
+	if err != nil || cfg.DaguTokenFile != path {
+		t.Fatalf("config = %+v, err = %v", cfg, err)
 	}
 }
 

@@ -39,7 +39,9 @@ type HTTPError struct {
 	Retryable  bool
 }
 
-func (err *HTTPError) Error() string { return fmt.Sprintf("Dagu API returned HTTP %d", err.StatusCode) }
+func (err *HTTPError) Error() string   { return fmt.Sprintf("Dagu API returned HTTP %d", err.StatusCode) }
+func (err *HTTPError) HTTPStatus() int { return err.StatusCode }
+func (err *HTTPError) CanRetry() bool  { return err.Retryable }
 
 func NewClient(rawURL string, httpClient *http.Client, options ...Option) (*Client, error) {
 	baseURL, err := url.Parse(strings.TrimSpace(rawURL))
@@ -123,6 +125,22 @@ func (client *Client) GetRun(ctx context.Context, name, runID string) (DAGRun, e
 	}
 	err := client.doJSON(ctx, http.MethodGet, runPath(name, runID), nil, &response)
 	return response.DAGRun, err
+}
+
+func (client *Client) FindRun(ctx context.Context, runID string) (DAGRun, error) {
+	query := url.Values{"dagRunId": {runID}, "limit": {"2"}}
+	var response struct {
+		Runs []DAGRun `json:"dagRuns"`
+	}
+	if err := client.doJSON(ctx, http.MethodGet, "dag-runs?"+query.Encode(), nil, &response); err != nil {
+		return DAGRun{}, err
+	}
+	for _, run := range response.Runs {
+		if run.DAGRunID == runID {
+			return run, nil
+		}
+	}
+	return DAGRun{}, &HTTPError{StatusCode: http.StatusNotFound}
 }
 
 func (client *Client) StopRun(ctx context.Context, name, runID string) error {
