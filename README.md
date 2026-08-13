@@ -2,7 +2,7 @@
 
 Aegis SRE 是一个以 Grafana App Plugin 为入口的开源 SRE 工作台。项目本身只维护产品控制面与必要的集成层，Agent、知识检索、Playbook 编排和 Grafana 工具能力分别交给成熟组件。
 
-当前仓库已经从 Torchbearing 迁入 Grafana 插件工程。前端页面、Gateway 边界、单元测试和构建配置保持原有结构；现有 Plugin Backend 仅为保证插件工程结构完整而原样保留，本阶段不开发，也不代表最终后端设计。
+当前已完成实施计划的阶段 0–3：仓库迁移基线、Control Plane 骨架、v1 公共契约、PostgreSQL 持久化基础，以及 Grafana Plugin Backend 到 Control Plane 的受信代理。阶段 4 的 Dagu 接入尚未开始。
 
 ## 目标组件
 
@@ -20,16 +20,35 @@ Aegis SRE 是一个以 Grafana App Plugin 为入口的开源 SRE 工作台。项
 
 ```text
 aegis-sre/
-├── grafana-plugin/              # 已迁移；当前唯一实现代码
+├── api/                         # OpenAPI 与统一事件 Schema
+├── cmd/control-plane/           # Control Plane 进程入口
+├── internal/                    # 领域、端口、应用层与 Provider adapter
+├── migrations/                  # PostgreSQL migrations
+├── grafana-plugin/              # Grafana 前端与薄 Plugin Backend
 ├── docs/
 │   ├── architecture.md          # 目标架构和稳定边界
 │   ├── implementation-plan.md   # 分阶段执行计划与验收标准
 │   ├── migration-notes.md       # 迁移来源与已知限制
 │   └── research/                # 已有调研材料
-└── README.md
+└── Makefile                     # 本地与 CI 的统一验证入口
 ```
 
-后续目录会按实施计划逐步增加，当前不会提前创建空的微服务或占位实现。
+尚未接入的能力会返回明确的 `capability_unavailable`，真实运行模式不会静默回退到 fixture 或 mock。
+
+## 本地验证与运行
+
+要求 Go 1.26.4、Node.js 22，以及可用的 PostgreSQL 18。
+
+```bash
+make verify
+AEGIS_DATABASE_URL='postgres://aegis:aegis@localhost:5432/aegis?sslmode=disable' make db-up
+AEGIS_DATABASE_URL='postgres://aegis:aegis@localhost:5432/aegis?sslmode=disable' go run ./cmd/control-plane
+```
+
+Plugin Backend 通过以下环境变量连接 Control Plane：
+
+- `AEGIS_CONTROL_PLANE_URL`：必填的 Control Plane HTTP origin。
+- `AEGIS_CONTROL_PLANE_TOKEN_FILE`：可选的只读 Bearer Token 文件路径；启用时，Control Plane 的 `AEGIS_PLUGIN_TOKEN_FILE` 应读取同一凭据。
 
 ## 前端开发
 
@@ -57,7 +76,7 @@ npm run build
 - 不维护第二套 Playbook DSL 和执行引擎。
 - 不重写 Grafana 官方 MCP 已经提供的工具。
 - 不让浏览器直接持有 RAGFlow、Dagu、Grafana MCP 或 Agent Provider 凭据。
-- 不在第一阶段扩展 Plugin Backend；鉴权设计在接口中预留，在后续阶段落地。
+- 不在 Plugin Backend 中实现业务逻辑；它只负责受信身份注入和 REST/SSE 代理。
 
 ## License
 
