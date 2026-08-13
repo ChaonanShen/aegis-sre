@@ -167,6 +167,68 @@ operation_idempotency
 - 数据库事务、乐观锁和幂等冲突有明确行为测试。
 - 未接入的产品能力在真实模式下明确不可用，不读取 fixture。
 
+## 纠正阶段：移除过早引入的 PostgreSQL 持久化
+
+状态：**待执行。必须在阶段 4 开始前完成。**
+
+背景：阶段 3 沿用了迁移前项目以 PostgreSQL 保存产品元数据、业务 ID 与 Provider ID 映射的假设，但该假设没有先经过 Codex/OpenCode、Dagu、RAGFlow 和 Grafana 原生能力验证。当前 PostgreSQL repository 也未接入 Control Plane 的真实运行路径。继续保留会造成事实来源重复、无消费者抽象和不必要的部署依赖，因此需要在接入首个 Provider 前纠正。
+
+纠正原则：
+
+- Agent 会话、回合、审批和历史由 Agent Provider 持久化。
+- Playbook 定义、Run、Step、Human Task、审批、日志和 Artifact 由 Dagu 持久化。
+- Dataset、Document、解析状态、Chunk、Embedding 和索引由 RAGFlow 持久化。
+- Grafana Folder、权限和可由 Grafana 表达的标签、关联优先复用 Grafana 原生能力。
+- Control Plane 保持无状态的协议归一化、授权收敛和 Provider 适配层，不建立上述运行数据的影子表或摘要索引。
+- 稳定公共 ID、Provider ID 隔离和幂等仍是契约约束，但不得预设通过 PostgreSQL 实现。每个 Provider 垂直切片应先验证调用方生成 ID、原生 metadata/tag、确定性命名和原生幂等能力。
+- 如果某个已验证的产品自有状态确实无法由现有引擎承载，必须先提交 ADR，说明数据所有权、不可替代性、生命周期、恢复方式和最小存储范围，再决定是否增加持久化组件。
+
+代码清理：
+
+- [ ] 删除 `migrations/` 中尚未形成生产数据的 Control Plane PostgreSQL migration。
+- [ ] 删除 `internal/adapters/postgres`、数据库 repository 测试和只为这些实现存在的辅助代码。
+- [ ] 删除无真实消费者的 `SessionRepository`、`ProviderMappingRepository`、`IdempotencyRepository` 及其数据结构；保留 Provider ports 和 Provider-neutral domain contract。
+- [ ] 删除 `pgx`、`pgxmock`、Goose 等仅为 Control Plane PostgreSQL 引入的依赖和命令，并运行 `go mod tidy`。
+- [ ] 删除 `AEGIS_DATABASE_URL`、database capability、readiness 数据库状态及其他未使用配置。
+- [ ] 删除根 CI 中的 PostgreSQL service、migration 步骤和对应 Makefile target，确保 CI 不再启动数据库。
+- [ ] 检查 `api/openapi.yaml`、Event Schema、domain model 和前端生成类型，移除只为影子持久化设计且尚无 Provider 语义依据的字段；兼容性不确定的公共字段先记录审计结论，不盲目破坏已冻结契约。
+
+Provider 数据归属与标识策略复核：
+
+- [ ] Session 的 list/read/resume/archive/delete 直接委托 Agent Provider，不读取 Aegis Session 表。
+- [ ] Playbook 与 Run 使用 Dagu 原生标识、调用方可控标识或原生 metadata；不建立 Playbook/Run 映射表和状态摘要表。
+- [ ] KnowledgeBase 与 Document 使用 RAGFlow 原生资源及 metadata 能力；不建立 Dataset/Document 影子表。
+- [ ] Approval resolve 委托产生 Approval 的 Agent 或 Dagu，不建立 `approval_refs`。
+- [ ] trace ID 通过请求上下文、结构化日志和后续可观测性链路传递，不作为关系数据库记录保存。
+- [ ] 幂等优先使用 Provider 原生机制或调用方生成的稳定操作 ID；没有可靠幂等能力时不得用内存或 mock 静默冒充生产保证，应在对应 Provider 阶段明确暴露限制。
+- [ ] 对无法在不泄漏 Provider ID 的前提下实现稳定公共 ID 的 Provider，暂停该垂直切片并提交 ADR；不得为了预想的可替换性恢复通用映射数据库。
+- [ ] 复核 `ServiceEntry` 是否仍是独立产品实体；优先从 Grafana Folder、Dashboard、标签、注解或受版本控制的配置派生，只有出现无法由 Grafana 表达的真实业务状态时才单独决策。
+
+文档清理：
+
+- [ ] 更新 `docs/architecture.md`，移除 PostgreSQL 拓扑、持久化模型和影子数据归属，明确 Control Plane 默认无状态及各引擎唯一事实来源。
+- [ ] 回写本实施计划中阶段 2、阶段 3 及后续阶段受影响的任务和验收项，包括持久化映射、全局数据库幂等、Provider ID 映射和 PostgreSQL 备份演练。
+- [ ] 更新根 `README.md` 的仓库结构、依赖要求、启动命令和当前阶段说明。
+- [ ] 审计 `docs/migration-notes.md`，确保迁移边界没有暗示继续保留旧项目数据库。
+- [ ] 将 `docs/research/knowledge-base-replacement-research.md` 中 Torchbearing PostgreSQL 方案明确标记为历史调研和已废弃结论；保留有价值的 Provider 调研事实，但不得继续充当当前规范。
+- [ ] 全仓搜索 PostgreSQL、repository、产品元数据、映射表和备份恢复等表述；规范性文档不得残留数据库前提，历史文档中的残留必须带有明确的废弃上下文。
+
+建议按以下小步提交执行：
+
+1. 先提交架构和实施计划纠正，冻结新的数据归属边界。
+2. 再提交 PostgreSQL 代码、依赖、配置和 CI 清理。
+3. 最后提交公共契约审计结果与其余文档清理；若契约需要破坏性修改，单独提交并说明版本影响。
+
+验收标准：
+
+- Control Plane 和 Grafana Plugin 的开发、测试、构建、启动均不要求 PostgreSQL。
+- 仓库中不存在未被真实 Application Service 消费的 repository 接口或实现。
+- Agent、Playbook、Knowledge 的状态查询均计划从对应 Provider 获取，不存在第二事实来源。
+- 非历史文档、CI、Makefile、配置和发布拓扑中不再出现 PostgreSQL 依赖。
+- Provider ID 不进入前端公共契约；同时不以预建通用映射表规避具体 Provider 的标识能力验证。
+- `make verify`、契约生成一致性检查、Go test/vet/build、Plugin Backend 测试及前端 typecheck/lint/Jest/Webpack 全部通过。
+- 阶段 4 的 Dagu 代码尚未开始，原阶段编号保持不变。
+
 ## 7. 阶段 4：Dagu 与 `mcp.call`
 
 目标：Dagu 成为 Playbook 唯一执行引擎，插件不再依赖自定义 DSL。
