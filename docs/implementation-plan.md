@@ -48,7 +48,7 @@ Knowledge 的公共接口仍在前期冻结，避免延后部署 RAGFlow 反过�
 - [x] 通过 ESLint。
 - [x] 通过 Jest 测试：49 个测试套件、248 个测试。
 - [x] 通过生产 Webpack 构建并生成 `dist/module.js`。
-- [ ] 建立新仓库基础 CI。
+- [x] 建立新仓库基础 CI。
 
 验收标准：
 
