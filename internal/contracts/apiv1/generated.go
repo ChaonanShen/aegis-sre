@@ -313,13 +313,6 @@ type CreateKnowledgeBaseRequest struct {
 	Name      string `json:"name"`
 }
 
-// CreateServiceRequest defines model for CreateServiceRequest.
-type CreateServiceRequest struct {
-	FolderUid string             `json:"folder_uid"`
-	Labels    *map[string]string `json:"labels,omitempty"`
-	Name      string             `json:"name"`
-}
-
 // CreateSessionRequest defines model for CreateSessionRequest.
 type CreateSessionRequest struct {
 	FolderUid *string `json:"folder_uid,omitempty"`
@@ -335,7 +328,6 @@ type Document struct {
 	Name            string         `json:"name"`
 	Status          DocumentStatus `json:"status"`
 	UpdatedAt       time.Time      `json:"updated_at"`
-	Version         int64          `json:"version"`
 }
 
 // DocumentStatus defines model for Document.Status.
@@ -356,7 +348,6 @@ type KnowledgeBase struct {
 	Name      string              `json:"name"`
 	Status    KnowledgeBaseStatus `json:"status"`
 	UpdatedAt time.Time           `json:"updated_at"`
-	Version   int64               `json:"version"`
 }
 
 // KnowledgeBaseStatus defines model for KnowledgeBase.Status.
@@ -394,7 +385,6 @@ type Playbook struct {
 	Name      string         `json:"name"`
 	Status    PlaybookStatus `json:"status"`
 	UpdatedAt time.Time      `json:"updated_at"`
-	Version   int64          `json:"version"`
 }
 
 // PlaybookStatus defines model for Playbook.Status.
@@ -438,13 +428,10 @@ type ProblemCode string
 
 // ServiceEntry defines model for ServiceEntry.
 type ServiceEntry struct {
-	CreatedAt time.Time          `json:"created_at"`
 	FolderUid string             `json:"folder_uid"`
 	Id        BusinessID         `json:"id"`
 	Labels    *map[string]string `json:"labels,omitempty"`
 	Name      string             `json:"name"`
-	UpdatedAt time.Time          `json:"updated_at"`
-	Version   int64              `json:"version"`
 }
 
 // ServicePage defines model for ServicePage.
@@ -462,7 +449,6 @@ type Session struct {
 	Status    SessionStatus `json:"status"`
 	Title     string        `json:"title"`
 	UpdatedAt time.Time     `json:"updated_at"`
-	Version   int64         `json:"version"`
 }
 
 // SessionStatus defines model for Session.Status.
@@ -494,9 +480,8 @@ type StartTurnRequest struct {
 
 // UpdateSessionRequest defines model for UpdateSessionRequest.
 type UpdateSessionRequest struct {
-	Status  *UpdateSessionRequestStatus `json:"status,omitempty"`
-	Title   *string                     `json:"title,omitempty"`
-	Version int64                       `json:"version"`
+	Status *UpdateSessionRequestStatus `json:"status,omitempty"`
+	Title  *string                     `json:"title,omitempty"`
 }
 
 // UpdateSessionRequestStatus defines model for UpdateSessionRequest.Status.
@@ -590,11 +575,6 @@ type ListServicesParams struct {
 	Limit     *Limit     `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
-// CreateServiceParams defines parameters for CreateService.
-type CreateServiceParams struct {
-	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
-}
-
 // ListSessionsParams defines parameters for ListSessions.
 type ListSessionsParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
@@ -624,9 +604,6 @@ type CreateDocumentJSONRequestBody = CreateDocumentRequest
 
 // StartPlaybookRunJSONRequestBody defines body for StartPlaybookRun for application/json ContentType.
 type StartPlaybookRunJSONRequestBody = StartPlaybookRunRequest
-
-// CreateServiceJSONRequestBody defines body for CreateService for application/json ContentType.
-type CreateServiceJSONRequestBody = CreateServiceRequest
 
 // CreateSessionJSONRequestBody defines body for CreateSession for application/json ContentType.
 type CreateSessionJSONRequestBody = CreateSessionRequest

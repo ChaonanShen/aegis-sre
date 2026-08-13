@@ -149,25 +149,6 @@ paths:
                 $ref: '#/components/schemas/ServicePage'
         default:
           $ref: '#/components/responses/Problem'
-    post:
-      operationId: createService
-      parameters:
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateServiceRequest'
-      responses:
-        '201':
-          description: Created service
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ServiceEntry'
-        default:
-          $ref: '#/components/responses/Problem'
   /knowledge-bases:
     get:
       operationId: listKnowledgeBases
@@ -483,7 +464,7 @@ components:
     Session:
       type: object
       additionalProperties: false
-      required: [id, title, status, version, created_at, updated_at]
+      required: [id, title, status, created_at, updated_at]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
@@ -496,10 +477,6 @@ components:
           enum: [active, archived, busy]
         folder_uid:
           type: string
-        version:
-          type: integer
-          format: int64
-          minimum: 1
         created_at:
           type: string
           format: date-time
@@ -557,7 +534,7 @@ components:
     UpdateSessionRequest:
       type: object
       additionalProperties: false
-      required: [version]
+      minProperties: 1
       properties:
         title:
           type: string
@@ -566,10 +543,6 @@ components:
         status:
           type: string
           enum: [active, archived]
-        version:
-          type: integer
-          format: int64
-          minimum: 1
     StartTurnRequest:
       type: object
       additionalProperties: false
@@ -598,7 +571,7 @@ components:
     ServiceEntry:
       type: object
       additionalProperties: false
-      required: [id, name, folder_uid, version, created_at, updated_at]
+      required: [id, name, folder_uid]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
@@ -606,32 +579,6 @@ components:
           type: string
         folder_uid:
           type: string
-        labels:
-          type: object
-          additionalProperties:
-            type: string
-        version:
-          type: integer
-          format: int64
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-    CreateServiceRequest:
-      type: object
-      additionalProperties: false
-      required: [name, folder_uid]
-      properties:
-        name:
-          type: string
-          minLength: 1
-          maxLength: 200
-        folder_uid:
-          type: string
-          minLength: 1
-          maxLength: 128
         labels:
           type: object
           additionalProperties:
@@ -649,7 +596,7 @@ components:
     KnowledgeBase:
       type: object
       additionalProperties: false
-      required: [id, name, folder_uid, status, version, created_at, updated_at]
+      required: [id, name, folder_uid, status, created_at, updated_at]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
@@ -660,9 +607,6 @@ components:
         status:
           type: string
           enum: [active, disabled]
-        version:
-          type: integer
-          format: int64
         created_at:
           type: string
           format: date-time
@@ -695,7 +639,7 @@ components:
     Document:
       type: object
       additionalProperties: false
-      required: [id, knowledge_base_id, name, media_type, status, version, created_at, updated_at]
+      required: [id, knowledge_base_id, name, media_type, status, created_at, updated_at]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
@@ -708,9 +652,6 @@ components:
         status:
           type: string
           enum: [pending, indexing, ready, failed, disabled]
-        version:
-          type: integer
-          format: int64
         created_at:
           type: string
           format: date-time
@@ -744,7 +685,7 @@ components:
     Playbook:
       type: object
       additionalProperties: false
-      required: [id, name, status, version, created_at, updated_at]
+      required: [id, name, status, created_at, updated_at]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
@@ -755,9 +696,6 @@ components:
         status:
           type: string
           enum: [active, disabled]
-        version:
-          type: integer
-          format: int64
         created_at:
           type: string
           format: date-time

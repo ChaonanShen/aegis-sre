@@ -55,10 +55,9 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
       return emptyOpenedSession(session);
     },
     async archiveSession(sessionId, signal) {
-      const detail = await resources().request(sessionPath(sessionId), isSessionDetail, { signal });
       const session = await resources().request(sessionPath(sessionId), isSession, {
         method: 'PATCH',
-        data: { status: 'archived', version: detail.session.version },
+        data: { status: 'archived' },
         signal,
       });
       return toSessionSummary(session);
@@ -293,7 +292,6 @@ function isSession(value: unknown): value is ContractSession {
       typeof record.id === 'string' &&
       typeof record.title === 'string' &&
       typeof record.status === 'string' &&
-      typeof record.version === 'number' &&
       typeof record.created_at === 'string' &&
       typeof record.updated_at === 'string'
   );

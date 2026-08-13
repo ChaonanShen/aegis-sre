@@ -1,5 +1,7 @@
 package domain
 
+import "time"
+
 type SessionStatus string
 
 const (
@@ -13,7 +15,8 @@ type Session struct {
 	Title     string
 	Status    SessionStatus
 	FolderUID string
-	AuditStamp
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type KnowledgeBase struct {
@@ -21,7 +24,8 @@ type KnowledgeBase struct {
 	Name      string
 	FolderUID string
 	Enabled   bool
-	AuditStamp
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type DocumentStatus string
@@ -40,7 +44,8 @@ type Document struct {
 	Name            string
 	MediaType       string
 	Status          DocumentStatus
-	AuditStamp
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type Playbook struct {
@@ -48,7 +53,8 @@ type Playbook struct {
 	Name      string
 	FolderUID string
 	Enabled   bool
-	AuditStamp
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type RunStatus string
@@ -68,5 +74,6 @@ type PlaybookRun struct {
 	PlaybookID ID
 	Status     RunStatus
 	Sequence   int64
-	AuditStamp
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }

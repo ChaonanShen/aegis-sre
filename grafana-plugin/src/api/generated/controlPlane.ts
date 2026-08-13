@@ -104,7 +104,7 @@ export interface paths {
         };
         get: operations["listServices"];
         put?: never;
-        post: operations["createService"];
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -271,8 +271,6 @@ export interface components {
             /** @enum {string} */
             status: "active" | "archived" | "busy";
             folder_uid?: string;
-            /** Format: int64 */
-            version: number;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -301,8 +299,6 @@ export interface components {
             title?: string;
             /** @enum {string} */
             status?: "active" | "archived";
-            /** Format: int64 */
-            version: number;
         };
         StartTurnRequest: {
             message: string;
@@ -320,19 +316,6 @@ export interface components {
             labels?: {
                 [key: string]: string;
             };
-            /** Format: int64 */
-            version: number;
-            /** Format: date-time */
-            created_at: string;
-            /** Format: date-time */
-            updated_at: string;
-        };
-        CreateServiceRequest: {
-            name: string;
-            folder_uid: string;
-            labels?: {
-                [key: string]: string;
-            };
         };
         ServicePage: components["schemas"]["PageMetadata"] & {
             items: components["schemas"]["ServiceEntry"][];
@@ -343,8 +326,6 @@ export interface components {
             folder_uid: string;
             /** @enum {string} */
             status: "active" | "disabled";
-            /** Format: int64 */
-            version: number;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -364,8 +345,6 @@ export interface components {
             media_type: string;
             /** @enum {string} */
             status: "pending" | "indexing" | "ready" | "failed" | "disabled";
-            /** Format: int64 */
-            version: number;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -386,8 +365,6 @@ export interface components {
             folder_uid?: string;
             /** @enum {string} */
             status: "active" | "disabled";
-            /** Format: int64 */
-            version: number;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -673,33 +650,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ServicePage"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
-    createService: {
-        parameters: {
-            query?: never;
-            header: {
-                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CreateServiceRequest"];
-            };
-        };
-        responses: {
-            /** @description Created service */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ServiceEntry"];
                 };
             };
             default: components["responses"]["Problem"];

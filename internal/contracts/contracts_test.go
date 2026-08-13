@@ -38,3 +38,25 @@ func TestPublicContractsDoNotExposeProviderIdentifiers(t *testing.T) {
 		}
 	}
 }
+
+func TestOpenAPIContractDoesNotAssumeControlPlanePersistence(t *testing.T) {
+	content, err := os.ReadFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, forbidden := range []string{"CreateServiceRequest:", "\n        version:\n          type: integer"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("OpenAPI contract contains persistence-specific shape %q", forbidden)
+		}
+	}
+
+	servicesStart := strings.Index(text, "  /services:\n")
+	knowledgeStart := strings.Index(text, "  /knowledge-bases:\n")
+	if servicesStart == -1 || knowledgeStart <= servicesStart {
+		t.Fatal("OpenAPI contract is missing the services resource boundary")
+	}
+	if strings.Contains(text[servicesStart:knowledgeStart], "\n    post:\n") {
+		t.Fatal("services must remain a read-only view derived from Grafana")
+	}
+}

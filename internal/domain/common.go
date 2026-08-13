@@ -3,7 +3,6 @@ package domain
 import (
 	"errors"
 	"regexp"
-	"time"
 )
 
 type ID string
@@ -37,16 +36,6 @@ type Page[T any] struct {
 	NextCursor string
 	HasMore    bool
 }
-
-type Version int64
-
-type AuditStamp struct {
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	Version   Version
-}
-
-type IdempotencyKey string
 
 type ErrorCode string
 
