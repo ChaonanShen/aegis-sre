@@ -17,6 +17,14 @@ import { createResourceWorkbenchGateway } from '../features/workbench/adapters/r
 import { WorkbenchGateway } from '../features/workbench/ports/WorkbenchGateway';
 import { createFixtureFolderGateway } from './adapters/fixtureFolderGateway';
 import { FolderGateway } from './ports/FolderGateway';
+import {
+  unavailableAlertGateway,
+  unavailableApprovalGateway,
+  unavailableAuditGateway,
+  unavailableFolderGateway,
+  unavailableKnowledgeGateway,
+  unavailableSkillGateway,
+} from './adapters/unavailableGateways';
 
 export interface AppServices {
   runtimeMode: RuntimeMode;
@@ -43,16 +51,6 @@ const fixtureServices: Omit<AppServices, 'runtimeMode'> = {
   workbenchGateway: createFixtureWorkbenchGateway(),
 };
 
-const unavailableFolderGateway: FolderGateway = {
-  async listFolders(signal?: AbortSignal) {
-    if (signal?.aborted) {
-      throw new DOMException('The operation was aborted.', 'AbortError');
-    }
-    // Grafana Folder 的真实读取和授权尚未接入，真实模式不能用 fixture 权限代替。
-    return [];
-  },
-};
-
 const AppServicesContext = createContext<AppServices | undefined>(undefined);
 
 export function AppServicesProvider({
@@ -61,11 +59,15 @@ export function AppServicesProvider({
   runtimeMode = 'real',
 }: React.PropsWithChildren<{ services?: Partial<AppServices>; runtimeMode?: RuntimeMode }>) {
   const value = useMemo(() => {
-    // 只有显式 fixture 模式才使用内存会话；其他未接通的页面暂时继续使用各自 fixture。
+    // 只有显式 fixture 模式才允许内存数据；真实模式未接通的能力必须明确失败。
     const defaults: AppServices = {
-      ...fixtureServices,
       runtimeMode,
+      auditGateway: runtimeMode === 'fixture' ? fixtureServices.auditGateway : unavailableAuditGateway,
+      alertGateway: runtimeMode === 'fixture' ? fixtureServices.alertGateway : unavailableAlertGateway,
+      approvalGateway: runtimeMode === 'fixture' ? fixtureServices.approvalGateway : unavailableApprovalGateway,
       folderGateway: runtimeMode === 'fixture' ? fixtureServices.folderGateway : unavailableFolderGateway,
+      knowledgeGateway: runtimeMode === 'fixture' ? fixtureServices.knowledgeGateway : unavailableKnowledgeGateway,
+      skillGateway: runtimeMode === 'fixture' ? fixtureServices.skillGateway : unavailableSkillGateway,
       workbenchGateway:
         services?.workbenchGateway ??
         (runtimeMode === 'fixture' ? fixtureServices.workbenchGateway : createResourceWorkbenchGateway()),

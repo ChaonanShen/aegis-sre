@@ -91,7 +91,7 @@ describe('AppShell', () => {
   test('does not expose fixture Folder controls in real mode', async () => {
     renderShell('real');
 
-    await screen.findByText('success:none');
+    await screen.findByText('error:none');
     expect(screen.queryByRole('button', { name: /Folder:/ })).not.toBeInTheDocument();
     expect(screen.queryByText('权限来自 Grafana Folder')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('演示数据模式')).not.toBeInTheDocument();
