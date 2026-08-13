@@ -6,7 +6,7 @@ COPY cmd/mcp-call ./cmd/mcp-call
 COPY internal/mcpcall ./internal/mcpcall
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/mcp-call ./cmd/mcp-call
 
-FROM ghcr.io/dagu-org/dagu:2.13.0
+FROM ghcr.io/dagucloud/dagu:2.13.0
 COPY --from=build /out/mcp-call /usr/local/bin/mcp-call
 
 # Action 与 allowlist 必须随运行镜像交付；放在 DAGU_HOME 外，避免数据卷遮住只读配置。
