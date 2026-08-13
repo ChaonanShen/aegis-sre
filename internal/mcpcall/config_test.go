@@ -86,6 +86,7 @@ func TestProductionDaguImageWiresMCPCallActionAndPolicy(t *testing.T) {
 	for _, required := range []string{
 		"deploy/dagu/base.yaml /etc/aegis/dagu-base.yaml",
 		"deploy/mcp/v1/servers.yaml /etc/aegis/mcp-servers.yaml",
+		"RUN chmod 0555 /etc/aegis",
 		"DAGU_BASE_CONFIG=/etc/aegis/dagu-base.yaml",
 		"MCP_CALL_CONFIG=/etc/aegis/mcp-servers.yaml",
 	} {
