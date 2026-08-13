@@ -7,7 +7,7 @@ DAGU_BIN ?= dagu
 CODEX_VERSION := 0.144.4
 CODEX_BIN ?= codex
 
-verify: contracts-check control-plane-test control-plane-build dagu-validate grafana-mcp-config-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+verify: contracts-check codex-schema-check control-plane-test control-plane-build dagu-validate grafana-mcp-config-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 contracts-generate: contracts-go-generate contracts-ts-generate
 
