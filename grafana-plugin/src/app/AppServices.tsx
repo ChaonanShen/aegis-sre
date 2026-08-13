@@ -8,6 +8,7 @@ import { AuditGateway } from '../features/audit/ports/AuditGateway';
 import { createFixtureKnowledgeGateway } from '../features/knowledge/adapters/fixtureKnowledgeGateway';
 import { KnowledgeGateway } from '../features/knowledge/ports/KnowledgeGateway';
 import { createFixturePlaybookGateway } from '../features/playbooks/adapters/fixturePlaybookGateway';
+import { createResourcePlaybookGateway } from '../features/playbooks/adapters/resourcePlaybookGateway';
 import { PlaybookGateway } from '../features/playbooks/ports/PlaybookGateway';
 import { createFixtureSkillGateway } from '../features/skills/adapters/fixtureSkillGateway';
 import { SkillGateway } from '../features/skills/ports/SkillGateway';
@@ -68,6 +69,9 @@ export function AppServicesProvider({
       workbenchGateway:
         services?.workbenchGateway ??
         (runtimeMode === 'fixture' ? fixtureServices.workbenchGateway : createResourceWorkbenchGateway()),
+      playbookGateway:
+        services?.playbookGateway ??
+        (runtimeMode === 'fixture' ? fixtureServices.playbookGateway : createResourcePlaybookGateway()),
     };
     // runtimeMode 由 Provider 统一拥有，普通 gateway 覆盖不能悄悄改变能力边界。
     return { ...defaults, ...services, runtimeMode };

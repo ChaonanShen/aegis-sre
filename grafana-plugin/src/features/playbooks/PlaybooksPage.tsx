@@ -420,6 +420,9 @@ function PlaybookDetail({
 }
 
 function toPlaybookYaml(playbook: Playbook): string {
+  if (playbook.source) {
+    return playbook.source;
+  }
   const lines = [
     `id: ${playbook.id}`,
     `name: ${playbook.name}`,

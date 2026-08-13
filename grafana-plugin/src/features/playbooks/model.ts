@@ -39,6 +39,8 @@ export interface PlaybookExperienceNote {
 }
 
 export interface PlaybookDefinition {
+  /** 原生 Dagu YAML；真实模式下它是唯一可写事实来源。 */
+  source?: string;
   name: string;
   description: string;
   version: string;

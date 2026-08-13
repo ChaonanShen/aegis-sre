@@ -7,6 +7,7 @@ import { ROUTES } from '../../../constants';
 import { Playbook, PlaybookDefinition, PlaybookDraft, PlaybookParameter, PlaybookStep } from '../model';
 import { PlaybookGateway } from '../ports/PlaybookGateway';
 import { parsePlaybookSource, serializePlaybook } from '../playbookSource';
+import { projectDaguSource } from '../daguSource';
 
 type DraftLoadState =
   | { id?: string; status: 'idle' | 'loading' | 'ready' }
@@ -29,7 +30,7 @@ export function PlaybookEditor({
   const [definition, setDefinition] = useState<PlaybookDefinition>(() =>
     playbook ? definitionOf(playbook) : emptyDefinition()
   );
-  const [source, setSource] = useState(() => serializePlaybook(definition));
+  const [source, setSource] = useState(() => playbook?.source ?? serializePlaybook(definition));
   const [changeNote, setChangeNote] = useState(playbook ? '' : '初始创建');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -67,7 +68,7 @@ export function PlaybookEditor({
         }
         const next = definitionOfDraft(draft);
         setDefinition(next);
-        setSource(serializePlaybook(next));
+        setSource(next.source ?? serializePlaybook(next));
         setChangeNote(draft.changeNote);
         setDirty(false);
         setCommitted(false);
@@ -127,6 +128,9 @@ export function PlaybookEditor({
     let saveDefinition: PlaybookDefinition;
     try {
       saveDefinition = definitionWithConfigDrafts(definition, configDraftsRef.current);
+      if (definition.source) {
+        saveDefinition = { ...saveDefinition, source };
+      }
     } catch (reason) {
       setError(toError(reason).message);
       return;
@@ -459,7 +463,7 @@ export function PlaybookEditor({
               className="playbook-button secondary"
               onClick={() => {
                   try {
-                    const parsed = parsePlaybookSource(source);
+                    const parsed = definition.source ? projectDaguSource(source) : parsePlaybookSource(source);
                     configDraftsRef.current.clear();
                     setDefinition(parsed);
                   setSource(serializePlaybook(parsed));
