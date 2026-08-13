@@ -33,6 +33,8 @@ export default defineConfig([
       'playwright/.auth/',
       '**/.idea',
       '**/.eslintcache',
+      // 契约生成物由版本固定的生成器和 diff check 校验，不套用手写代码风格规则。
+      'src/api/generated/**',
     ],
   },
   ...baseConfig,
