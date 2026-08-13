@@ -1,0 +1,49 @@
+hist_retention_days: 30
+
+auth:
+  mode: builtin
+
+actions:
+  mcp.call:
+    description: Call one allow-listed MCP tool through the Aegis runner.
+    input_schema:
+      type: object
+      additionalProperties: false
+      required: [server, tool]
+      properties:
+        server:
+          type: string
+          pattern: '^[A-Za-z][A-Za-z0-9_-]*$'
+        tool:
+          type: string
+          pattern: '^[A-Za-z][A-Za-z0-9_.-]*$'
+        args:
+          type: object
+          default: {}
+    output_schema:
+      type: object
+      additionalProperties: false
+      required: [result, text, artifacts, resources, meta]
+      properties:
+        result: {}
+        text: {type: string}
+        artifacts: {type: array, items: {type: object}}
+        resources: {type: array, items: {type: object}}
+        meta: {type: object}
+    template:
+      action: exec
+      with:
+        command: /usr/local/bin/mcp-call
+        args:
+          - --server
+          - {$input: server}
+          - --tool
+          - {$input: tool}
+          - --args-json
+          - '{{ json .input.args }}'
+          - --artifact-dir
+          - '${context.paths.artifacts_dir}/mcp/${context.step.id}'
+          - --trace-id
+          - '${context.run.id}'
+          - --idempotency-key
+          - '${context.run.id}-${context.step.id}'
