@@ -2,6 +2,7 @@ package dagu
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -123,5 +124,74 @@ func TestProviderListsOnlyPublicRunsForRequestedPlaybook(t *testing.T) {
 	page, err := provider.ListRuns(context.Background(), domain.ActorContext{}, ports.PlaybookRef{ID: "pbk_abcdefgh"}, domain.PageRequest{Limit: 2})
 	if err != nil || len(page.Items) != 1 || page.Items[0].Ref.ID != "run_first123" || page.Items[0].Status != domain.RunSucceeded || page.HasMore {
 		t.Fatalf("page = %#v, err = %v", page, err)
+	}
+}
+
+func TestProviderRecoversIdempotentCreateConflict(t *testing.T) {
+	t.Parallel()
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		requests++
+		switch request.Method + " " + request.URL.Path {
+		case "POST /api/v1/dags":
+			w.WriteHeader(http.StatusConflict)
+		case "GET /api/v1/dags/pbk_abcdefgh.yaml":
+			_, _ = w.Write([]byte(`{"spec":"steps: []"}`))
+		default:
+			t.Errorf("request = %s %s", request.Method, request.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	provider, _ := NewProvider(client)
+	ref, err := provider.Create(context.Background(), domain.ActorContext{}, ports.CreatePlaybookInput{ID: "pbk_abcdefgh", YAML: []byte("steps: []")})
+	if err != nil || ref.ID != "pbk_abcdefgh" || requests != 2 {
+		t.Fatalf("ref = %#v, requests = %d, err = %v", ref, requests, err)
+	}
+}
+
+func TestProviderRecoversIdempotentRunConflicts(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch request.Method + " " + request.URL.Path {
+		case "POST /api/v1/dags/pbk_abcdefgh.yaml/start",
+			"POST /api/v1/dag-runs/pbk_abcdefgh/run_original/retry":
+			w.WriteHeader(http.StatusConflict)
+		case "GET /api/v1/dag-runs/pbk_abcdefgh/run_abcdefgh":
+			_, _ = w.Write([]byte(`{"dagRunDetails":{"dagRunId":"run_abcdefgh","name":"pbk_abcdefgh"}}`))
+		default:
+			t.Errorf("request = %s %s", request.Method, request.URL.Path)
+		}
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	provider, _ := NewProvider(client)
+
+	started, err := provider.StartRun(context.Background(), domain.ActorContext{}, ports.PlaybookRef{ID: "pbk_abcdefgh"}, ports.RunPlaybookInput{ID: "run_abcdefgh"})
+	if err != nil || started.ID != "run_abcdefgh" {
+		t.Fatalf("started = %#v, err = %v", started, err)
+	}
+	retried, err := provider.RetryRun(context.Background(), domain.ActorContext{}, ports.PlaybookRunRef{ID: "run_original", PlaybookID: "pbk_abcdefgh"}, "run_abcdefgh")
+	if err != nil || retried.ID != "run_abcdefgh" {
+		t.Fatalf("retried = %#v, err = %v", retried, err)
+	}
+}
+
+func TestProviderDoesNotHideUnverifiedConflict(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodPost {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	provider, _ := NewProvider(client)
+	_, err := provider.StartRun(context.Background(), domain.ActorContext{}, ports.PlaybookRef{ID: "pbk_abcdefgh"}, ports.RunPlaybookInput{ID: "run_abcdefgh"})
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusConflict {
+		t.Fatalf("error = %#v", err)
 	}
 }

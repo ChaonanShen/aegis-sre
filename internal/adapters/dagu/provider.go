@@ -76,7 +76,13 @@ func (provider *Provider) Create(ctx context.Context, _ domain.ActorContext, inp
 		return ports.PlaybookRef{}, errors.New("playbook YAML is required")
 	}
 	if err := provider.client.CreateDAG(ctx, strings.TrimSuffix(fileName, ".yaml"), string(input.YAML)); err != nil {
-		return ports.PlaybookRef{}, err
+		if !isHTTPConflict(err) {
+			return ports.PlaybookRef{}, err
+		}
+		// 相同幂等键会生成相同文件名；冲突时确认资源确实存在后返回原公开 ID。
+		if _, getErr := provider.client.GetDAG(ctx, fileName); getErr != nil {
+			return ports.PlaybookRef{}, err
+		}
 	}
 	return ports.PlaybookRef{ID: input.ID}, nil
 }
@@ -122,7 +128,15 @@ func (provider *Provider) StartRun(ctx context.Context, _ domain.ActorContext, r
 	}
 	runID, err := provider.client.StartDAG(ctx, fileName, string(input.ID), input.Parameters, input.Enqueue)
 	if err != nil {
-		return ports.PlaybookRunRef{}, err
+		if !isHTTPConflict(err) {
+			return ports.PlaybookRunRef{}, err
+		}
+		// Dagu 已接受同一个 caller-supplied run ID 时，把重复请求视为同一次运行。
+		existing, getErr := provider.client.GetRun(ctx, string(ref.ID), string(input.ID))
+		if getErr != nil || existing.DAGRunID != string(input.ID) {
+			return ports.PlaybookRunRef{}, err
+		}
+		runID = existing.DAGRunID
 	}
 	if runID != string(input.ID) {
 		return ports.PlaybookRunRef{}, errors.New("Dagu did not preserve the caller-supplied run ID")
@@ -185,7 +199,13 @@ func (provider *Provider) RetryRun(ctx context.Context, _ domain.ActorContext, r
 		return ports.PlaybookRunRef{}, err
 	}
 	if err := provider.client.RetryRun(ctx, string(ref.PlaybookID), string(ref.ID), string(newRunID)); err != nil {
-		return ports.PlaybookRunRef{}, err
+		if !isHTTPConflict(err) {
+			return ports.PlaybookRunRef{}, err
+		}
+		existing, getErr := provider.client.GetRun(ctx, string(ref.PlaybookID), string(newRunID))
+		if getErr != nil || existing.DAGRunID != string(newRunID) {
+			return ports.PlaybookRunRef{}, err
+		}
 	}
 	return ports.PlaybookRunRef{ID: newRunID, PlaybookID: ref.PlaybookID}, nil
 }
@@ -364,6 +384,11 @@ func requireIDPrefix(id domain.ID, prefix string) error {
 		return errors.New("invalid public identifier")
 	}
 	return nil
+}
+
+func isHTTPConflict(err error) bool {
+	var httpErr *HTTPError
+	return errors.As(err, &httpErr) && httpErr.StatusCode == 409
 }
 
 func validateRunRef(ref ports.PlaybookRunRef) error {
