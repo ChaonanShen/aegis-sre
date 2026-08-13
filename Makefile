@@ -1,9 +1,11 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate grafana-mcp-config-check grafana-mcp-smoke plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate grafana-mcp-config-check grafana-mcp-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 OAPI_CODEGEN_VERSION := v2.8.0
 MAGE_VERSION := v1.17.2
 DAGU_VERSION := v2.13.0
 DAGU_BIN ?= dagu
+CODEX_VERSION := 0.144.4
+CODEX_BIN ?= codex
 
 verify: contracts-check control-plane-test control-plane-build dagu-validate grafana-mcp-config-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
@@ -46,6 +48,19 @@ grafana-mcp-smoke:
 	go run ./cmd/mcp-call --config deploy/mcp/v1/servers.yaml --server grafana-read --tool query_prometheus --args-json "{\"datasourceUid\":\"$$GRAFANA_PROMETHEUS_UID\",\"expr\":\"up\",\"endTime\":\"now\",\"queryType\":\"instant\"}"
 	go run ./cmd/mcp-call --config deploy/mcp/v1/servers.yaml --server grafana-read --tool query_loki_logs --args-json "{\"datasourceUid\":\"$$GRAFANA_LOKI_UID\",\"logql\":\"{job=~\\\".+\\\"}\",\"limit\":1}"
 	go run ./cmd/mcp-call --config deploy/mcp/v1/servers.yaml --server grafana-read --tool alerting_manage_rules --args-json '{"operation":"list","limit":1}'
+
+codex-schema-check:
+	@test "$$($(CODEX_BIN) --version)" = "codex-cli $(CODEX_VERSION)" || (echo "expected codex-cli $(CODEX_VERSION)" >&2; exit 1)
+	@schema_tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$schema_tmp"' EXIT; \
+	$(CODEX_BIN) app-server generate-json-schema --out "$$schema_tmp"; \
+	diff -ru --exclude='codex_app_server_protocol*.schemas.json' api/providers/codex/$(CODEX_VERSION) "$$schema_tmp"; \
+	jq -S . api/providers/codex/$(CODEX_VERSION)/codex_app_server_protocol.schemas.json > "$$schema_tmp/expected-v1.json"; \
+	jq -S . "$$schema_tmp/codex_app_server_protocol.schemas.json" > "$$schema_tmp/actual-v1.json"; \
+	diff -u "$$schema_tmp/expected-v1.json" "$$schema_tmp/actual-v1.json"; \
+	jq -S . api/providers/codex/$(CODEX_VERSION)/codex_app_server_protocol.v2.schemas.json > "$$schema_tmp/expected-v2.json"; \
+	jq -S . "$$schema_tmp/codex_app_server_protocol.v2.schemas.json" > "$$schema_tmp/actual-v2.json"; \
+	diff -u "$$schema_tmp/expected-v2.json" "$$schema_tmp/actual-v2.json"
 
 plugin-backend-test:
 	cd grafana-plugin && go test ./pkg/... && go vet ./pkg/...
