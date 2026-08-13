@@ -1,0 +1,108 @@
+package codex
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+type pipeProcess struct {
+	clientInput  *io.PipeWriter
+	clientOutput *io.PipeReader
+	serverInput  *io.PipeReader
+	serverOutput *io.PipeWriter
+}
+
+func newPipeProcess() *pipeProcess {
+	serverInput, clientInput := io.Pipe()
+	clientOutput, serverOutput := io.Pipe()
+	return &pipeProcess{clientInput: clientInput, clientOutput: clientOutput, serverInput: serverInput, serverOutput: serverOutput}
+}
+
+func TestClientInitializesCorrelatesConcurrentCallsAndReceivesNotifications(t *testing.T) {
+	t.Parallel()
+	process := newPipeProcess()
+	client, _ := NewClient(process.clientInput, process.clientOutput)
+	defer client.Close()
+	go func() {
+		decoder := json.NewDecoder(process.serverInput)
+		for count := 0; count < 4; count++ {
+			var request map[string]any
+			if decoder.Decode(&request) != nil {
+				return
+			}
+			method, _ := request["method"].(string)
+			if method == "initialized" {
+				continue
+			}
+			id := request["id"]
+			if method == "initialize" {
+				_, _ = process.serverOutput.Write([]byte(`{"id":` + number(id) + `,"result":{}}` + "\n"))
+				_, _ = process.serverOutput.Write([]byte(`{"method":"thread/started","params":{"thread":{"id":"uuid"}}}` + "\n"))
+				continue
+			}
+			// Deliberately return responses in independent goroutines.
+			go func() {
+				_, _ = process.serverOutput.Write([]byte(`{"id":` + number(id) + `,"result":{"method":"` + method + `"}}` + "\n"))
+			}()
+		}
+	}()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := client.Initialize(ctx); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case item := <-client.Notifications():
+		if item.Method != "thread/started" {
+			t.Fatalf("notification = %#v", item)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	var wg sync.WaitGroup
+	for _, method := range []string{"thread/read", "thread/list"} {
+		wg.Add(1)
+		go func(method string) {
+			defer wg.Done()
+			var output map[string]string
+			if err := client.Call(ctx, method, map[string]any{}, &output); err != nil || output["method"] != method {
+				t.Errorf("method = %q, output = %#v, err = %v", method, output, err)
+			}
+		}(method)
+	}
+	wg.Wait()
+}
+
+func TestClientSanitizesRPCErrorAndUnblocksOnExit(t *testing.T) {
+	t.Parallel()
+	process := newPipeProcess()
+	client, _ := NewClient(process.clientInput, process.clientOutput)
+	go func() {
+		var request map[string]any
+		_ = json.NewDecoder(process.serverInput).Decode(&request)
+		_, _ = process.serverOutput.Write([]byte(`{"id":1,"error":{"code":-32000,"message":"provider secret"}}` + "\n"))
+	}()
+	err := client.Call(context.Background(), "thread/read", nil, nil)
+	if err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("error = %v", err)
+	}
+
+	exited := newPipeProcess()
+	exitClient, _ := NewClient(exited.clientInput, exited.clientOutput)
+	go func() { _ = exited.serverOutput.Close() }()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := exitClient.Call(ctx, "thread/read", nil, nil); err == nil {
+		t.Fatal("process exit must fail pending call")
+	}
+}
+
+func number(value any) string {
+	data, _ := json.Marshal(value)
+	return string(data)
+}
