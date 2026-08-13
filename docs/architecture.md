@@ -6,7 +6,7 @@ Aegis SRE 保留原产品的总体形态：用户在 Grafana 插件中完成告�
 
 核心原则：
 
-1. **一个产品控制面**：业务 API、稳定 ID、跨模块关系和审计关联统一放在 Control Plane，不创建互相调用的小型自研服务群。
+1. **一个无状态产品控制面**：业务 API、授权收敛、协议归一化和 Provider 适配统一放在 Control Plane，不创建互相调用的小型自研服务群，也不预建产品影子数据库。
 2. **Provider 拥有运行数据**：Agent 对话、RAG 索引、DAG 运行分别由 Codex/OpenCode、RAGFlow、Dagu 保存。
 3. **公共契约不出现 Provider 类型**：前端不知道 RAGFlow Dataset ID、Dagu 文件路径或 Codex Thread ID。
 4. **MCP 用于工具访问，REST 用于产品管理**：Agent 调工具走 MCP；插件 CRUD、分页、状态管理走 Control Plane REST。
@@ -22,7 +22,6 @@ flowchart LR
     Plugin --> BFF["Plugin Backend / 薄代理"]
     BFF --> CP["Aegis Control Plane"]
 
-    CP --> PG["PostgreSQL\n产品元数据"]
     CP --> AgentPort["AgentProvider"]
     CP --> KnowledgePort["KnowledgeProvider"]
     CP --> PlaybookPort["PlaybookProvider"]
@@ -66,7 +65,7 @@ flowchart LR
 
 ### 3.2 Plugin Backend
 
-当前阶段只作为待定薄层，不在第一轮实现中扩展。最终最多负责：
+作为薄代理，最多负责：
 
 - 从 Grafana 请求上下文提取身份和组织信息。
 - 将请求转发给 Control Plane。
@@ -80,13 +79,13 @@ flowchart LR
 采用模块化单体，负责：
 
 - 对前端提供稳定 REST/SSE API。
-- ServiceEntry、Grafana Folder UID、标签和业务关联。
-- 公共 ID 到 Provider ID 的映射。
+- 基于 Grafana Actor Context 收敛 Folder、权限和资源范围。
+- 将 Provider 资源适配为稳定、Provider-neutral 的公共契约。
 - Agent、Knowledge、Playbook Provider 适配。
-- 工具策略、审批关联、幂等控制和受控错误。
+- 工具策略、审批路由、幂等语义适配、trace 传播和受控错误。
 - 暴露 Aegis 产品领域 MCP。
 
-控制面不复制 Provider 的完整运行数据。
+Control Plane 默认无状态，不复制 Provider 数据，也不维护 Provider 状态的影子表或摘要索引。公共资源标识优先使用调用方生成 ID、Provider 原生 metadata/tag 或确定性命名；若仍无法避免暴露 Provider 内部 ID，必须在对应垂直切片中提交 ADR 后再决定最小方案。
 
 ### 3.4 Agent Provider
 
@@ -118,7 +117,7 @@ turn.completed
 turn.failed
 ```
 
-Control Plane 只存产品 Session、Provider 名称、Provider Session ID、当前回合状态和幂等键，不复制完整对话或 Provider Checkpoint。
+Control Plane 通过 Agent Provider 直接 list/read/resume/archive/delete 会话，不保存产品 Session、Provider Session ID、当前回合状态或 Checkpoint。调用方生成的稳定 Turn ID 和 Provider 原生幂等能力在 Agent Adapter 中适配。
 
 ### 3.5 Knowledge Provider 与 Knowledge MCP
 
@@ -137,7 +136,7 @@ knowledge.get_document
 knowledge.list_sources
 ```
 
-Agent 传业务 `knowledge_base_id`、`service_id` 或当前 Folder 上下文。Control Plane 完成范围收敛后才把 Provider Dataset ID 交给 RAGFlow。RAGFlow 原生 MCP 可作为单租户开发调试工具，但不作为正式授权入口。
+Agent 传公共资源 ID、Service 或当前 Folder 上下文。Control Plane 完成范围收敛后，由 Knowledge Adapter 使用 RAGFlow 原生资源和 metadata 查询；Provider 内部 ID 不进入前端契约。RAGFlow 原生 MCP 可作为单租户开发调试工具，但不作为正式授权入口。
 
 ### 3.6 Dagu 与双向 MCP
 
@@ -164,33 +163,25 @@ Dagu 内置 MCP 服务于 `Agent → Dagu`，让 Agent 读取、修改和执行�
 
 ## 4. 数据归属
 
-| 数据 | 事实来源 | Control Plane 是否保存 |
+| 数据 | 唯一事实来源 | Control Plane 行为 |
 | --- | --- | --- |
-| ServiceEntry、Folder UID、标签、服务关联 | PostgreSQL | 完整保存 |
-| 业务 KnowledgeBase、Document ID | PostgreSQL | 保存业务字段与映射 |
-| 原文件、解析状态、Chunk、Embedding、索引 | RAGFlow | 不复制 |
-| Playbook YAML、运行、Step、日志、Artifact | Dagu | 只保存业务映射和摘要索引 |
-| Agent 对话、工具调用详细历史 | Codex/OpenCode | 只保存映射和状态 |
-| 审批关联、幂等键、跨 Provider trace ID | PostgreSQL | 保存 |
+| Grafana Folder、Dashboard、告警、标签和权限 | Grafana | 按 Actor Context 查询和收敛，不复制 |
+| Agent Session、Turn、消息、工具调用和 Agent Approval | Codex/OpenCode | 直接适配与流转，不保存映射、状态或历史 |
+| KnowledgeBase/Dataset、Document、解析状态、Chunk、Embedding 和索引 | RAGFlow | 直接适配与授权收敛，不建立影子资源 |
+| Playbook YAML、Run、Step、Human Task、Approval、日志和 Artifact | Dagu | 直接适配，不保存映射或摘要索引 |
+| request/trace ID | 请求上下文与可观测性后端 | 传播并写结构化日志，不作为业务记录保存 |
+| 幂等状态 | 对应 Provider | 适配 Provider 原生能力或调用方生成的稳定操作 ID |
 
-## 5. 建议的持久化模型
+## 5. 持久化决策门
 
-首批表：
+Aegis Control Plane 当前不部署自有数据库。接入每个 Provider 时必须先验证：
 
-```text
-services
-knowledge_bases
-knowledge_documents
-provider_collections
-provider_documents
-agent_sessions
-playbook_refs
-playbook_run_refs
-approval_refs
-operation_idempotency
-```
+- 是否支持调用方生成资源 ID 或幂等键。
+- 是否支持 metadata、tag、名称或其他可查询的外部引用。
+- 是否能从 Provider 恢复列表、详情、审批和运行历史。
+- 是否能在不向浏览器暴露 Provider 类型、内部 ID 或凭据的前提下形成公共资源引用。
 
-每张映射表同时保存 `provider`、`provider_id`、创建时间和最后同步版本。Provider ID 不返回给普通前端接口。
+只有出现经过真实契约测试证明、且无法由 Grafana 或对应 Provider 承载的产品自有状态时，才能通过 ADR 引入最小持久化。ADR 必须说明事实来源、数据生命周期、备份恢复、迁移和删除策略；不得预建跨所有 Provider 的通用映射数据库。
 
 ## 6. 对外 API 草案
 
@@ -237,7 +228,6 @@ operation_idempotency
 ```text
 Grafana + Aegis Plugin
 Aegis Control Plane
-PostgreSQL
 Codex App Server 或 OpenCode Server
 RAGFlow 及其官方依赖
 Dagu Server / Scheduler / Worker

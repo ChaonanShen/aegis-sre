@@ -114,62 +114,43 @@ internal/application/contracts/
 - [x] 定义 `AgentProvider`、`KnowledgeProvider`、`PlaybookProvider`，接口中禁止出现 Provider SDK 类型。
 - [x] 定义统一 SSE Event Envelope、事件序号、终态、断线重连和去重规则。
 - [x] 冻结 Session、Turn、Approval、Playbook、Run、KnowledgeBase、Document 和 ServiceEntry 的公开 Schema。
-- [x] 明确 Provider ID 只存在于 adapter 和持久化映射中，不进入普通前端响应。
+- [x] 明确 Provider 类型、内部 ID 和 SDK 类型只存在于 adapter，不进入普通前端响应。
 - [x] 定义能力发现机制；未接入的 Knowledge、Playbook 或 Agent 能力返回稳定的 `capability_unavailable`。
 - [x] 生成 OpenAPI client 和事件类型，禁止前后端手写重复 DTO。
 - [x] 加入 Provider contract fake，只用于接口测试，不作为真实运行模式的 fixture 或静默 fallback。
 
 验收标准：
 
-- API 类型、领域类型、数据库模型和 Provider SDK 类型彼此分离。
+- API 类型、领域类型和 Provider SDK 类型彼此分离。
 - OpenAPI 与 Event Schema 有兼容性检查，破坏性变更必须显式升级版本。
 - Provider ID、凭据和私有错误不出现在公开 Schema。
 - 任意 Provider 超时都映射为稳定业务错误。
-- 同一个幂等键不能创建两个 Agent Turn、文档或 Playbook Run。
+- 公共契约携带幂等键；具体去重保证必须由对应 Provider 的原生能力或调用方生成的稳定操作 ID 验证。
 - 单元测试不需要启动 RAGFlow、Dagu、Agent 或 Grafana MCP。
 
-## 6. 阶段 3：Control Plane 持久化与 Plugin Gateway
+## 6. 阶段 3：Control Plane 与 Plugin Gateway
 
-状态：**已完成。阶段 4 的 Dagu 接入尚未开始。**
+状态：**Plugin Gateway 已完成；本阶段曾误引入的持久化在后续纠正阶段移除。阶段 4 的 Dagu 接入尚未开始。**
 
 目标：让 Grafana Plugin 通过薄 Plugin Backend 访问冻结后的 Control Plane 契约，为后续 Provider 垂直切片建立唯一入口。
 
 任务：
 
-- [x] 建立 PostgreSQL migrations 和 repository。
-- [x] 实现业务 ID 与 Provider ID 映射 repository，但不预建 Provider 业务逻辑。
-- [x] 建立 operation idempotency、approval reference 和跨组件 trace 关联。
 - [x] Plugin Backend 从 Grafana PluginContext 提取受信的用户、Org 和请求上下文。
 - [x] Plugin Backend 只做 REST/SSE 透明代理、超时和受控错误转发。
 - [x] 移除 Plugin Backend 对旧仓库 `../api` 的构建依赖。
 - [x] 前端 Resource Client 只根据 OpenAPI 和 Event Schema 生成或适配。
 - [x] 为 REST、SSE、身份伪造、请求取消和错误净化建立契约测试。
 
-首批数据库对象：
-
-```text
-services
-knowledge_bases
-knowledge_documents
-provider_collections
-provider_documents
-agent_sessions
-playbook_refs
-playbook_run_refs
-approval_refs
-operation_idempotency
-```
-
 验收标准：
 
 - Grafana 浏览器只访问 Grafana Resource API，不知道 Control Plane 地址和服务凭据。
 - Plugin Backend 不包含 Agent 编排、知识检索或 Playbook 运行逻辑。
-- 数据库事务、乐观锁和幂等冲突有明确行为测试。
 - 未接入的产品能力在真实模式下明确不可用，不读取 fixture。
 
 ## 纠正阶段：移除过早引入的 PostgreSQL 持久化
 
-状态：**待执行。必须在阶段 4 开始前完成。**
+状态：**执行中。必须在阶段 4 开始前完成。**
 
 背景：阶段 3 沿用了迁移前项目以 PostgreSQL 保存产品元数据、业务 ID 与 Provider ID 映射的假设，但该假设没有先经过 Codex/OpenCode、Dagu、RAGFlow 和 Grafana 原生能力验证。当前 PostgreSQL repository 也未接入 Control Plane 的真实运行路径。继续保留会造成事实来源重复、无消费者抽象和不必要的部署依赖，因此需要在接入首个 Provider 前纠正。
 
@@ -206,7 +187,7 @@ Provider 数据归属与标识策略复核：
 
 文档清理：
 
-- [ ] 更新 `docs/architecture.md`，移除 PostgreSQL 拓扑、持久化模型和影子数据归属，明确 Control Plane 默认无状态及各引擎唯一事实来源。
+- [x] 更新 `docs/architecture.md`，移除 PostgreSQL 拓扑、持久化模型和影子数据归属，明确 Control Plane 默认无状态及各引擎唯一事实来源。
 - [ ] 回写本实施计划中阶段 2、阶段 3 及后续阶段受影响的任务和验收项，包括持久化映射、全局数据库幂等、Provider ID 映射和 PostgreSQL 备份演练。
 - [ ] 更新根 `README.md` 的仓库结构、依赖要求、启动命令和当前阶段说明。
 - [ ] 审计 `docs/migration-notes.md`，确保迁移边界没有暗示继续保留旧项目数据库。
@@ -253,7 +234,7 @@ Provider 数据归属与标识策略复核：
 - [ ] Run/Step 状态映射和事件轮询。
 - [ ] Human Task 与 Approval 统一映射。
 - [ ] Artifact 列表、预览和下载代理。
-- [ ] 业务 Playbook ID 到 Dagu DAG 名称/路径映射。
+- [ ] 验证调用方生成 DAG/Run ID、Dagu 原生名称或 metadata 的公共标识策略，不建立映射表。
 - [ ] GitOps 与 UI 写入冲突策略 ADR。
 
 ### 4.3 `mcp.call` 生产化
@@ -332,7 +313,7 @@ Provider 数据归属与标识策略复核：
 - [ ] 映射 message delta、MCP call、完成和失败事件。
 - [ ] 处理命令、文件变更和 MCP 工具审批请求。
 - [ ] 启动时校验当前声明启用的 Grafana 和 Dagu MCP；Knowledge 未接入前不得注册虚假工具。
-- [ ] 保存业务 Session 与 Codex Thread ID 映射。
+- [ ] 验证 Codex Thread 的公共标识策略，不保存 Session/Thread 映射表。
 - [ ] 使用生成的版本化 JSON Schema 做协议兼容测试。
 
 ### 6.2 OpenCode Adapter
@@ -401,7 +382,7 @@ Provider 数据归属与标识策略复核：
 - [ ] 文档、Chunk 分页浏览。
 - [ ] 混合检索、阈值、Top K 和引用位置映射。
 - [ ] 请求超时、重试、限流和错误净化。
-- [ ] Dataset/Document Provider ID 映射。
+- [ ] 验证 RAGFlow Dataset/Document 的公共标识与 metadata 查询策略，不建立映射表。
 
 ### 8.3 Knowledge MCP
 
@@ -474,7 +455,7 @@ Provider 数据归属与标识策略复核：
 - [ ] Secret Manager、Token 轮换和吊销。
 - [ ] 完整审计、敏感字段脱敏和保留策略。
 - [ ] TLS/mTLS、NetworkPolicy 和出站 allowlist。
-- [ ] PostgreSQL、RAGFlow、Dagu 数据备份恢复演练。
+- [ ] RAGFlow、Dagu 及 Agent Provider 数据备份恢复演练。
 - [ ] Provider 容量、并发、队列和限流。
 - [ ] OTel traces、metrics、logs 和跨组件 trace ID。
 
@@ -519,7 +500,7 @@ rollback version
 1. 完成阶段 0 的迁移基线固化和根目录基础 CI。
 2. 建立可独立构建、运行和观测的 Control Plane 最小骨架。
 3. 冻结 ActorContext、业务错误、Provider Ports、OpenAPI 和统一 SSE Event Envelope。
-4. 建立 PostgreSQL 持久化、Plugin Backend 薄代理和生成式 Resource Client。
+4. 建立 Plugin Backend 薄代理和生成式 Resource Client，并完成无状态边界纠正。
 5. 完成 Dagu Playbook 与 `mcp.call` 垂直链路。
 6. 部署 Grafana 官方只读 MCP，再按审批边界增加最小写实例。
 7. 接入 Codex，随后实现最小 OpenCode Adapter 做可替换验证。
