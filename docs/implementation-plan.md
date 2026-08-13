@@ -258,6 +258,7 @@ Provider 数据归属与标识策略复核：
 
 ### 4.4 前端接入
 
+- [x] Grafana Plugin 经 Plugin Backend、Control Plane 到 Dagu 完成 Playbook CRUD 与真实 E2E。
 - [x] 使用原生 Dagu YAML 作为编辑内容和事实来源。
 - [x] 迁移 Playbook DAG 可视化，不反向生成第二套 DSL。
 - [x] 实现真实 `PlaybookGateway`。

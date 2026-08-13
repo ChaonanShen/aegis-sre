@@ -19,6 +19,13 @@ type DAGDetails struct {
 	Errors    []string        `json:"errors"`
 }
 
+type DAGPage struct {
+	DAGs       []DAGFile
+	Page       int
+	PerPage    int
+	TotalPages int
+}
+
 type ValidationResult struct {
 	Valid  bool     `json:"valid"`
 	Errors []string `json:"errors"`

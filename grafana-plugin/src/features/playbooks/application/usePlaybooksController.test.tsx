@@ -1,51 +1,38 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { Folder } from '../../../app/model';
-import { createFixturePlaybookGateway } from '../adapters/fixturePlaybookGateway';
-import { Playbook } from '../model';
-import { PlaybookGateway } from '../ports/PlaybookGateway';
+import { PlaybookSummary } from '../crudModel';
+import { PlaybookCrudGateway } from '../ports/PlaybookCrudGateway';
 import { usePlaybooksController } from './usePlaybooksController';
 
-const infra: Folder = { uid: 'infra', title: 'Infra', permission: 'View', serviceCount: 1 };
-const payment: Folder = { uid: 'payment', title: 'Payment', permission: 'Edit', serviceCount: 1 };
-
 describe('usePlaybooksController', () => {
-  test('ignores an old response published after Folder changes', async () => {
-    const first = deferred<Playbook[]>();
-    const second = deferred<Playbook[]>();
-    const base = createFixturePlaybookGateway({ latencyMs: 0 });
-    const gateway: PlaybookGateway = {
-      ...base,
-      listPlaybooks: jest.fn(({ folderUids }) => (folderUids[0] === 'infra' ? first.promise : second.promise)),
-    };
-    const { result, rerender } = renderHook(
-      ({ folders }) => usePlaybooksController({ folders, gateway }),
-      { initialProps: { folders: [infra] } }
-    );
-
-    await waitFor(() =>
-      expect(gateway.listPlaybooks).toHaveBeenCalledWith({ folderUids: ['infra'] }, expect.any(AbortSignal))
-    );
-    rerender({ folders: [payment] });
-    await waitFor(() =>
-      expect(gateway.listPlaybooks).toHaveBeenCalledWith({ folderUids: ['payment'] }, expect.any(AbortSignal))
-    );
-
-    await act(async () => second.resolve([playbook('new')]));
+  test('ignores a stale response after the gateway changes', async () => {
+    const first = deferred<PlaybookSummary[]>();
+    const second = deferred<PlaybookSummary[]>();
+    const gateway = (promise: Promise<PlaybookSummary[]>): PlaybookCrudGateway => ({
+      listPlaybooks: jest.fn(() => promise),
+      getPlaybook: jest.fn(), createPlaybook: jest.fn(), updatePlaybook: jest.fn(),
+      deletePlaybook: jest.fn(), validatePlaybook: jest.fn(),
+    });
+    const oldGateway = gateway(first.promise);
+    const newGateway = gateway(second.promise);
+    const { result, rerender } = renderHook(({ current }) => usePlaybooksController({ gateway: current }), {
+      initialProps: { current: oldGateway },
+    });
+    await waitFor(() => expect(oldGateway.listPlaybooks).toHaveBeenCalled());
+    rerender({ current: newGateway });
+    await waitFor(() => expect(newGateway.listPlaybooks).toHaveBeenCalled());
+    await act(async () => second.resolve([summary('new')]));
     await waitFor(() => expect(result.current.state).toMatchObject({ status: 'success', data: [{ id: 'new' }] }));
-    await act(async () => first.resolve([playbook('old')]));
-
+    await act(async () => first.resolve([summary('old')]));
     expect(result.current.state).toMatchObject({ status: 'success', data: [{ id: 'new' }] });
   });
 });
 
-function playbook(id: string): Playbook {
-  return { id } as Playbook;
+function summary(id: string): PlaybookSummary {
+  return { id, name: id, description: '', status: 'active' };
 }
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise;
-  });
+  const promise = new Promise<T>((done) => { resolve = done; });
   return { promise, resolve };
 }

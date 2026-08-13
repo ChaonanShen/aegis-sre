@@ -7,9 +7,8 @@ import { createFixtureAuditGateway } from '../features/audit/adapters/fixtureAud
 import { AuditGateway } from '../features/audit/ports/AuditGateway';
 import { createFixtureKnowledgeGateway } from '../features/knowledge/adapters/fixtureKnowledgeGateway';
 import { KnowledgeGateway } from '../features/knowledge/ports/KnowledgeGateway';
-import { createFixturePlaybookGateway } from '../features/playbooks/adapters/fixturePlaybookGateway';
-import { createResourcePlaybookGateway } from '../features/playbooks/adapters/resourcePlaybookGateway';
-import { PlaybookGateway } from '../features/playbooks/ports/PlaybookGateway';
+import { createResourcePlaybookCrudGateway } from '../features/playbooks/adapters/resourcePlaybookCrudGateway';
+import { PlaybookCrudGateway } from '../features/playbooks/ports/PlaybookCrudGateway';
 import { createFixtureSkillGateway } from '../features/skills/adapters/fixtureSkillGateway';
 import { SkillGateway } from '../features/skills/ports/SkillGateway';
 import { createFixtureWorkbenchGateway } from '../features/workbench/adapters/fixtureWorkbenchGateway';
@@ -33,7 +32,7 @@ export interface AppServices {
   approvalGateway: ApprovalGateway;
   folderGateway: FolderGateway;
   knowledgeGateway: KnowledgeGateway;
-  playbookGateway: PlaybookGateway;
+  playbookGateway: PlaybookCrudGateway;
   skillGateway: SkillGateway;
   workbenchGateway: WorkbenchGateway;
 }
@@ -46,7 +45,7 @@ const fixtureServices: Omit<AppServices, 'runtimeMode'> = {
   approvalGateway: createFixtureApprovalGateway(),
   folderGateway: createFixtureFolderGateway(),
   knowledgeGateway: createFixtureKnowledgeGateway(),
-  playbookGateway: createFixturePlaybookGateway(),
+  playbookGateway: createResourcePlaybookCrudGateway(),
   skillGateway: createFixtureSkillGateway(),
   workbenchGateway: createFixtureWorkbenchGateway(),
 };
@@ -73,7 +72,7 @@ export function AppServicesProvider({
         (runtimeMode === 'fixture' ? fixtureServices.workbenchGateway : createResourceWorkbenchGateway()),
       playbookGateway:
         services?.playbookGateway ??
-        (runtimeMode === 'fixture' ? fixtureServices.playbookGateway : createResourcePlaybookGateway()),
+        createResourcePlaybookCrudGateway(),
     };
     // runtimeMode 由 Provider 统一拥有，普通 gateway 覆盖不能悄悄改变能力边界。
     return { ...defaults, ...services, runtimeMode };

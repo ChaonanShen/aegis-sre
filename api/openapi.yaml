@@ -224,7 +224,6 @@ paths:
     get:
       operationId: listPlaybooks
       parameters:
-        - $ref: '#/components/parameters/FolderUID'
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
@@ -253,6 +252,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Playbook'
+        default:
+          $ref: '#/components/responses/Problem'
+  /playbooks/validate:
+    post:
+      operationId: validateNewPlaybook
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Validation result for an unsaved native Dagu YAML document
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
         default:
           $ref: '#/components/responses/Problem'
   /playbooks/{playbook_id}/validate:
@@ -866,19 +883,33 @@ components:
     Playbook:
       type: object
       additionalProperties: false
-      required: [id, name, status]
+      required: [id, name, description, status, source]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
         name:
           type: string
-        folder_uid:
+        description:
           type: string
         status:
           type: string
           enum: [active, disabled]
         source:
           type: string
+    PlaybookSummary:
+      type: object
+      additionalProperties: false
+      required: [id, name, description, status]
+      properties:
+        id:
+          $ref: '#/components/schemas/BusinessID'
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
     PlaybookPage:
       allOf:
         - $ref: '#/components/schemas/PageMetadata'
@@ -888,7 +919,7 @@ components:
             items:
               type: array
               items:
-                $ref: '#/components/schemas/Playbook'
+                $ref: '#/components/schemas/PlaybookSummary'
     ValidationResult:
       type: object
       additionalProperties: false

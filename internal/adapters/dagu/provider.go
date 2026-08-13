@@ -3,16 +3,19 @@ package dagu
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/1024XEngineer/aegis-sre/internal/domain"
 	"github.com/1024XEngineer/aegis-sre/internal/ports"
+	"gopkg.in/yaml.v3"
 )
 
 type Provider struct {
@@ -27,19 +30,26 @@ func NewProvider(client *Client) (*Provider, error) {
 	return &Provider{client: client, pollInterval: time.Second}, nil
 }
 
-func (provider *Provider) List(ctx context.Context, _ domain.ActorContext, request domain.PageRequest) (domain.Page[ports.PlaybookResource], error) {
+func (provider *Provider) List(ctx context.Context, actor domain.ActorContext, request domain.PageRequest) (domain.Page[ports.PlaybookResource], error) {
 	limit := request.Limit
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	dags, err := provider.client.ListDAGs(ctx, 1, limit+1)
+	pageNumber, err := decodePageCursor(request.Cursor)
 	if err != nil {
 		return domain.Page[ports.PlaybookResource]{}, err
 	}
-	items := make([]ports.PlaybookResource, 0, min(len(dags), limit))
-	for _, dag := range dags {
+	dagPage, err := provider.client.ListDAGs(ctx, pageNumber, limit)
+	if err != nil {
+		return domain.Page[ports.PlaybookResource]{}, err
+	}
+	items := make([]ports.PlaybookResource, 0, min(len(dagPage.DAGs), limit))
+	for _, dag := range dagPage.DAGs {
 		id, ok := playbookIDFromFileName(dag.FileName)
 		if !ok {
+			continue
+		}
+		if !domain.PlaybookIDInScope(id, actor) {
 			continue
 		}
 		items = append(items, ports.PlaybookResource{
@@ -52,35 +62,45 @@ func (provider *Provider) List(ctx context.Context, _ domain.ActorContext, reque
 			break
 		}
 	}
-	return domain.Page[ports.PlaybookResource]{Items: items, HasMore: len(dags) > limit}, nil
+	hasMore := dagPage.TotalPages > 0 && pageNumber < dagPage.TotalPages
+	nextCursor := ""
+	if hasMore {
+		nextCursor = encodePageCursor(pageNumber + 1)
+	}
+	return domain.Page[ports.PlaybookResource]{Items: items, NextCursor: nextCursor, HasMore: hasMore}, nil
 }
 
 func (provider *Provider) Get(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRef) (ports.PlaybookResource, error) {
-	fileName, err := playbookFileName(ref.ID)
+	dagName, err := playbookDAGName(ref.ID)
 	if err != nil {
 		return ports.PlaybookResource{}, err
 	}
-	dag, err := provider.client.GetDAG(ctx, fileName)
+	dag, err := provider.client.GetDAG(ctx, dagName)
 	if err != nil {
 		return ports.PlaybookResource{}, err
 	}
-	return ports.PlaybookResource{Ref: ref, Name: string(ref.ID), YAML: []byte(dag.Spec), Enabled: !dag.Suspended}, nil
+	name, description := dagMetadata(dag.DAG, dag.Spec)
+	return ports.PlaybookResource{Ref: ref, Name: name, Description: description, YAML: []byte(dag.Spec), Enabled: !dag.Suspended}, nil
 }
 
 func (provider *Provider) Create(ctx context.Context, _ domain.ActorContext, input ports.CreatePlaybookInput) (ports.PlaybookRef, error) {
-	fileName, err := playbookFileName(input.ID)
+	dagName, err := playbookDAGName(input.ID)
 	if err != nil {
 		return ports.PlaybookRef{}, err
 	}
 	if len(bytes.TrimSpace(input.YAML)) == 0 {
 		return ports.PlaybookRef{}, errors.New("playbook YAML is required")
 	}
-	if err := provider.client.CreateDAG(ctx, strings.TrimSuffix(fileName, ".yaml"), string(input.YAML)); err != nil {
+	if err := provider.client.CreateDAG(ctx, dagName, string(input.YAML)); err != nil {
 		if !isHTTPConflict(err) {
 			return ports.PlaybookRef{}, err
 		}
 		// 相同幂等键会生成相同文件名；冲突时确认资源确实存在后返回原公开 ID。
-		if _, getErr := provider.client.GetDAG(ctx, fileName); getErr != nil {
+		existing, getErr := provider.client.GetDAG(ctx, dagName)
+		if getErr != nil {
+			return ports.PlaybookRef{}, err
+		}
+		if !bytes.Equal(bytes.TrimSpace([]byte(existing.Spec)), bytes.TrimSpace(input.YAML)) {
 			return ports.PlaybookRef{}, err
 		}
 	}
@@ -88,22 +108,22 @@ func (provider *Provider) Create(ctx context.Context, _ domain.ActorContext, inp
 }
 
 func (provider *Provider) Update(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRef, spec []byte) error {
-	fileName, err := playbookFileName(ref.ID)
+	dagName, err := playbookDAGName(ref.ID)
 	if err != nil {
 		return err
 	}
 	if len(bytes.TrimSpace(spec)) == 0 {
 		return errors.New("playbook YAML is required")
 	}
-	return provider.client.UpdateDAG(ctx, fileName, string(spec))
+	return provider.client.UpdateDAG(ctx, dagName, string(spec))
 }
 
 func (provider *Provider) Delete(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRef) error {
-	fileName, err := playbookFileName(ref.ID)
+	dagName, err := playbookDAGName(ref.ID)
 	if err != nil {
 		return err
 	}
-	return provider.client.DeleteDAG(ctx, fileName)
+	return provider.client.DeleteDAG(ctx, dagName)
 }
 
 func (provider *Provider) Validate(ctx context.Context, _ domain.ActorContext, spec []byte) ([]ports.ValidationIssue, error) {
@@ -119,14 +139,14 @@ func (provider *Provider) Validate(ctx context.Context, _ domain.ActorContext, s
 }
 
 func (provider *Provider) StartRun(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRef, input ports.RunPlaybookInput) (ports.PlaybookRunRef, error) {
-	fileName, err := playbookFileName(ref.ID)
+	dagName, err := playbookDAGName(ref.ID)
 	if err != nil {
 		return ports.PlaybookRunRef{}, err
 	}
 	if err := requireIDPrefix(input.ID, "run_"); err != nil {
 		return ports.PlaybookRunRef{}, err
 	}
-	runID, err := provider.client.StartDAG(ctx, fileName, string(input.ID), input.Parameters, input.Enqueue)
+	runID, err := provider.client.StartDAG(ctx, dagName, string(input.ID), input.Parameters, input.Enqueue)
 	if err != nil {
 		if !isHTTPConflict(err) {
 			return ports.PlaybookRunRef{}, err
@@ -145,7 +165,7 @@ func (provider *Provider) StartRun(ctx context.Context, _ domain.ActorContext, r
 }
 
 func (provider *Provider) ListRuns(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRef, request domain.PageRequest) (domain.Page[ports.PlaybookRunState], error) {
-	if _, err := playbookFileName(ref.ID); err != nil {
+	if _, err := playbookDAGName(ref.ID); err != nil {
 		return domain.Page[ports.PlaybookRunState]{}, err
 	}
 	limit := request.Limit
@@ -361,19 +381,55 @@ func terminalRunStatus(status domain.RunStatus) bool {
 	return status == domain.RunSucceeded || status == domain.RunFailed || status == domain.RunCancelled
 }
 
-func playbookFileName(id domain.ID) (string, error) {
+func playbookDAGName(id domain.ID) (string, error) {
 	if err := requireIDPrefix(id, "pbk_"); err != nil {
 		return "", err
 	}
-	return string(id) + ".yaml", nil
+	return string(id), nil
 }
 
 func playbookIDFromFileName(fileName string) (domain.ID, bool) {
-	if !strings.HasSuffix(fileName, ".yaml") {
+	if fileName == "" || path.Base(fileName) != fileName || strings.ContainsAny(fileName, "/\\") {
 		return "", false
 	}
 	id := domain.ID(strings.TrimSuffix(fileName, ".yaml"))
 	return id, requireIDPrefix(id, "pbk_") == nil
+}
+
+func encodePageCursor(page int) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(page)))
+}
+
+func decodePageCursor(cursor string) (int, error) {
+	if cursor == "" {
+		return 1, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return 0, errors.New("invalid page cursor")
+	}
+	page, err := strconv.Atoi(string(decoded))
+	if err != nil || page < 1 {
+		return 0, errors.New("invalid page cursor")
+	}
+	return page, nil
+}
+
+func dagMetadata(raw json.RawMessage, spec string) (string, string) {
+	var summary struct {
+		Name        string `json:"name"`
+		Description string `json:"description"`
+	}
+	_ = json.Unmarshal(raw, &summary)
+	if summary.Name != "" || summary.Description != "" {
+		return summary.Name, summary.Description
+	}
+	var source struct {
+		Name        string `yaml:"name"`
+		Description string `yaml:"description"`
+	}
+	_ = yaml.Unmarshal([]byte(spec), &source)
+	return source.Name, source.Description
 }
 
 func requireIDPrefix(id domain.ID, prefix string) error {

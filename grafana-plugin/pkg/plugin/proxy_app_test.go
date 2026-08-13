@@ -110,6 +110,30 @@ func TestProxyStreamsSSEWithoutChangingBody(t *testing.T) {
 	}
 }
 
+func TestProxyPreservesPlaybookCRUDPayloadAndHeaders(t *testing.T) {
+	t.Parallel()
+	var receivedMethod, receivedBody, receivedContentType, receivedKey string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		receivedMethod = request.Method
+		receivedContentType = request.Header.Get("Content-Type")
+		receivedKey = request.Header.Get("Idempotency-Key")
+		body, _ := io.ReadAll(request.Body)
+		receivedBody = string(body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	app := testProxyApp(t, upstream.URL, "")
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/playbooks/pbk_scope_abcdefgh", strings.NewReader("name: diagnose\nsteps: []\n"))
+	request.Header.Set("Content-Type", "application/yaml")
+	request.Header.Set("Idempotency-Key", "playbook-operation-123")
+	request = request.WithContext(backend.WithPluginContext(request.Context(), backend.PluginContext{Namespace: "tenant", OrgID: 1, User: &backend.User{Login: "alice", Role: "Editor"}}))
+	response := httptest.NewRecorder()
+	requireIdentity(app.proxy).ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || receivedMethod != http.MethodDelete || receivedContentType != "application/yaml" || receivedKey != "playbook-operation-123" || receivedBody != "name: diagnose\nsteps: []\n" {
+		t.Fatalf("status=%d method=%q content-type=%q key=%q body=%q", response.Code, receivedMethod, receivedContentType, receivedKey, receivedBody)
+	}
+}
+
 func testProxyApp(t *testing.T, rawURL, token string) *App {
 	t.Helper()
 	target, err := url.Parse(rawURL)

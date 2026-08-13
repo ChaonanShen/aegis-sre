@@ -67,15 +67,23 @@ func NewClient(rawURL string, httpClient *http.Client, options ...Option) (*Clie
 	return client, nil
 }
 
-func (client *Client) ListDAGs(ctx context.Context, page, perPage int) ([]DAGFile, error) {
+func (client *Client) ListDAGs(ctx context.Context, page, perPage int) (DAGPage, error) {
 	query := url.Values{"page": {strconv.Itoa(page)}, "perPage": {strconv.Itoa(perPage)}}
 	var response struct {
-		DAGs []DAGFile `json:"dags"`
+		DAGs       []DAGFile `json:"dags"`
+		Pagination struct {
+			Page       int `json:"currentPage"`
+			PerPage    int `json:"perPage"`
+			TotalPages int `json:"totalPages"`
+		} `json:"pagination"`
 	}
 	if err := client.doJSON(ctx, http.MethodGet, "dags?"+query.Encode(), nil, &response); err != nil {
-		return nil, err
+		return DAGPage{}, err
 	}
-	return response.DAGs, nil
+	return DAGPage{
+		DAGs: response.DAGs, Page: response.Pagination.Page,
+		PerPage: response.Pagination.PerPage, TotalPages: response.Pagination.TotalPages,
+	}, nil
 }
 
 func (client *Client) GetDAG(ctx context.Context, fileName string) (DAGDetails, error) {

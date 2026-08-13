@@ -19,9 +19,10 @@ import (
 
 type playbookHTTPFake struct {
 	contracttest.PlaybookProvider
-	created ports.CreatePlaybookInput
-	runRef  ports.PlaybookRunRef
-	err     error
+	created  ports.CreatePlaybookInput
+	runRef   ports.PlaybookRunRef
+	err      error
+	getCalls int
 }
 
 func (fake *playbookHTTPFake) ListRuns(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRef, _ domain.PageRequest) (domain.Page[ports.PlaybookRunState], error) {
@@ -37,7 +38,12 @@ func (fake *playbookHTTPFake) Create(_ context.Context, _ domain.ActorContext, i
 }
 
 func (fake *playbookHTTPFake) Get(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRef) (ports.PlaybookResource, error) {
-	return ports.PlaybookResource{Ref: ref, Name: "diagnose", YAML: fake.created.YAML, Enabled: true}, fake.err
+	fake.getCalls++
+	return ports.PlaybookResource{Ref: ref, Name: "diagnose", Description: "Diagnose service", YAML: fake.created.YAML, Enabled: true}, fake.err
+}
+
+func (fake *playbookHTTPFake) Validate(_ context.Context, _ domain.ActorContext, _ []byte) ([]ports.ValidationIssue, error) {
+	return []ports.ValidationIssue{{Path: "steps[0]", Message: "action is required"}}, fake.err
 }
 
 func (fake *playbookHTTPFake) GetRun(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef) (ports.PlaybookRunState, error) {
@@ -69,6 +75,9 @@ func TestCreatePlaybookUsesStablePublicIDAndNativeYAML(t *testing.T) {
 	if strings.Contains(response.Body.String(), "provider") || strings.Contains(response.Body.String(), "dagu") {
 		t.Fatalf("provider detail leaked: %s", response.Body.String())
 	}
+	if !strings.Contains(response.Body.String(), `"description":"Diagnose service"`) || !strings.Contains(response.Body.String(), `"source":"name: diagnose`) {
+		t.Fatalf("missing native detail fields: %s", response.Body.String())
+	}
 
 	repeat := actorRequest(http.MethodPost, "/api/v1/playbooks", "name: diagnose\nsteps: []\n")
 	repeat.Header.Set("Idempotency-Key", "create-diagnose")
@@ -79,6 +88,41 @@ func TestCreatePlaybookUsesStablePublicIDAndNativeYAML(t *testing.T) {
 	_ = json.Unmarshal(repeatResponse.Body.Bytes(), &second)
 	if first["id"] != second["id"] {
 		t.Fatalf("stable IDs differ: %v != %v", first["id"], second["id"])
+	}
+}
+
+func TestPlaybookCRUDEnforcesGrafanaOrgScopeAndWriteRole(t *testing.T) {
+	t.Parallel()
+	fake := &playbookHTTPFake{}
+	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
+
+	viewer := actorRequest(http.MethodPost, "/api/v1/playbooks", "name: denied\nsteps: []\n")
+	viewer.Header.Set("X-Aegis-Roles", "Viewer")
+	viewer.Header.Set("Idempotency-Key", "viewer-create")
+	viewerResponse := httptest.NewRecorder()
+	handler.ServeHTTP(viewerResponse, viewer)
+	if viewerResponse.Code != http.StatusForbidden {
+		t.Fatalf("viewer status = %d", viewerResponse.Code)
+	}
+
+	owner := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}
+	id := scopedPlaybookID(owner, "org-resource")
+	foreign := actorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id), "")
+	foreign.Header.Set(headerOrgID, "another-org")
+	foreignResponse := httptest.NewRecorder()
+	handler.ServeHTTP(foreignResponse, foreign)
+	if foreignResponse.Code != http.StatusNotFound || fake.getCalls != 0 {
+		t.Fatalf("foreign status = %d, provider calls = %d", foreignResponse.Code, fake.getCalls)
+	}
+}
+
+func TestValidateNewPlaybookUsesPublicLowercaseIssues(t *testing.T) {
+	t.Parallel()
+	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(&playbookHTTPFake{})).Handler
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, actorRequest(http.MethodPost, "/api/v1/playbooks/validate", "steps:\n  - id: inspect\n"))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"path":"steps[0]"`) || strings.Contains(response.Body.String(), `"Path"`) {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }
 
@@ -129,7 +173,8 @@ func TestPlaybookAPIRejectsInvalidInputAndSanitizesProviderErrors(t *testing.T) 
 		fake := &playbookHTTPFake{err: errors.New("Dagu secret internal response")}
 		handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/playbooks/pbk_abcdefgh", ""))
+		id := scopedPlaybookID(domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}, "provider-detail")
+		handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id), ""))
 		if response.Code != http.StatusBadGateway || strings.Contains(response.Body.String(), "secret") || strings.Contains(response.Body.String(), "Dagu") {
 			t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 		}
@@ -145,5 +190,6 @@ func actorRequest(method, target, body string) *http.Request {
 	request.Header.Set(headerTenantID, "tenant")
 	request.Header.Set(headerOrgID, "org")
 	request.Header.Set(headerUserID, "user")
+	request.Header.Set("X-Aegis-Roles", "Editor")
 	return request
 }

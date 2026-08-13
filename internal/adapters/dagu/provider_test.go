@@ -16,7 +16,7 @@ func TestProviderUsesPublicIDsWithoutMappingStore(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
-		case "/api/v1/dags/pbk_abcdefgh.yaml/start":
+		case "/api/v1/dags/pbk_abcdefgh/start":
 			_, _ = w.Write([]byte(`{"dagRunId":"run_abcdefgh"}`))
 		case "/api/v1/dag-runs/pbk_abcdefgh/run_abcdefgh":
 			_, _ = w.Write([]byte(`{"dagRunDetails":{"dagRunId":"run_abcdefgh","name":"pbk_abcdefgh","statusLabel":"success","nodes":[]}}`))
@@ -41,14 +41,16 @@ func TestProviderUsesPublicIDsWithoutMappingStore(t *testing.T) {
 
 func TestProviderFiltersNonAegisDAGs(t *testing.T) {
 	t.Parallel()
+	actor := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}
+	id := "pbk_" + domain.PlaybookScopeKey(actor) + "_abcdefgh"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"dags":[{"fileName":"pbk_abcdefgh.yaml","dag":{"name":"safe"}},{"fileName":"foreign.yaml","dag":{"name":"foreign"}}]}`))
+		_, _ = w.Write([]byte(`{"dags":[{"fileName":"` + id + `","dag":{"name":"safe"}},{"fileName":"foreign.yaml","dag":{"name":"foreign"}}],"pagination":{"currentPage":1,"perPage":10,"totalPages":1}}`))
 	}))
 	defer server.Close()
 	client, _ := NewClient(server.URL, server.Client())
 	provider, _ := NewProvider(client)
-	page, err := provider.List(context.Background(), domain.ActorContext{}, domain.PageRequest{Limit: 10})
-	if err != nil || len(page.Items) != 1 || page.Items[0].Ref.ID != "pbk_abcdefgh" {
+	page, err := provider.List(context.Background(), actor, domain.PageRequest{Limit: 10})
+	if err != nil || len(page.Items) != 1 || page.Items[0].Ref.ID != domain.ID(id) {
 		t.Fatalf("page = %#v, err = %v", page, err)
 	}
 }
@@ -135,7 +137,7 @@ func TestProviderRecoversIdempotentCreateConflict(t *testing.T) {
 		switch request.Method + " " + request.URL.Path {
 		case "POST /api/v1/dags":
 			w.WriteHeader(http.StatusConflict)
-		case "GET /api/v1/dags/pbk_abcdefgh.yaml":
+		case "GET /api/v1/dags/pbk_abcdefgh":
 			_, _ = w.Write([]byte(`{"spec":"steps: []"}`))
 		default:
 			t.Errorf("request = %s %s", request.Method, request.URL.Path)
@@ -150,11 +152,44 @@ func TestProviderRecoversIdempotentCreateConflict(t *testing.T) {
 	}
 }
 
+func TestProviderRejectsCreateConflictWithDifferentSource(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodPost {
+			w.WriteHeader(http.StatusConflict)
+			return
+		}
+		_, _ = w.Write([]byte(`{"spec":"name: other\nsteps: []\n"}`))
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	provider, _ := NewProvider(client)
+	_, err := provider.Create(context.Background(), domain.ActorContext{}, ports.CreatePlaybookInput{ID: "pbk_abcdefgh", YAML: []byte("name: requested\nsteps: []\n")})
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusConflict {
+		t.Fatalf("error = %#v", err)
+	}
+}
+
+func TestProviderGetsNameAndDescriptionFromNativeYAML(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"spec":"name: diagnose\ndescription: Diagnose service\nsteps: []\n"}`))
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	provider, _ := NewProvider(client)
+	resource, err := provider.Get(context.Background(), domain.ActorContext{}, ports.PlaybookRef{ID: "pbk_abcdefgh"})
+	if err != nil || resource.Name != "diagnose" || resource.Description != "Diagnose service" {
+		t.Fatalf("resource = %#v, err = %v", resource, err)
+	}
+}
+
 func TestProviderRecoversIdempotentRunConflicts(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.Method + " " + request.URL.Path {
-		case "POST /api/v1/dags/pbk_abcdefgh.yaml/start",
+		case "POST /api/v1/dags/pbk_abcdefgh/start",
 			"POST /api/v1/dag-runs/pbk_abcdefgh/run_original/retry":
 			w.WriteHeader(http.StatusConflict)
 		case "GET /api/v1/dag-runs/pbk_abcdefgh/run_abcdefgh":

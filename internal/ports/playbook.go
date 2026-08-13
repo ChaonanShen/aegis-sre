@@ -23,8 +23,8 @@ type PlaybookResource struct {
 }
 
 type ValidationIssue struct {
-	Path    string
-	Message string
+	Path    string `json:"path,omitempty"`
+	Message string `json:"message"`
 }
 
 type CreatePlaybookInput struct {

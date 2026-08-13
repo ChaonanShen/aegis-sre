@@ -19,7 +19,7 @@ steps:
     with: {prompt: Review result}
 `;
     const projected = projectDaguSource(source);
-    expect(projected.source).toBe(source);
+    expect(projected.name).toBe('diagnose');
     expect(projected.parameters).toEqual([{ name: 'service', type: 'string', defaultValue: 'api', required: true }]);
     expect(projected.steps).toEqual([
       expect.objectContaining({ id: 'metrics', type: 'mcp_call', dependsOn: [] }),

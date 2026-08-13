@@ -161,6 +161,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/playbooks/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["validateNewPlaybook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/playbooks/{playbook_id}/validate": {
         parameters: {
             query?: never;
@@ -518,13 +534,20 @@ export interface components {
         Playbook: {
             id: components["schemas"]["BusinessID"];
             name: string;
-            folder_uid?: string;
+            description: string;
             /** @enum {string} */
             status: "active" | "disabled";
-            source?: string;
+            source: string;
+        };
+        PlaybookSummary: {
+            id: components["schemas"]["BusinessID"];
+            name: string;
+            description: string;
+            /** @enum {string} */
+            status: "active" | "disabled";
         };
         PlaybookPage: components["schemas"]["PageMetadata"] & {
-            items: components["schemas"]["Playbook"][];
+            items: components["schemas"]["PlaybookSummary"][];
         };
         ValidationResult: {
             valid: boolean;
@@ -958,7 +981,6 @@ export interface operations {
     listPlaybooks: {
         parameters: {
             query?: {
-                folder_uid?: components["parameters"]["FolderUID"];
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
             };
@@ -1002,6 +1024,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Playbook"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    validateNewPlaybook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/yaml": string;
+            };
+        };
+        responses: {
+            /** @description Validation result for an unsaved native Dagu YAML document */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ValidationResult"];
                 };
             };
             default: components["responses"]["Problem"];

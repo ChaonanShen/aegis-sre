@@ -127,3 +127,19 @@ func TestClientListsRunsForOneDAG(t *testing.T) {
 		t.Fatalf("runs = %#v, err = %v", runs, err)
 	}
 }
+
+func TestClientPreservesDAGPagination(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Query().Get("page") != "2" || request.URL.Query().Get("perPage") != "25" {
+			t.Errorf("query = %q", request.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"dags":[{"fileName":"pbk_scope_abcdefgh"}],"pagination":{"currentPage":2,"perPage":25,"totalPages":4}}`))
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	page, err := client.ListDAGs(context.Background(), 2, 25)
+	if err != nil || len(page.DAGs) != 1 || page.Page != 2 || page.TotalPages != 4 {
+		t.Fatalf("page = %#v, err = %v", page, err)
+	}
+}

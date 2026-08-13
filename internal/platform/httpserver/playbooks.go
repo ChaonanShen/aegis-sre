@@ -24,14 +24,18 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		return
 	}
 	mux.HandleFunc("GET /api/v1/playbooks", func(w http.ResponseWriter, request *http.Request) {
+		actor, ok := requirePlaybookActor(w, request, false)
+		if !ok {
+			return
+		}
 		limit, _ := strconv.Atoi(request.URL.Query().Get("limit"))
-		page, err := provider.List(request.Context(), actorFromRequest(request), domain.PageRequest{Cursor: request.URL.Query().Get("cursor"), Limit: limit})
+		page, err := provider.List(request.Context(), actor, domain.PageRequest{Cursor: request.URL.Query().Get("cursor"), Limit: limit})
 		if handleProviderError(w, request, err) {
 			return
 		}
 		items := make([]any, 0, len(page.Items))
 		for _, item := range page.Items {
-			items = append(items, playbookJSON(item))
+			items = append(items, playbookSummaryJSON(item))
 		}
 		response := map[string]any{"items": items, "has_more": page.HasMore}
 		if page.NextCursor != "" {
@@ -40,6 +44,10 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		writeJSON(w, http.StatusOK, response)
 	})
 	mux.HandleFunc("POST /api/v1/playbooks", func(w http.ResponseWriter, request *http.Request) {
+		actor, allowed := requirePlaybookActor(w, request, true)
+		if !allowed {
+			return
+		}
 		key, ok := requireIdempotencyKey(w, request)
 		if !ok {
 			return
@@ -48,30 +56,38 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if !ok {
 			return
 		}
-		id := stableBusinessID("pbk", actorFromRequest(request), key)
-		ref, err := provider.Create(request.Context(), actorFromRequest(request), ports.CreatePlaybookInput{ID: id, YAML: spec})
+		id := scopedPlaybookID(actor, key)
+		ref, err := provider.Create(request.Context(), actor, ports.CreatePlaybookInput{ID: id, YAML: spec})
 		if handleProviderError(w, request, err) {
 			return
 		}
-		resource, err := provider.Get(request.Context(), actorFromRequest(request), ref)
+		resource, err := provider.Get(request.Context(), actor, ref)
 		if handleProviderError(w, request, err) {
 			return
 		}
 		writeJSON(w, http.StatusCreated, playbookJSON(resource))
 	})
 	mux.HandleFunc("GET /api/v1/playbooks/{playbook_id}", func(w http.ResponseWriter, request *http.Request) {
-		ref, ok := playbookRef(w, request)
+		actor, allowed := requirePlaybookActor(w, request, false)
+		if !allowed {
+			return
+		}
+		ref, ok := scopedPlaybookRef(w, request, actor)
 		if !ok {
 			return
 		}
-		resource, err := provider.Get(request.Context(), actorFromRequest(request), ref)
+		resource, err := provider.Get(request.Context(), actor, ref)
 		if handleProviderError(w, request, err) {
 			return
 		}
 		writeJSON(w, http.StatusOK, playbookJSON(resource))
 	})
 	mux.HandleFunc("PUT /api/v1/playbooks/{playbook_id}", func(w http.ResponseWriter, request *http.Request) {
-		ref, ok := playbookRef(w, request)
+		actor, allowed := requirePlaybookActor(w, request, true)
+		if !allowed {
+			return
+		}
+		ref, ok := scopedPlaybookRef(w, request, actor)
 		if !ok {
 			return
 		}
@@ -79,34 +95,57 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if !ok {
 			return
 		}
-		if err := provider.Update(request.Context(), actorFromRequest(request), ref, spec); handleProviderError(w, request, err) {
+		if err := provider.Update(request.Context(), actor, ref, spec); handleProviderError(w, request, err) {
 			return
 		}
-		resource, err := provider.Get(request.Context(), actorFromRequest(request), ref)
+		resource, err := provider.Get(request.Context(), actor, ref)
 		if handleProviderError(w, request, err) {
 			return
 		}
 		writeJSON(w, http.StatusOK, playbookJSON(resource))
 	})
 	mux.HandleFunc("DELETE /api/v1/playbooks/{playbook_id}", func(w http.ResponseWriter, request *http.Request) {
-		ref, ok := playbookRef(w, request)
+		actor, allowed := requirePlaybookActor(w, request, true)
+		if !allowed {
+			return
+		}
+		ref, ok := scopedPlaybookRef(w, request, actor)
 		if !ok {
 			return
 		}
-		if err := provider.Delete(request.Context(), actorFromRequest(request), ref); handleProviderError(w, request, err) {
+		if err := provider.Delete(request.Context(), actor, ref); handleProviderError(w, request, err) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/v1/playbooks/{playbook_id}/validate", func(w http.ResponseWriter, request *http.Request) {
-		if _, ok := playbookRef(w, request); !ok {
+		actor, allowed := requirePlaybookActor(w, request, true)
+		if !allowed {
+			return
+		}
+		if _, ok := scopedPlaybookRef(w, request, actor); !ok {
 			return
 		}
 		spec, ok := readLimitedBody(w, request, maxPlaybookYAMLBytes)
 		if !ok {
 			return
 		}
-		issues, err := provider.Validate(request.Context(), actorFromRequest(request), spec)
+		issues, err := provider.Validate(request.Context(), actor, spec)
+		if handleProviderError(w, request, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"valid": len(issues) == 0, "errors": issues})
+	})
+	mux.HandleFunc("POST /api/v1/playbooks/validate", func(w http.ResponseWriter, request *http.Request) {
+		actor, allowed := requirePlaybookActor(w, request, true)
+		if !allowed {
+			return
+		}
+		spec, ok := readLimitedBody(w, request, maxPlaybookYAMLBytes)
+		if !ok {
+			return
+		}
+		issues, err := provider.Validate(request.Context(), actor, spec)
 		if handleProviderError(w, request, err) {
 			return
 		}
@@ -289,7 +328,42 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 }
 
 func actorFromRequest(request *http.Request) domain.ActorContext {
-	return domain.ActorContext{TenantID: request.Header.Get(headerTenantID), OrgID: request.Header.Get(headerOrgID), UserID: request.Header.Get(headerUserID), FolderUID: request.Header.Get("X-Aegis-Folder-UID")}
+	roles := strings.FieldsFunc(request.Header.Get("X-Aegis-Roles"), func(r rune) bool { return r == ',' || r == ';' })
+	return domain.ActorContext{TenantID: request.Header.Get(headerTenantID), OrgID: request.Header.Get(headerOrgID), UserID: request.Header.Get(headerUserID), FolderUID: request.Header.Get("X-Aegis-Folder-UID"), Roles: roles}
+}
+
+func requirePlaybookActor(w http.ResponseWriter, request *http.Request, write bool) (domain.ActorContext, bool) {
+	actor := actorFromRequest(request)
+	if err := actor.Validate(); err != nil {
+		writeAPIProblem(w, request, http.StatusUnauthorized, "unauthenticated", "Grafana identity is required", false)
+		return domain.ActorContext{}, false
+	}
+	if write && !hasPlaybookWriteRole(actor.Roles) {
+		writeAPIProblem(w, request, http.StatusForbidden, "forbidden", "Grafana Editor or Admin role is required", false)
+		return domain.ActorContext{}, false
+	}
+	return actor, true
+}
+
+func hasPlaybookWriteRole(roles []string) bool {
+	for _, role := range roles {
+		if strings.EqualFold(strings.TrimSpace(role), "Editor") || strings.EqualFold(strings.TrimSpace(role), "Admin") {
+			return true
+		}
+	}
+	return false
+}
+
+func scopedPlaybookRef(w http.ResponseWriter, request *http.Request, actor domain.ActorContext) (ports.PlaybookRef, bool) {
+	ref, ok := playbookRef(w, request)
+	if !ok {
+		return ports.PlaybookRef{}, false
+	}
+	if !domain.PlaybookIDInScope(ref.ID, actor) {
+		writeAPIProblem(w, request, http.StatusNotFound, "not_found", "playbook not found", false)
+		return ports.PlaybookRef{}, false
+	}
+	return ref, true
 }
 
 func playbookRef(w http.ResponseWriter, request *http.Request) (ports.PlaybookRef, bool) {
@@ -338,6 +412,11 @@ func stableBusinessID(prefix string, actor domain.ActorContext, key string) doma
 	return domain.ID(prefix + "_" + base64.RawURLEncoding.EncodeToString(sum[:18]))
 }
 
+func scopedPlaybookID(actor domain.ActorContext, key string) domain.ID {
+	sum := sha256.Sum256([]byte("pbk\x00" + actor.TenantID + "\x00" + actor.OrgID + "\x00" + actor.UserID + "\x00" + key))
+	return domain.ID("pbk_" + domain.PlaybookScopeKey(actor) + "_" + base64.RawURLEncoding.EncodeToString(sum[:18]))
+}
+
 func readLimitedBody(w http.ResponseWriter, request *http.Request, limit int64) ([]byte, bool) {
 	content, err := io.ReadAll(io.LimitReader(request.Body, limit+1))
 	if err != nil || int64(len(content)) > limit {
@@ -366,12 +445,17 @@ func decodeJSONBody(w http.ResponseWriter, request *http.Request, output any, li
 }
 
 func playbookJSON(resource ports.PlaybookResource) map[string]any {
-	value := map[string]any{"id": resource.Ref.ID, "name": resource.Name, "status": "disabled"}
-	if resource.Enabled {
-		value["status"] = "active"
-	}
+	value := playbookSummaryJSON(resource)
 	if len(resource.YAML) > 0 {
 		value["source"] = string(resource.YAML)
+	}
+	return value
+}
+
+func playbookSummaryJSON(resource ports.PlaybookResource) map[string]any {
+	value := map[string]any{"id": resource.Ref.ID, "name": resource.Name, "description": resource.Description, "status": "disabled"}
+	if resource.Enabled {
+		value["status"] = "active"
 	}
 	return value
 }

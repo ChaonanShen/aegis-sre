@@ -27,7 +27,7 @@ export function createResourcePlaybookGateway(options: { backendSrv?: BackendSrv
   return {
     async listPlaybooks(_input, signal) {
       const page = await client().request('/api/v1/playbooks', isPlaybookPage, { signal });
-      return Promise.all(page.items.map(async (item) => toPlaybook(item.source ? item : await client().request(playbookPath(item.id), isPlaybook, { signal }))));
+      return Promise.all(page.items.map(async (item) => toPlaybook(await client().request(playbookPath(item.id), isPlaybook, { signal }))));
     },
     async getPlaybook(id, signal) {
       return toPlaybook(await client().request(playbookPath(id), isPlaybook, { signal }));
@@ -141,6 +141,11 @@ function toPlaybook(value: ContractPlaybook): Playbook {
   const projected = projectDaguSource(value.source);
   return {
     ...projected,
+    source: value.source,
+    version: 'dagu-native',
+    trigger: { type: 'manual', alertLabels: {} },
+    experience: [],
+    visibility: 'private',
     id: value.id,
     ownerId: 'dagu',
     usageCount: 0,

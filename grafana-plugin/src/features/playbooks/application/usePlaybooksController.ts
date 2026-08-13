@@ -1,20 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Folder } from '../../../app/model';
-import { Playbook } from '../model';
-import { PlaybookGateway } from '../ports/PlaybookGateway';
+import { PlaybookSummary } from '../crudModel';
+import { PlaybookCrudGateway } from '../ports/PlaybookCrudGateway';
 
 export type PlaybookState =
   | { status: 'loading' }
-  | { status: 'success'; data: Playbook[] }
+  | { status: 'success'; data: PlaybookSummary[] }
   | { status: 'error'; error: Error };
 
-export function usePlaybooksController({
-  folders,
-  gateway,
-}: {
-  folders: Folder[];
-  gateway: PlaybookGateway;
-}) {
+export function usePlaybooksController({ gateway }: { gateway: PlaybookCrudGateway }) {
   const [state, setState] = useState<PlaybookState>({ status: 'loading' });
   const requestRef = useRef(0);
 
@@ -23,7 +16,7 @@ export function usePlaybooksController({
       const request = ++requestRef.current;
       setState({ status: 'loading' });
       try {
-        const data = await gateway.listPlaybooks({ folderUids: folders.map(({ uid }) => uid) }, signal);
+        const data = await gateway.listPlaybooks(signal);
         if (request === requestRef.current) {
           setState({ status: 'success', data });
         }
@@ -33,7 +26,7 @@ export function usePlaybooksController({
         }
       }
     },
-    [folders, gateway]
+    [gateway]
   );
 
   useEffect(() => {

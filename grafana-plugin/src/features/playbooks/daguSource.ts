@@ -1,9 +1,16 @@
 import { parse } from 'yaml';
-import { PlaybookDefinition, PlaybookParameter, PlaybookStep, PlaybookStepType } from './model';
+import { PlaybookParameter, PlaybookStep, PlaybookStepType } from './model';
 import { PlaybookValidationError } from './errors';
 
 /** 只把原生 Dagu YAML 投影为 UI 模型，不生成或改写 YAML。 */
-export function projectDaguSource(source: string): PlaybookDefinition {
+export interface DaguProjection {
+  name: string;
+  description: string;
+  parameters: PlaybookParameter[];
+  steps: PlaybookStep[];
+}
+
+export function projectDaguSource(source: string): DaguProjection {
   let value: unknown;
   try {
     value = parse(source);
@@ -20,15 +27,10 @@ export function projectDaguSource(source: string): PlaybookDefinition {
   const steps = dag.steps.map(projectStep);
   const name = stringValue(dag.name) || 'unnamed-playbook';
   return {
-    source,
     name,
     description: stringValue(dag.description),
-    version: 'dagu-native',
-    trigger: { type: 'manual', alertLabels: {} },
     parameters: projectParams(dag.params),
     steps,
-    experience: [],
-    visibility: 'private',
   };
 }
 

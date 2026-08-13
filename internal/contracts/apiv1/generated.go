@@ -244,6 +244,24 @@ func (e PlaybookStepStatus) Valid() bool {
 	}
 }
 
+// Defines values for PlaybookSummaryStatus.
+const (
+	PlaybookSummaryStatusActive   PlaybookSummaryStatus = "active"
+	PlaybookSummaryStatusDisabled PlaybookSummaryStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the PlaybookSummaryStatus enum.
+func (e PlaybookSummaryStatus) Valid() bool {
+	switch e {
+	case PlaybookSummaryStatusActive:
+		return true
+	case PlaybookSummaryStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProblemCode.
 const (
 	CapabilityUnavailable ProblemCode = "capability_unavailable"
@@ -451,11 +469,11 @@ type PageMetadata struct {
 
 // Playbook defines model for Playbook.
 type Playbook struct {
-	FolderUid *string        `json:"folder_uid,omitempty"`
-	Id        BusinessID     `json:"id"`
-	Name      string         `json:"name"`
-	Source    *string        `json:"source,omitempty"`
-	Status    PlaybookStatus `json:"status"`
+	Description string         `json:"description"`
+	Id          BusinessID     `json:"id"`
+	Name        string         `json:"name"`
+	Source      string         `json:"source"`
+	Status      PlaybookStatus `json:"status"`
 }
 
 // PlaybookStatus defines model for Playbook.Status.
@@ -472,9 +490,9 @@ type PlaybookApprovalDecisionDecision string
 
 // PlaybookPage defines model for PlaybookPage.
 type PlaybookPage struct {
-	HasMore    bool       `json:"has_more"`
-	Items      []Playbook `json:"items"`
-	NextCursor *string    `json:"next_cursor,omitempty"`
+	HasMore    bool              `json:"has_more"`
+	Items      []PlaybookSummary `json:"items"`
+	NextCursor *string           `json:"next_cursor,omitempty"`
 }
 
 // PlaybookRun defines model for PlaybookRun.
@@ -512,6 +530,17 @@ type PlaybookStep struct {
 
 // PlaybookStepStatus defines model for PlaybookStep.Status.
 type PlaybookStepStatus string
+
+// PlaybookSummary defines model for PlaybookSummary.
+type PlaybookSummary struct {
+	Description string                `json:"description"`
+	Id          BusinessID            `json:"id"`
+	Name        string                `json:"name"`
+	Status      PlaybookSummaryStatus `json:"status"`
+}
+
+// PlaybookSummaryStatus defines model for PlaybookSummary.Status.
+type PlaybookSummaryStatus string
 
 // Problem defines model for Problem.
 type Problem struct {
@@ -656,9 +685,8 @@ type CreateDocumentParams struct {
 
 // ListPlaybooksParams defines parameters for ListPlaybooks.
 type ListPlaybooksParams struct {
-	FolderUid *FolderUID `form:"folder_uid,omitempty" json:"folder_uid,omitempty"`
-	Cursor    *Cursor    `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit     *Limit     `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // CreatePlaybookParams defines parameters for CreatePlaybook.
