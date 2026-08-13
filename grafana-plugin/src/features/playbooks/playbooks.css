@@ -266,6 +266,73 @@
   font: 12px/1.65 var(--font-mono);
 }
 
+.playbook-runs {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elev-1);
+}
+
+.playbook-runs > header,
+.playbook-run-list article > div,
+.playbook-run-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.playbook-runs h2 {
+  margin: 0 0 3px;
+  font-size: 14px;
+}
+
+.playbook-runs header small,
+.playbook-run-list article > small,
+.playbook-run-list li small {
+  color: var(--text-muted);
+}
+
+.playbook-run-list article {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-base);
+}
+
+.playbook-run-list ol {
+  margin: 10px 0 0;
+  padding: 8px 0 0 20px;
+  border-top: 1px solid var(--border);
+}
+
+.playbook-run-list li {
+  padding: 3px 0;
+}
+
+.playbook-run-status {
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--bg-elev-3);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.playbook-run-status.running,
+.playbook-run-status.queued {
+  color: var(--accent);
+}
+
+.playbook-run-status.succeeded {
+  color: #73bf69;
+}
+
+.playbook-run-status.failed,
+.playbook-run-status.cancelled {
+  color: var(--red);
+}
+
 .playbook-dag {
   min-width: max-content;
   padding: 14px 18px;

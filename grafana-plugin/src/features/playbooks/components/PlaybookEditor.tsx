@@ -44,10 +44,6 @@ export function PlaybookEditor({
       return;
     }
     setError('');
-    if (projection.error) {
-      setError(projection.error);
-      return;
-    }
     const controller = new AbortController();
     controllerRef.current?.abort();
     controllerRef.current = controller;
@@ -110,7 +106,11 @@ export function PlaybookEditor({
         </section>
         <section className="playbook-panel">
           <h2>DAG 预览</h2>
-          {projection.value ? <PlaybookDag steps={projection.value.steps} /> : <div className="playbook-empty">修复 YAML 后显示预览。</div>}
+          {projection.value ? (
+            <PlaybookDag steps={projection.value.steps} />
+          ) : (
+            <div className="playbook-empty compact">当前 YAML 无法生成简化预览；仍会交由 Dagu 服务端校验并保存。</div>
+          )}
         </section>
       </div>
     </main>

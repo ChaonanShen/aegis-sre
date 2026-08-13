@@ -7,6 +7,7 @@ import { prefixRoute } from '../../utils/utils.routing';
 import { usePlaybooksController } from './application/usePlaybooksController';
 import { PlaybookDag } from './components/PlaybookDag';
 import { PlaybookEditor } from './components/PlaybookEditor';
+import { PlaybookRunsPanel } from './components/PlaybookRunsPanel';
 import { PlaybookDocument, PlaybookSummary } from './crudModel';
 import { projectDaguSource } from './daguSource';
 import { PlaybookCrudGateway } from './ports/PlaybookCrudGateway';
@@ -111,10 +112,16 @@ function PlaybookResourceRoute({ edit, gateway, id }: { edit: boolean; gateway: 
 
 function PlaybookDetail({ gateway, playbook }: { gateway: PlaybookCrudGateway; playbook: PlaybookDocument }) {
   const navigate = useNavigate();
-  const [tab, setTab] = useState<'dag' | 'yaml'>('dag');
+  const [tab, setTab] = useState<'dag' | 'yaml' | 'runs'>('dag');
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState('');
-  const projection = useMemo(() => projectDaguSource(playbook.source), [playbook.source]);
+  const projection = useMemo(() => {
+    try {
+      return projectDaguSource(playbook.source);
+    } catch {
+      return undefined;
+    }
+  }, [playbook.source]);
   const remove = async () => {
     if (deleting || !window.confirm(`删除 Playbook “${playbook.name}” 的定义？已有运行记录不会在此操作中删除。`)) {
       return;
@@ -145,8 +152,11 @@ function PlaybookDetail({ gateway, playbook }: { gateway: PlaybookCrudGateway; p
       <div className="playbook-tabs" role="tablist">
         <button aria-selected={tab === 'dag'} className={tab === 'dag' ? 'active' : ''} onClick={() => setTab('dag')} role="tab" type="button">DAG 可视化</button>
         <button aria-selected={tab === 'yaml'} className={tab === 'yaml' ? 'active' : ''} onClick={() => setTab('yaml')} role="tab" type="button">YAML 源码</button>
+        <button aria-selected={tab === 'runs'} className={tab === 'runs' ? 'active' : ''} onClick={() => setTab('runs')} role="tab" type="button">运行记录</button>
       </div>
-      {tab === 'dag' ? <section className="playbook-panel"><PlaybookDag steps={projection.steps} /></section> : <section className="playbook-panel"><pre aria-label="Playbook YAML">{playbook.source}</pre></section>}
+      {tab === 'dag' && <section className="playbook-panel">{projection ? <PlaybookDag steps={projection.steps} /> : <div className="playbook-empty compact">当前 YAML 无法生成简化 DAG 预览，请查看原生源码。</div>}</section>}
+      {tab === 'yaml' && <section className="playbook-panel"><pre aria-label="Playbook YAML">{playbook.source}</pre></section>}
+      {tab === 'runs' && <PlaybookRunsPanel gateway={gateway} playbookId={playbook.id} />}
     </main>
   );
 }

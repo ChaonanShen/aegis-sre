@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AppServicesProvider } from '../../app/AppServices';
 import { AppShellProvider } from '../../app/AppShellContext';
-import { PlaybookDocument } from './crudModel';
+import { PlaybookDocument, PlaybookRunRecord } from './crudModel';
 import { PlaybookCrudGateway } from './ports/PlaybookCrudGateway';
 import PlaybooksPage from './PlaybooksPage';
 
@@ -78,10 +78,49 @@ describe('PlaybooksPage native Dagu CRUD', () => {
     fireEvent.click(await screen.findByRole('button', { name: '删除' }));
     await waitFor(() => expect(gateway.deletePlaybook).toHaveBeenCalledWith('pbk_scope_abcdefgh'));
   });
+
+  test('starts a real run and polls Dagu until it completes', async () => {
+    const gateway = fakeGateway();
+    gateway.startRun.mockResolvedValue(run('queued'));
+    gateway.getRun.mockResolvedValue(run('succeeded'));
+    renderPage('/a/grafana-plugin-app/playbooks/pbk_scope_abcdefgh', gateway);
+
+    fireEvent.click(await screen.findByRole('tab', { name: '运行记录' }));
+    expect(await screen.findByText('还没有运行记录。')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '运行 Playbook' }));
+
+    await waitFor(() => expect(gateway.startRun).toHaveBeenCalledWith(
+      'pbk_scope_abcdefgh',
+      { idempotencyKey: expect.stringMatching(/^run-/) }
+    ));
+    await waitFor(() => expect(gateway.getRun).toHaveBeenCalledWith('run_abcdefgh', expect.any(AbortSignal)));
+    expect(await screen.findByText('成功')).toBeInTheDocument();
+  });
+
+  test('keeps native Dagu YAML usable when the simplified DAG preview cannot project it', async () => {
+    const gateway = fakeGateway();
+    const controllerSource = `name: controller\nhandler_on:\n  success:\n    command: echo done\n`;
+    gateway.getPlaybook.mockResolvedValue(document(controllerSource));
+    renderPage('/a/grafana-plugin-app/playbooks/pbk_scope_abcdefgh/edit', gateway);
+
+    expect(await screen.findByText(/仍会交由 Dagu 服务端校验并保存/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    await waitFor(() => expect(gateway.validatePlaybook).toHaveBeenCalledWith(controllerSource, expect.any(AbortSignal)));
+    expect(gateway.updatePlaybook).toHaveBeenCalledWith(
+      'pbk_scope_abcdefgh', { source: controllerSource }, expect.any(AbortSignal)
+    );
+  });
 });
 
 function document(source = firstSource): PlaybookDocument {
   return { id: 'pbk_scope_abcdefgh', name: 'diagnose-api', description: 'Diagnose API', status: 'active', source };
+}
+
+function run(status: PlaybookRunRecord['status']): PlaybookRunRecord {
+  return {
+    id: 'run_abcdefgh', playbookId: 'pbk_scope_abcdefgh', status,
+    startedAt: '2026-08-14T10:00:00Z', updatedAt: '2026-08-14T10:00:01Z', steps: [],
+  };
 }
 
 function fakeGateway(): jest.Mocked<PlaybookCrudGateway> {
