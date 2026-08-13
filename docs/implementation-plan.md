@@ -166,12 +166,12 @@ internal/application/contracts/
 
 代码清理：
 
-- [ ] 删除 `migrations/` 中尚未形成生产数据的 Control Plane PostgreSQL migration。
-- [ ] 删除 `internal/adapters/postgres`、数据库 repository 测试和只为这些实现存在的辅助代码。
-- [ ] 删除无真实消费者的 `SessionRepository`、`ProviderMappingRepository`、`IdempotencyRepository` 及其数据结构；保留 Provider ports 和 Provider-neutral domain contract。
-- [ ] 删除 `pgx`、`pgxmock`、Goose 等仅为 Control Plane PostgreSQL 引入的依赖和命令，并运行 `go mod tidy`。
-- [ ] 删除 `AEGIS_DATABASE_URL`、database capability、readiness 数据库状态及其他未使用配置。
-- [ ] 删除根 CI 中的 PostgreSQL service、migration 步骤和对应 Makefile target，确保 CI 不再启动数据库。
+- [x] 删除 `migrations/` 中尚未形成生产数据的 Control Plane PostgreSQL migration。
+- [x] 删除 `internal/adapters/postgres`、数据库 repository 测试和只为这些实现存在的辅助代码。
+- [x] 删除无真实消费者的 `SessionRepository`、`ProviderMappingRepository`、`IdempotencyRepository` 及其数据结构；保留 Provider ports 和 Provider-neutral domain contract。
+- [x] 删除 `pgx`、`pgxmock`、Goose 等仅为 Control Plane PostgreSQL 引入的依赖和命令，并运行 `go mod tidy`。
+- [x] 删除 `AEGIS_DATABASE_URL`、database capability、readiness 数据库状态及其他未使用配置。
+- [x] 删除根 CI 中的 PostgreSQL service、migration 步骤和对应 Makefile target，确保 CI 不再启动数据库。
 - [ ] 检查 `api/openapi.yaml`、Event Schema、domain model 和前端生成类型，移除只为影子持久化设计且尚无 Provider 语义依据的字段；兼容性不确定的公共字段先记录审计结论，不盲目破坏已冻结契约。
 
 Provider 数据归属与标识策略复核：

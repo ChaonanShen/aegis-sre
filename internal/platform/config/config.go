@@ -13,7 +13,6 @@ import (
 const (
 	EnvHTTPAddress     = "AEGIS_HTTP_ADDRESS"
 	EnvShutdownTimeout = "AEGIS_SHUTDOWN_TIMEOUT"
-	EnvDatabaseURL     = "AEGIS_DATABASE_URL"
 	EnvAgentURL        = "AEGIS_AGENT_URL"
 	EnvDaguURL         = "AEGIS_DAGU_URL"
 	EnvRAGFlowURL      = "AEGIS_RAGFLOW_URL"
@@ -26,7 +25,6 @@ var ErrInvalid = errors.New("invalid configuration")
 type Capability string
 
 const (
-	CapabilityDatabase   Capability = "database"
 	CapabilityAgent      Capability = "agent"
 	CapabilityPlaybook   Capability = "playbook"
 	CapabilityKnowledge  Capability = "knowledge"
@@ -64,7 +62,6 @@ func Load(getenv func(string) string) (Config, error) {
 
 	endpoints := make(map[Capability]string)
 	for capability, envName := range map[Capability]string{
-		CapabilityDatabase:   EnvDatabaseURL,
 		CapabilityAgent:      EnvAgentURL,
 		CapabilityPlaybook:   EnvDaguURL,
 		CapabilityKnowledge:  EnvRAGFlowURL,
@@ -74,11 +71,9 @@ func Load(getenv func(string) string) (Config, error) {
 		if raw == "" {
 			continue
 		}
-		if capability != CapabilityDatabase {
-			parsed, err := url.Parse(raw)
-			if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-				return Config{}, fmt.Errorf("%w: %s must be an HTTP origin", ErrInvalid, envName)
-			}
+		parsed, err := url.Parse(raw)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return Config{}, fmt.Errorf("%w: %s must be an HTTP origin", ErrInvalid, envName)
 		}
 		endpoints[capability] = raw
 	}

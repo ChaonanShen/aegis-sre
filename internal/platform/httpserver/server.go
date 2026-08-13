@@ -33,7 +33,6 @@ func New(cfg config.Config, logger *slog.Logger) *http.Server {
 	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, _ *http.Request) {
 		capabilities := make(map[string]string)
 		for _, capability := range []config.Capability{
-			config.CapabilityDatabase,
 			config.CapabilityAgent,
 			config.CapabilityPlaybook,
 			config.CapabilityKnowledge,

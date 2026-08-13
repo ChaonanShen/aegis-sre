@@ -1,7 +1,6 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build db-up db-status
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 OAPI_CODEGEN_VERSION := v2.8.0
-GOOSE_VERSION := v3.27.3
 MAGE_VERSION := v1.17.2
 
 verify: contracts-check control-plane-test control-plane-build plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
@@ -21,12 +20,6 @@ contracts-go-check: contracts-go-generate
 
 contracts-ts-check: contracts-ts-generate
 	git diff --exit-code -- grafana-plugin/src/api/generated/controlPlane.ts grafana-plugin/src/api/generated/events.ts
-
-db-up:
-	go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir migrations postgres "$(AEGIS_DATABASE_URL)" up
-
-db-status:
-	go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir migrations postgres "$(AEGIS_DATABASE_URL)" status
 
 control-plane-test:
 	go test ./...
