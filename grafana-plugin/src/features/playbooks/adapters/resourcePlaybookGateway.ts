@@ -19,6 +19,9 @@ type ContractPlaybookPage = components['schemas']['PlaybookPage'];
 type ContractRun = components['schemas']['PlaybookRun'];
 type ContractRunPage = components['schemas']['PlaybookRunPage'];
 
+// 旧 UI 把真实 Dagu Run 包装成 dry-run。兼容窗口内保留代码用于回退比对，但禁止再发起任何执行写操作。
+const LEGACY_EXECUTION_DISABLED = true;
+
 export function createResourcePlaybookGateway(options: { backendSrv?: BackendSrv; resourceClient?: ResourceClient } = {}): PlaybookGateway {
   let backend: BackendSrv | undefined;
   let resources: ResourceClient | undefined;
@@ -55,19 +58,35 @@ export function createResourcePlaybookGateway(options: { backendSrv?: BackendSrv
       return page.items.map(toRun);
     },
     startDryRun(input, signal) {
+      if (LEGACY_EXECUTION_DISABLED) {
+        return disabledLegacyExecution();
+      }
       return startRun(client(), backendSrv(), input, signal);
     },
     resolveRun(input, signal) {
+      if (LEGACY_EXECUTION_DISABLED) {
+        return disabledLegacyExecution();
+      }
       return resolveRun(client(), backendSrv(), input.runId, input.decision === 'approved' ? 'approve' : 'reject', signal);
     },
     async cancelRun(runId, signal) {
+      if (LEGACY_EXECUTION_DISABLED) {
+        throw unavailable('旧 Playbook dry-run 执行入口已停用，请使用当前运行记录页面。');
+      }
       await client().requestVoid(`/api/v1/runs/${encodeURIComponent(runId)}:cancel`, { method: 'POST', signal });
       return toRun(await client().request(`/api/v1/runs/${encodeURIComponent(runId)}`, isRun, { signal }));
     },
     retryRun(runId, signal) {
+      if (LEGACY_EXECUTION_DISABLED) {
+        return disabledLegacyExecution();
+      }
       return retryRun(client(), backendSrv(), runId, signal);
     },
   };
+}
+
+async function* disabledLegacyExecution(): AsyncGenerator<PlaybookRunEvent> {
+  throw unavailable('旧 Playbook dry-run 执行入口已停用，请使用当前运行记录页面。');
 }
 
 async function writePlaybook(client: ResourceClient, path: string, method: string, input: CreatePlaybookInput | UpdatePlaybookInput, signal?: AbortSignal) {

@@ -57,3 +57,40 @@ func TestPolicyRejectsUnknownFieldsAndIncompleteMTLS(t *testing.T) {
 		})
 	}
 }
+
+func TestProductionDaguImageWiresMCPCallActionAndPolicy(t *testing.T) {
+	repositoryRoot := filepath.Join("..", "..")
+	policyPath := filepath.Join(repositoryRoot, "deploy", "mcp", "v1", "servers.yaml")
+	policy, err := LoadConfig(policyPath)
+	if err != nil {
+		t.Fatalf("load production MCP policy: %v", err)
+	}
+	if _, err := policy.Resolve("grafana-read", "query_prometheus"); err != nil {
+		t.Fatalf("resolve production Grafana tool: %v", err)
+	}
+
+	base, err := os.ReadFile(filepath.Join(repositoryRoot, "deploy", "dagu", "base.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"mcp.call:", "command: /usr/local/bin/mcp-call", "--artifact-dir", "--idempotency-key"} {
+		if !strings.Contains(string(base), required) {
+			t.Errorf("Dagu base config is missing %q", required)
+		}
+	}
+
+	dockerfile, err := os.ReadFile(filepath.Join(repositoryRoot, "deploy", "dagu", "Dockerfile"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"deploy/dagu/base.yaml /etc/aegis/dagu-base.yaml",
+		"deploy/mcp/v1/servers.yaml /etc/aegis/mcp-servers.yaml",
+		"DAGU_BASE_CONFIG=/etc/aegis/dagu-base.yaml",
+		"MCP_CALL_CONFIG=/etc/aegis/mcp-servers.yaml",
+	} {
+		if !strings.Contains(string(dockerfile), required) {
+			t.Errorf("Dagu runtime image is missing %q", required)
+		}
+	}
+}

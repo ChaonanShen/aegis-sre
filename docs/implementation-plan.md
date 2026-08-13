@@ -262,7 +262,7 @@ Provider 数据归属与标识策略复核：
 - [x] 使用原生 Dagu YAML 作为编辑内容和事实来源。
 - [x] 迁移 Playbook DAG 可视化，不反向生成第二套 DSL。
 - [x] 实现真实 `PlaybookGateway`。
-- [ ] 展示 Run、Step、Human Task、Approval 和 Artifact（Run、Step、Approval 已接入）。
+- [ ] 展示 Run、Step、Human Task、Approval 和 Artifact（Run、Step 已接入；Human Task、Approval、Artifact 待补）。
 - [x] 删除真实模式下的 Playbook fixture fallback。
 
 验收标准：

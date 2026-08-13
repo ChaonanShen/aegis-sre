@@ -40,23 +40,14 @@ describe('Control Plane Playbook gateway', () => {
 	await expect(gateway.listRuns('pbk_abcdefgh')).resolves.toEqual([expect.objectContaining({ id: 'run_abcdefgh', status: 'success' })]);
   });
 
-  test('streams normalized run events and unsubscribes on abort', async () => {
-    let unsubscribed = false;
-    const initial = { id: 'run_abcdefgh', playbook_id: 'pbk_abcdefgh', status: 'queued', sequence: 0, started_at: '2026-08-13T00:00:00Z', updated_at: '2026-08-13T00:00:00Z' };
-    const stream = new Observable<FetchResponse<Uint8Array | undefined>>((subscriber) => {
-      subscriber.next(response(new TextEncoder().encode(`data: ${JSON.stringify({ event_type: 'run.updated', payload: { status: 'running' } })}\n\n`)) as FetchResponse<Uint8Array | undefined>);
-      return () => { unsubscribed = true; };
-    });
-    const backend = fakeBackend([initial], stream);
+  test('fails closed when the retired dry-run adapter is invoked', async () => {
+    const backend = fakeBackend([]);
     const gateway = createResourcePlaybookGateway({ backendSrv: backend });
     const controller = new AbortController();
     const iterator = gateway.startDryRun({ playbookId: 'pbk_abcdefgh', params: {} }, controller.signal)[Symbol.asyncIterator]();
-    await expect(iterator.next()).resolves.toMatchObject({ value: { type: 'run_updated', payload: { id: 'run_abcdefgh' } } });
-    await expect(iterator.next()).resolves.toMatchObject({ value: { payload: { status: 'running' } } });
-    const pending = iterator.next();
-    controller.abort();
-    await expect(pending).rejects.toMatchObject({ name: 'AbortError' });
-    expect(unsubscribed).toBe(true);
+    await expect(iterator.next()).rejects.toMatchObject({ code: 'capability_unavailable' });
+    expect(backend.fetch).not.toHaveBeenCalled();
+    expect(backend.chunked).not.toHaveBeenCalled();
   });
 
   test('rejects legacy DSL before making a real request', async () => {
