@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/1024XEngineer/Torchbearing/grafana-plugin-app/pkg/plugin"
+	"github.com/1024XEngineer/aegis-sre/grafana-plugin/pkg/plugin"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/app"
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
 )

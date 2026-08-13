@@ -1,13 +1,8 @@
-module github.com/1024XEngineer/Torchbearing/grafana-plugin-app
+module github.com/1024XEngineer/aegis-sre/grafana-plugin
 
 go 1.26.4
 
-require (
-	github.com/1024XEngineer/Torchbearing/api v0.0.0
-	github.com/grafana/grafana-plugin-sdk-go v0.292.2
-)
-
-replace github.com/1024XEngineer/Torchbearing/api => ../api
+require github.com/grafana/grafana-plugin-sdk-go v0.292.2
 
 require (
 	github.com/BurntSushi/toml v1.6.0 // indirect

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -17,6 +18,7 @@ const (
 	EnvDaguURL         = "AEGIS_DAGU_URL"
 	EnvRAGFlowURL      = "AEGIS_RAGFLOW_URL"
 	EnvGrafanaMCPURL   = "AEGIS_GRAFANA_MCP_URL"
+	EnvPluginTokenFile = "AEGIS_PLUGIN_TOKEN_FILE"
 )
 
 var ErrInvalid = errors.New("invalid configuration")
@@ -35,6 +37,7 @@ type Config struct {
 	HTTPAddress     string
 	ShutdownTimeout time.Duration
 	Endpoints       map[Capability]string
+	PluginToken     string
 }
 
 func Load(getenv func(string) string) (Config, error) {
@@ -80,5 +83,17 @@ func Load(getenv func(string) string) (Config, error) {
 		endpoints[capability] = raw
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints}, nil
+	pluginToken := ""
+	if tokenFile := strings.TrimSpace(getenv(EnvPluginTokenFile)); tokenFile != "" {
+		content, err := os.ReadFile(tokenFile)
+		if err != nil {
+			return Config{}, fmt.Errorf("%w: read %s: %v", ErrInvalid, EnvPluginTokenFile, err)
+		}
+		pluginToken = strings.TrimSpace(string(content))
+		if pluginToken == "" || strings.ContainsAny(pluginToken, "\r\n\x00") {
+			return Config{}, fmt.Errorf("%w: %s content is invalid", ErrInvalid, EnvPluginTokenFile)
+		}
+	}
+
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken}, nil
 }

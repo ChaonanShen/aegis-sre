@@ -23,6 +23,11 @@
 
 原有薄 Plugin Backend 被复制只是为了保留完整的 Grafana App Plugin 结构。本阶段不修改、不扩展也不验证其 Go 构建；它仍引用旧仓库中的共享 Go API，因此在新的 Control Plane 契约确定前不能视为可独立发布的后端。
 
+阶段 3 已将默认 Plugin Backend 切换为 Control Plane 薄代理。旧 AI Core handler 源码仍保留在原文件中，
+并使用 `//go:build ignore` 排除在默认构建外，原因是其依赖的旧 `../api` 不属于新仓库。
+兼容窗口内如需回退，应从迁移来源提交恢复旧 API 与这些 handler 后整体构建，不能只切换单个文件；
+在新链路运行一到两个发布周期并与原作者确认前，不删除这些保留文件。
+
 原插件目录中的 `.github/workflows` 迁移后位于 `grafana-plugin/.github/workflows`，GitHub 不会把嵌套目录识别为仓库级 Workflow。它们目前只是迁移参考；新仓库的基础 CI 将在阶段 0 的后续任务中建立于根目录 `.github/workflows`。
 
 ## 有意保留的兼容项

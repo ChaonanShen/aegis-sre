@@ -13,8 +13,8 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: 'false'
       GF_AUTH_BASIC_ENABLED: 'true'
       GF_PATHS_CONFIG: /etc/grafana/torchbearing.ini
-      # 两项都是非敏感运行参数；显式必填，避免插件以空模型或错误上游启动。
-      TORCHBEARING_AI_CORE_URL: ${TORCHBEARING_AI_CORE_URL:?required}
-      TORCHBEARING_AI_MODEL_ID: ${TORCHBEARING_AI_MODEL_ID:?required}
+      # 地址是非敏感运行参数；服务凭据只通过只读文件传入，不进入浏览器配置。
+      AEGIS_CONTROL_PLANE_URL: ${AEGIS_CONTROL_PLANE_URL:?required}
+      AEGIS_CONTROL_PLANE_TOKEN_FILE: ${AEGIS_CONTROL_PLANE_TOKEN_FILE:-}
     volumes:
       - ./config/grafana.ini:/etc/grafana/torchbearing.ini:ro

@@ -47,6 +47,7 @@ func New(cfg config.Config, logger *slog.Logger) *http.Server {
 		}
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ready", Capabilities: capabilities})
 	})
+	mux.Handle("/api/v1/", apiHandler(cfg))
 
 	return &http.Server{
 		Addr:              cfg.HTTPAddress,
@@ -68,6 +69,8 @@ func requestContext(logger *slog.Logger, next http.Handler) http.Handler {
 		}
 		w.Header().Set(headerRequestID, requestID)
 		w.Header().Set(headerTraceID, traceID)
+		r.Header.Set(headerRequestID, requestID)
+		r.Header.Set(headerTraceID, traceID)
 		started := time.Now()
 		next.ServeHTTP(w, r)
 		logger.Info("request completed",
