@@ -134,6 +134,26 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		}
 		writeJSON(w, http.StatusAccepted, queuedRunJSON(runRef))
 	})
+	mux.HandleFunc("GET /api/v1/playbooks/{playbook_id}/runs", func(w http.ResponseWriter, request *http.Request) {
+		ref, ok := playbookRef(w, request)
+		if !ok {
+			return
+		}
+		limit, _ := strconv.Atoi(request.URL.Query().Get("limit"))
+		page, err := provider.ListRuns(request.Context(), actorFromRequest(request), ref, domain.PageRequest{Cursor: request.URL.Query().Get("cursor"), Limit: limit})
+		if handleProviderError(w, request, err) {
+			return
+		}
+		items := make([]any, 0, len(page.Items))
+		for _, item := range page.Items {
+			items = append(items, runJSON(item))
+		}
+		response := map[string]any{"items": items, "has_more": page.HasMore}
+		if page.NextCursor != "" {
+			response["next_cursor"] = page.NextCursor
+		}
+		writeJSON(w, http.StatusOK, response)
+	})
 	mux.HandleFunc("GET /api/v1/runs/{run_id}", func(w http.ResponseWriter, request *http.Request) {
 		ref, ok := runRef(w, request)
 		if !ok {

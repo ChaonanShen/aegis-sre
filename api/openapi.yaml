@@ -316,6 +316,20 @@ paths:
   /playbooks/{playbook_id}/runs:
     parameters:
       - $ref: '#/components/parameters/PlaybookID'
+    get:
+      operationId: listPlaybookRuns
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Playbook runs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybookRunPage'
+        default:
+          $ref: '#/components/responses/Problem'
     post:
       operationId: startPlaybookRun
       parameters:
@@ -930,6 +944,16 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PlaybookStep'
+    PlaybookRunPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/PlaybookRun'
     PlaybookStep:
       type: object
       additionalProperties: false

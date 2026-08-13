@@ -24,6 +24,13 @@ type playbookHTTPFake struct {
 	err     error
 }
 
+func (fake *playbookHTTPFake) ListRuns(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRef, _ domain.PageRequest) (domain.Page[ports.PlaybookRunState], error) {
+	return domain.Page[ports.PlaybookRunState]{Items: []ports.PlaybookRunState{{
+		Ref: ports.PlaybookRunRef{ID: "run_abcdefgh", PlaybookID: ref.ID}, Status: domain.RunRunning,
+		StartedAt: time.Date(2026, 8, 13, 1, 0, 0, 0, time.UTC),
+	}}}, fake.err
+}
+
 func (fake *playbookHTTPFake) Create(_ context.Context, _ domain.ActorContext, input ports.CreatePlaybookInput) (ports.PlaybookRef, error) {
 	fake.created = input
 	return ports.PlaybookRef{ID: input.ID}, fake.err
@@ -93,6 +100,17 @@ func TestRunEventStreamResumesAfterSequence(t *testing.T) {
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh/events?after_sequence=7", ""))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "id: 8") || !strings.Contains(response.Body.String(), `"run_id":"run_abcdefgh"`) {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestListPlaybookRunsReturnsProviderHistory(t *testing.T) {
+	t.Parallel()
+	fake := &playbookHTTPFake{}
+	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/playbooks/pbk_abcdefgh/runs", ""))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"run_abcdefgh"`) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }

@@ -111,3 +111,19 @@ func TestResolveApprovalMapsRewindToPushBack(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestClientListsRunsForOneDAG(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v1/dag-runs" || request.URL.Query().Get("name") != "pbk_a" || request.URL.Query().Get("limit") != "11" {
+			t.Errorf("request = %s?%s", request.URL.Path, request.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"dagRuns":[{"dagRunId":"run_a","name":"pbk_a","statusLabel":"running"}]}`))
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	runs, err := client.ListRuns(context.Background(), "pbk_a", 11)
+	if err != nil || len(runs) != 1 || runs[0].DAGRunID != "run_a" {
+		t.Fatalf("runs = %#v, err = %v", runs, err)
+	}
+}

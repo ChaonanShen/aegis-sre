@@ -127,6 +127,17 @@ func (client *Client) GetRun(ctx context.Context, name, runID string) (DAGRun, e
 	return response.DAGRun, err
 }
 
+func (client *Client) ListRuns(ctx context.Context, name string, limit int) ([]DAGRun, error) {
+	query := url.Values{"name": {name}, "limit": {strconv.Itoa(limit)}}
+	var response struct {
+		Runs []DAGRun `json:"dagRuns"`
+	}
+	if err := client.doJSON(ctx, http.MethodGet, "dag-runs?"+query.Encode(), nil, &response); err != nil {
+		return nil, err
+	}
+	return response.Runs, nil
+}
+
 func (client *Client) FindRun(ctx context.Context, runID string) (DAGRun, error) {
 	query := url.Values{"dagRunId": {runID}, "limit": {"2"}}
 	var response struct {

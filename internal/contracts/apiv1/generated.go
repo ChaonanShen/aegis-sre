@@ -492,6 +492,13 @@ type PlaybookRun struct {
 // PlaybookRunStatus defines model for PlaybookRun.Status.
 type PlaybookRunStatus string
 
+// PlaybookRunPage defines model for PlaybookRunPage.
+type PlaybookRunPage struct {
+	HasMore    bool          `json:"has_more"`
+	Items      []PlaybookRun `json:"items"`
+	NextCursor *string       `json:"next_cursor,omitempty"`
+}
+
 // PlaybookStep defines model for PlaybookStep.
 type PlaybookStep struct {
 	Approval  *map[string]interface{} `json:"approval,omitempty"`
@@ -657,6 +664,12 @@ type ListPlaybooksParams struct {
 // CreatePlaybookParams defines parameters for CreatePlaybook.
 type CreatePlaybookParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ListPlaybookRunsParams defines parameters for ListPlaybookRuns.
+type ListPlaybookRunsParams struct {
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // StartPlaybookRunParams defines parameters for StartPlaybookRun.

@@ -206,7 +206,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
+        get: operations["listPlaybookRuns"];
         put?: never;
         post: operations["startPlaybookRun"];
         delete?: never;
@@ -552,6 +552,9 @@ export interface components {
             /** Format: date-time */
             ended_at?: string;
             steps?: components["schemas"]["PlaybookStep"][];
+        };
+        PlaybookRunPage: components["schemas"]["PageMetadata"] & {
+            items: components["schemas"]["PlaybookRun"][];
         };
         PlaybookStep: {
             id: string;
@@ -1098,6 +1101,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listPlaybookRuns: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                playbook_id: components["parameters"]["PlaybookID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Playbook runs */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlaybookRunPage"];
+                };
             };
             default: components["responses"]["Problem"];
         };

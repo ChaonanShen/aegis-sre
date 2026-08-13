@@ -104,3 +104,24 @@ func TestProviderResolvesRunNameFromDaguWithoutMappingStore(t *testing.T) {
 		t.Fatalf("state = %#v, err = %v", state, err)
 	}
 }
+
+func TestProviderListsOnlyPublicRunsForRequestedPlaybook(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Query().Get("name") != "pbk_abcdefgh" || request.URL.Query().Get("limit") != "3" {
+			t.Errorf("query = %q", request.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"dagRuns":[
+			{"dagRunId":"run_first123","name":"pbk_abcdefgh","statusLabel":"success"},
+			{"dagRunId":"internal","name":"pbk_abcdefgh","statusLabel":"running"},
+			{"dagRunId":"run_foreign","name":"pbk_foreign","statusLabel":"failed"}
+		]}`))
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	provider, _ := NewProvider(client)
+	page, err := provider.ListRuns(context.Background(), domain.ActorContext{}, ports.PlaybookRef{ID: "pbk_abcdefgh"}, domain.PageRequest{Limit: 2})
+	if err != nil || len(page.Items) != 1 || page.Items[0].Ref.ID != "run_first123" || page.Items[0].Status != domain.RunSucceeded || page.HasMore {
+		t.Fatalf("page = %#v, err = %v", page, err)
+	}
+}

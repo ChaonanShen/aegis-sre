@@ -98,6 +98,9 @@ func (*PlaybookProvider) Validate(context.Context, domain.ActorContext, []byte) 
 func (*PlaybookProvider) StartRun(context.Context, domain.ActorContext, ports.PlaybookRef, ports.RunPlaybookInput) (ports.PlaybookRunRef, error) {
 	return ports.PlaybookRunRef{}, ErrNotConfigured
 }
+func (*PlaybookProvider) ListRuns(context.Context, domain.ActorContext, ports.PlaybookRef, domain.PageRequest) (domain.Page[ports.PlaybookRunState], error) {
+	return domain.Page[ports.PlaybookRunState]{}, ErrNotConfigured
+}
 func (*PlaybookProvider) GetRun(context.Context, domain.ActorContext, ports.PlaybookRunRef) (ports.PlaybookRunState, error) {
 	return ports.PlaybookRunState{}, ErrNotConfigured
 }

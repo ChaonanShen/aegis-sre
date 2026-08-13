@@ -90,6 +90,7 @@ type PlaybookProvider interface {
 	Delete(context.Context, domain.ActorContext, PlaybookRef) error
 	Validate(context.Context, domain.ActorContext, []byte) ([]ValidationIssue, error)
 	StartRun(context.Context, domain.ActorContext, PlaybookRef, RunPlaybookInput) (PlaybookRunRef, error)
+	ListRuns(context.Context, domain.ActorContext, PlaybookRef, domain.PageRequest) (domain.Page[PlaybookRunState], error)
 	GetRun(context.Context, domain.ActorContext, PlaybookRunRef) (PlaybookRunState, error)
 	CancelRun(context.Context, domain.ActorContext, PlaybookRunRef) error
 	RetryRun(context.Context, domain.ActorContext, PlaybookRunRef, domain.ID) (PlaybookRunRef, error)

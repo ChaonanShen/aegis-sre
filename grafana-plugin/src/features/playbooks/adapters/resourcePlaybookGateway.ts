@@ -17,6 +17,7 @@ import { PlaybookGateway } from '../ports/PlaybookGateway';
 type ContractPlaybook = components['schemas']['Playbook'];
 type ContractPlaybookPage = components['schemas']['PlaybookPage'];
 type ContractRun = components['schemas']['PlaybookRun'];
+type ContractRunPage = components['schemas']['PlaybookRunPage'];
 
 export function createResourcePlaybookGateway(options: { backendSrv?: BackendSrv; resourceClient?: ResourceClient } = {}): PlaybookGateway {
   let backend: BackendSrv | undefined;
@@ -49,8 +50,9 @@ export function createResourcePlaybookGateway(options: { backendSrv?: BackendSrv
     async discardDraft() {
       throw unavailable('Playbook 草稿存储不属于 Dagu。');
     },
-    async listRuns() {
-      return [];
+    async listRuns(playbookId, signal) {
+      const page = await client().request(`${playbookPath(playbookId)}/runs`, isRunPage, { signal });
+      return page.items.map(toRun);
     },
     startDryRun(input, signal) {
       return startRun(client(), backendSrv(), input, signal);
@@ -184,6 +186,10 @@ function isPlaybookPage(value: unknown): value is ContractPlaybookPage {
 function isRun(value: unknown): value is ContractRun {
   const run = record(value);
   return Boolean(run && typeof run.id === 'string' && typeof run.playbook_id === 'string' && typeof run.status === 'string');
+}
+function isRunPage(value: unknown): value is ContractRunPage {
+  const page = record(value);
+  return Boolean(page && Array.isArray(page.items) && page.items.every(isRun) && typeof page.has_more === 'boolean');
 }
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : undefined;

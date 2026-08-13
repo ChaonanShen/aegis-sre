@@ -33,6 +33,13 @@ describe('Control Plane Playbook gateway', () => {
     }));
   });
 
+  test('loads run history from the Control Plane', async () => {
+	const run = { id: 'run_abcdefgh', playbook_id: 'pbk_abcdefgh', status: 'succeeded', sequence: 1, started_at: '2026-08-13T00:00:00Z', updated_at: '2026-08-13T00:01:00Z' };
+	const backend = fakeBackend([{ items: [run], has_more: false }]);
+	const gateway = createResourcePlaybookGateway({ backendSrv: backend });
+	await expect(gateway.listRuns('pbk_abcdefgh')).resolves.toEqual([expect.objectContaining({ id: 'run_abcdefgh', status: 'success' })]);
+  });
+
   test('streams normalized run events and unsubscribes on abort', async () => {
     let unsubscribed = false;
     const initial = { id: 'run_abcdefgh', playbook_id: 'pbk_abcdefgh', status: 'queued', sequence: 0, started_at: '2026-08-13T00:00:00Z', updated_at: '2026-08-13T00:00:00Z' };

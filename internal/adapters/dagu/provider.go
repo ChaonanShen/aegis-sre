@@ -130,6 +130,32 @@ func (provider *Provider) StartRun(ctx context.Context, _ domain.ActorContext, r
 	return ports.PlaybookRunRef{ID: input.ID, PlaybookID: ref.ID}, nil
 }
 
+func (provider *Provider) ListRuns(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRef, request domain.PageRequest) (domain.Page[ports.PlaybookRunState], error) {
+	if _, err := playbookFileName(ref.ID); err != nil {
+		return domain.Page[ports.PlaybookRunState]{}, err
+	}
+	limit := request.Limit
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	runs, err := provider.client.ListRuns(ctx, string(ref.ID), limit+1)
+	if err != nil {
+		return domain.Page[ports.PlaybookRunState]{}, err
+	}
+	items := make([]ports.PlaybookRunState, 0, min(len(runs), limit+1))
+	for _, run := range runs {
+		if run.Name != string(ref.ID) || requireIDPrefix(domain.ID(run.DAGRunID), "run_") != nil {
+			continue
+		}
+		items = append(items, mapRun(ports.PlaybookRunRef{ID: domain.ID(run.DAGRunID), PlaybookID: ref.ID}, run))
+	}
+	hasMore := len(items) > limit
+	if hasMore {
+		items = items[:limit]
+	}
+	return domain.Page[ports.PlaybookRunState]{Items: items, HasMore: hasMore}, nil
+}
+
 func (provider *Provider) GetRun(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef) (ports.PlaybookRunState, error) {
 	resolved, err := provider.resolveRunRef(ctx, ref)
 	if err != nil {
