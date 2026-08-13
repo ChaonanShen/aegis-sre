@@ -17,6 +17,20 @@ jobs:
   control-plane:
     name: Control Plane
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4-alpine
+        env:
+          POSTGRES_DB: aegis
+          POSTGRES_USER: aegis
+          POSTGRES_PASSWORD: aegis
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U aegis -d aegis"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -33,7 +47,12 @@ jobs:
         run: test -z "$(gofmt -l cmd internal)"
 
       - name: Verify generated contracts
-        run: make contracts-check
+        run: make contracts-go-check
+
+      - name: Migrate PostgreSQL
+        env:
+          AEGIS_DATABASE_URL: postgres://aegis:aegis@localhost:5432/aegis?sslmode=disable
+        run: make db-up
 
       - name: Test
         run: go test ./...
@@ -62,6 +81,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify generated contracts
+        run: make -C .. contracts-ts-check
 
       - name: Typecheck
         run: npm run typecheck

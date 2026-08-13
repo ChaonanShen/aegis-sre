@@ -134,9 +134,9 @@ internal/application/contracts/
 
 任务：
 
-- [ ] 建立 PostgreSQL migrations 和 repository。
-- [ ] 实现业务 ID 与 Provider ID 映射 repository，但不预建 Provider 业务逻辑。
-- [ ] 建立 operation idempotency、approval reference 和跨组件 trace 关联。
+- [x] 建立 PostgreSQL migrations 和 repository。
+- [x] 实现业务 ID 与 Provider ID 映射 repository，但不预建 Provider 业务逻辑。
+- [x] 建立 operation idempotency、approval reference 和跨组件 trace 关联。
 - [ ] Plugin Backend 从 Grafana PluginContext 提取受信的用户、Org 和请求上下文。
 - [ ] Plugin Backend 只做 REST/SSE 透明代理、超时和受控错误转发。
 - [ ] 移除 Plugin Backend 对旧仓库 `../api` 的构建依赖。

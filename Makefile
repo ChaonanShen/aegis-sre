@@ -1,15 +1,31 @@
-.PHONY: verify contracts-generate contracts-check control-plane-test control-plane-build plugin-typecheck plugin-lint plugin-test plugin-build
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build plugin-typecheck plugin-lint plugin-test plugin-build db-up db-status
 
 OAPI_CODEGEN_VERSION := v2.8.0
+GOOSE_VERSION := v3.27.3
 
 verify: contracts-check control-plane-test control-plane-build plugin-typecheck plugin-lint plugin-test plugin-build
 
-contracts-generate:
+contracts-generate: contracts-go-generate contracts-ts-generate
+
+contracts-go-generate:
 	go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION) --config api/oapi-codegen.yaml api/openapi.yaml
+
+contracts-ts-generate:
 	npm --prefix grafana-plugin run contracts:generate
 
-contracts-check: contracts-generate
-	git diff --exit-code -- internal/contracts/apiv1/generated.go grafana-plugin/src/api/generated/controlPlane.ts grafana-plugin/src/api/generated/events.ts
+contracts-check: contracts-go-check contracts-ts-check
+
+contracts-go-check: contracts-go-generate
+	git diff --exit-code -- internal/contracts/apiv1/generated.go
+
+contracts-ts-check: contracts-ts-generate
+	git diff --exit-code -- grafana-plugin/src/api/generated/controlPlane.ts grafana-plugin/src/api/generated/events.ts
+
+db-up:
+	go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir migrations postgres "$(AEGIS_DATABASE_URL)" up
+
+db-status:
+	go run github.com/pressly/goose/v3/cmd/goose@$(GOOSE_VERSION) -dir migrations postgres "$(AEGIS_DATABASE_URL)" status
 
 control-plane-test:
 	go test ./...
