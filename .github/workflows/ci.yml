@@ -32,6 +32,9 @@ jobs:
       - name: Format
         run: test -z "$(gofmt -l cmd internal)"
 
+      - name: Verify generated contracts
+        run: make contracts-check
+
       - name: Test
         run: go test ./...
 

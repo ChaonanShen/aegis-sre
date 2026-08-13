@@ -1,0 +1,827 @@
+openapi: 3.0.3
+info:
+  title: Aegis SRE Control Plane API
+  version: 1.0.0
+  description: Stable product API. Provider identifiers and credentials are never part of this contract.
+servers:
+  - url: /api/v1
+paths:
+  /capabilities:
+    get:
+      operationId: listCapabilities
+      responses:
+        '200':
+          description: Runtime capabilities
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilityList'
+        default:
+          $ref: '#/components/responses/Problem'
+  /sessions:
+    get:
+      operationId: listSessions
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Sessions visible to the current actor
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionPage'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createSession
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSessionRequest'
+      responses:
+        '201':
+          description: Created session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        default:
+          $ref: '#/components/responses/Problem'
+  /sessions/{session_id}:
+    parameters:
+      - $ref: '#/components/parameters/SessionID'
+    get:
+      operationId: getSession
+      responses:
+        '200':
+          description: Session aggregate
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SessionDetail'
+        default:
+          $ref: '#/components/responses/Problem'
+    patch:
+      operationId: updateSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSessionRequest'
+      responses:
+        '200':
+          description: Updated session
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        default:
+          $ref: '#/components/responses/Problem'
+    delete:
+      operationId: deleteSession
+      responses:
+        '204':
+          description: Session deleted
+        default:
+          $ref: '#/components/responses/Problem'
+  /sessions/{session_id}/turns:stream:
+    parameters:
+      - $ref: '#/components/parameters/SessionID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      operationId: startTurn
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartTurnRequest'
+      responses:
+        '200':
+          description: Server-sent events conforming to api/events.schema.json
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        default:
+          $ref: '#/components/responses/Problem'
+  /sessions/{session_id}/approvals/{approval_id}:resolve:
+    parameters:
+      - $ref: '#/components/parameters/SessionID'
+      - $ref: '#/components/parameters/ApprovalID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      operationId: resolveAgentApproval
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecision'
+      responses:
+        '200':
+          description: Server-sent continuation events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        default:
+          $ref: '#/components/responses/Problem'
+  /services:
+    get:
+      operationId: listServices
+      parameters:
+        - $ref: '#/components/parameters/FolderUID'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Service entries
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicePage'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createService
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateServiceRequest'
+      responses:
+        '201':
+          description: Created service
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceEntry'
+        default:
+          $ref: '#/components/responses/Problem'
+  /knowledge-bases:
+    get:
+      operationId: listKnowledgeBases
+      parameters:
+        - $ref: '#/components/parameters/FolderUID'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Knowledge bases
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeBasePage'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createKnowledgeBase
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateKnowledgeBaseRequest'
+      responses:
+        '201':
+          description: Created knowledge base
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeBase'
+        default:
+          $ref: '#/components/responses/Problem'
+  /knowledge-bases/{knowledge_base_id}/documents:
+    parameters:
+      - $ref: '#/components/parameters/KnowledgeBaseID'
+    get:
+      operationId: listDocuments
+      parameters:
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Documents
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentPage'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createDocument
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDocumentRequest'
+      responses:
+        '202':
+          description: Document accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
+        default:
+          $ref: '#/components/responses/Problem'
+  /playbooks:
+    get:
+      operationId: listPlaybooks
+      parameters:
+        - $ref: '#/components/parameters/FolderUID'
+        - $ref: '#/components/parameters/Cursor'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: Playbook references
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybookPage'
+        default:
+          $ref: '#/components/responses/Problem'
+    post:
+      operationId: createPlaybook
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              type: string
+      responses:
+        '201':
+          description: Created playbook reference
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Playbook'
+        default:
+          $ref: '#/components/responses/Problem'
+  /playbooks/{playbook_id}/validate:
+    parameters:
+      - $ref: '#/components/parameters/PlaybookID'
+    post:
+      operationId: validatePlaybook
+      requestBody:
+        required: true
+        content:
+          application/yaml:
+            schema:
+              type: string
+      responses:
+        '200':
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationResult'
+        default:
+          $ref: '#/components/responses/Problem'
+  /playbooks/{playbook_id}/runs:
+    parameters:
+      - $ref: '#/components/parameters/PlaybookID'
+    post:
+      operationId: startPlaybookRun
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartPlaybookRunRequest'
+      responses:
+        '202':
+          description: Run accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybookRun'
+        default:
+          $ref: '#/components/responses/Problem'
+  /runs/{run_id}:
+    parameters:
+      - $ref: '#/components/parameters/RunID'
+    get:
+      operationId: getPlaybookRun
+      responses:
+        '200':
+          description: Run summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybookRun'
+        default:
+          $ref: '#/components/responses/Problem'
+  /runs/{run_id}/events:
+    parameters:
+      - $ref: '#/components/parameters/RunID'
+    get:
+      operationId: streamPlaybookRunEvents
+      parameters:
+        - name: after_sequence
+          in: query
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+      responses:
+        '200':
+          description: Server-sent run events conforming to api/events.schema.json
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        default:
+          $ref: '#/components/responses/Problem'
+components:
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      schema:
+        type: string
+        maxLength: 512
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 8
+        maxLength: 128
+    FolderUID:
+      name: folder_uid
+      in: query
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+    SessionID:
+      name: session_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/BusinessID'
+    ApprovalID:
+      name: approval_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/BusinessID'
+    KnowledgeBaseID:
+      name: knowledge_base_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/BusinessID'
+    PlaybookID:
+      name: playbook_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/BusinessID'
+    RunID:
+      name: run_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/BusinessID'
+  responses:
+    Problem:
+      description: Stable product error
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    BusinessID:
+      type: string
+      pattern: '^[a-z][a-z0-9_]{1,15}_[A-Za-z0-9_-]{8,64}$'
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code, request_id, trace_id]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        code:
+          type: string
+          enum: [invalid_argument, unauthenticated, forbidden, not_found, conflict, capability_unavailable, provider_timeout, provider_unavailable, internal]
+        detail:
+          type: string
+        request_id:
+          type: string
+        trace_id:
+          type: string
+        retryable:
+          type: boolean
+          default: false
+    Capability:
+      type: object
+      additionalProperties: false
+      required: [name, status]
+      properties:
+        name:
+          type: string
+          enum: [agent, knowledge, playbook, grafana_read, grafana_write]
+        status:
+          type: string
+          enum: [available, unavailable, degraded]
+        reason:
+          type: string
+    CapabilityList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Capability'
+    PageMetadata:
+      type: object
+      additionalProperties: false
+      required: [has_more]
+      properties:
+        next_cursor:
+          type: string
+        has_more:
+          type: boolean
+    Session:
+      type: object
+      additionalProperties: false
+      required: [id, title, status, version, created_at, updated_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/BusinessID'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        status:
+          type: string
+          enum: [active, archived, busy]
+        folder_uid:
+          type: string
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SessionPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Session'
+    SessionDetail:
+      type: object
+      additionalProperties: false
+      required: [session]
+      properties:
+        session:
+          $ref: '#/components/schemas/Session'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Message'
+    Message:
+      type: object
+      additionalProperties: false
+      required: [id, role, content, created_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/BusinessID'
+        role:
+          type: string
+          enum: [user, assistant, tool]
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreateSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        folder_uid:
+          type: string
+          maxLength: 128
+    UpdateSessionRequest:
+      type: object
+      additionalProperties: false
+      required: [version]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+        status:
+          type: string
+          enum: [active, archived]
+        version:
+          type: integer
+          format: int64
+          minimum: 1
+    StartTurnRequest:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message:
+          type: string
+          minLength: 1
+          maxLength: 100000
+        mentions:
+          type: array
+          maxItems: 50
+          items:
+            type: string
+    ApprovalDecision:
+      type: object
+      additionalProperties: false
+      required: [decision]
+      properties:
+        decision:
+          type: string
+          enum: [approved, rejected]
+        reason:
+          type: string
+          maxLength: 2000
+    ServiceEntry:
+      type: object
+      additionalProperties: false
+      required: [id, name, folder_uid, version, created_at, updated_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/BusinessID'
+        name:
+          type: string
+        folder_uid:
+          type: string
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+        version:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateServiceRequest:
+      type: object
+      additionalProperties: false
+      required: [name, folder_uid]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        folder_uid:
+          type: string
+          minLength: 1
+          maxLength: 128
+        labels:
+          type: object
+          additionalProperties:
+            type: string
+    ServicePage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/ServiceEntry'
+    KnowledgeBase:
+      type: object
+      additionalProperties: false
+      required: [id, name, folder_uid, status, version, created_at, updated_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/BusinessID'
+        name:
+          type: string
+        folder_uid:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        version:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateKnowledgeBaseRequest:
+      type: object
+      additionalProperties: false
+      required: [name, folder_uid]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        folder_uid:
+          type: string
+          minLength: 1
+          maxLength: 128
+    KnowledgeBasePage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/KnowledgeBase'
+    Document:
+      type: object
+      additionalProperties: false
+      required: [id, knowledge_base_id, name, media_type, status, version, created_at, updated_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/BusinessID'
+        knowledge_base_id:
+          $ref: '#/components/schemas/BusinessID'
+        name:
+          type: string
+        media_type:
+          type: string
+        status:
+          type: string
+          enum: [pending, indexing, ready, failed, disabled]
+        version:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CreateDocumentRequest:
+      type: object
+      additionalProperties: false
+      required: [name, media_type, upload_token]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 512
+        media_type:
+          type: string
+        upload_token:
+          type: string
+          description: Short-lived Aegis upload token; never a Provider credential.
+    DocumentPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Document'
+    Playbook:
+      type: object
+      additionalProperties: false
+      required: [id, name, status, version, created_at, updated_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/BusinessID'
+        name:
+          type: string
+        folder_uid:
+          type: string
+        status:
+          type: string
+          enum: [active, disabled]
+        version:
+          type: integer
+          format: int64
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    PlaybookPage:
+      allOf:
+        - $ref: '#/components/schemas/PageMetadata'
+        - type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                $ref: '#/components/schemas/Playbook'
+    ValidationResult:
+      type: object
+      additionalProperties: false
+      required: [valid, errors]
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [message]
+            properties:
+              path:
+                type: string
+              message:
+                type: string
+    StartPlaybookRunRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        parameters:
+          type: object
+          additionalProperties:
+            type: string
+    PlaybookRun:
+      type: object
+      additionalProperties: false
+      required: [id, playbook_id, status, sequence, started_at, updated_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/BusinessID'
+        playbook_id:
+          $ref: '#/components/schemas/BusinessID'
+        status:
+          type: string
+          enum: [queued, running, waiting_for_input, waiting_for_approval, succeeded, failed, cancelled]
+        sequence:
+          type: integer
+          format: int64
+          minimum: 0
+        started_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time

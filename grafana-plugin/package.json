@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "scripts": {
     "build": "webpack -c ./.config/webpack/webpack.config.ts --env production",
+    "contracts:generate": "openapi-typescript ../api/openapi.yaml -o src/api/generated/controlPlane.ts && json2ts -i ../api/events.schema.json -o src/api/generated/events.ts --bannerComment '/* Generated from api/events.schema.json. Do not edit directly. */'",
     "dev": "webpack -w -c ./.config/webpack/webpack.config.ts --env development",
     "test": "jest --watch --onlyChanged",
     "test:ci": "jest --passWithNoTests --maxWorkers 4",
@@ -47,6 +48,8 @@
     "imports-loader": "^5.0.0",
     "jest": "^29.7.0",
     "jest-environment-jsdom": "^29.7.0",
+    "json-schema-to-typescript": "15.0.4",
+    "openapi-typescript": "7.13.0",
     "prettier": "^3.6.0",
     "replace-in-file-webpack-plugin": "^1.0.0",
     "sass": "^1.89.0",

@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aegis-sre.dev/schemas/events/v1.json",
+  "title": "AegisEvent",
+  "description": "Stable SSE envelope. Provider-native events must be normalized before crossing this boundary.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "event_type", "sequence", "occurred_at", "payload"],
+  "properties": {
+    "event_id": { "$ref": "#/$defs/business_id" },
+    "event_type": {
+      "enum": [
+        "message.delta",
+        "tool.started",
+        "tool.completed",
+        "approval.requested",
+        "approval.resolved",
+        "artifact.created",
+        "turn.completed",
+        "turn.failed",
+        "run.updated"
+      ]
+    },
+    "session_id": { "$ref": "#/$defs/business_id" },
+    "turn_id": { "$ref": "#/$defs/business_id" },
+    "run_id": { "$ref": "#/$defs/business_id" },
+    "sequence": { "type": "integer", "minimum": 0 },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "payload": {
+      "oneOf": [
+        { "$ref": "#/$defs/message_delta" },
+        { "$ref": "#/$defs/tool_started" },
+        { "$ref": "#/$defs/tool_completed" },
+        { "$ref": "#/$defs/approval_requested" },
+        { "$ref": "#/$defs/approval_resolved" },
+        { "$ref": "#/$defs/artifact_created" },
+        { "$ref": "#/$defs/turn_completed" },
+        { "$ref": "#/$defs/turn_failed" },
+        { "$ref": "#/$defs/run_updated" }
+      ]
+    }
+  },
+  "$defs": {
+    "business_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{1,15}_[A-Za-z0-9_-]{8,64}$"
+    },
+    "message_delta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["delta"],
+      "properties": { "delta": { "type": "string" } }
+    },
+    "tool_started": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["call_id", "server", "tool", "arguments", "access"],
+      "properties": {
+        "call_id": { "$ref": "#/$defs/business_id" },
+        "server": { "type": "string" },
+        "tool": { "type": "string" },
+        "arguments": { "type": "object" },
+        "access": { "enum": ["read", "write", "execute"] }
+      }
+    },
+    "tool_completed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["call_id", "status", "duration_ms"],
+      "properties": {
+        "call_id": { "$ref": "#/$defs/business_id" },
+        "status": { "enum": ["succeeded", "failed"] },
+        "summary": { "type": "string" },
+        "duration_ms": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "approval_requested": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approval_id", "action", "reason", "risk"],
+      "properties": {
+        "approval_id": { "$ref": "#/$defs/business_id" },
+        "action": { "type": "string" },
+        "reason": { "type": "string" },
+        "risk": { "enum": ["medium", "high", "critical"] },
+        "preview": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "approval_resolved": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approval_id", "decision"],
+      "properties": {
+        "approval_id": { "$ref": "#/$defs/business_id" },
+        "decision": { "enum": ["approved", "rejected"] },
+        "reason": { "type": "string" }
+      }
+    },
+    "artifact_created": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["artifact_id", "name", "media_type", "size_bytes"],
+      "properties": {
+        "artifact_id": { "$ref": "#/$defs/business_id" },
+        "name": { "type": "string" },
+        "media_type": { "type": "string" },
+        "size_bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "turn_completed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": { "status": { "const": "succeeded" } }
+    },
+    "turn_failed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "retryable"],
+      "properties": {
+        "code": { "type": "string" },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "run_updated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": ["queued", "running", "waiting_for_input", "waiting_for_approval", "succeeded", "failed", "cancelled"]
+        },
+        "step_id": { "type": "string" },
+        "summary": { "type": "string" }
+      }
+    }
+  }
+}

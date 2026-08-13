@@ -1,0 +1,6 @@
+package: apiv1
+output: internal/contracts/apiv1/generated.go
+generate:
+  models: true
+output-options:
+  skip-prune: true

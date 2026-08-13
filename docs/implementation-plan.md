@@ -93,6 +93,8 @@ internal/adapters/
 
 ## 5. 阶段 2：公共契约与 Provider Ports 冻结
 
+状态：**已完成首个 v1 契约基线；后续只允许兼容性演进。**
+
 目标：在接入任一外部组件前，冻结前端、Control Plane 和 Provider Adapter 共同依赖的稳定边界。
 
 建议新增：
@@ -107,15 +109,15 @@ internal/application/contracts/
 
 任务：
 
-- [ ] 定义 `ActorContext`，所有 Application Service 和 Provider 调用显式接收它。
-- [ ] 定义稳定业务 ID、分页、版本、幂等键、错误码和 Problem Response。
-- [ ] 定义 `AgentProvider`、`KnowledgeProvider`、`PlaybookProvider`，接口中禁止出现 Provider SDK 类型。
-- [ ] 定义统一 SSE Event Envelope、事件序号、终态、断线重连和去重规则。
-- [ ] 冻结 Session、Turn、Approval、Playbook、Run、KnowledgeBase、Document 和 ServiceEntry 的公开 Schema。
-- [ ] 明确 Provider ID 只存在于 adapter 和持久化映射中，不进入普通前端响应。
-- [ ] 定义能力发现机制；未接入的 Knowledge、Playbook 或 Agent 能力返回稳定的 `capability_unavailable`。
-- [ ] 生成 OpenAPI client 和事件类型，禁止前后端手写重复 DTO。
-- [ ] 加入 Provider contract fake，只用于接口测试，不作为真实运行模式的 fixture 或静默 fallback。
+- [x] 定义 `ActorContext`，所有 Application Service 和 Provider 调用显式接收它。
+- [x] 定义稳定业务 ID、分页、版本、幂等键、错误码和 Problem Response。
+- [x] 定义 `AgentProvider`、`KnowledgeProvider`、`PlaybookProvider`，接口中禁止出现 Provider SDK 类型。
+- [x] 定义统一 SSE Event Envelope、事件序号、终态、断线重连和去重规则。
+- [x] 冻结 Session、Turn、Approval、Playbook、Run、KnowledgeBase、Document 和 ServiceEntry 的公开 Schema。
+- [x] 明确 Provider ID 只存在于 adapter 和持久化映射中，不进入普通前端响应。
+- [x] 定义能力发现机制；未接入的 Knowledge、Playbook 或 Agent 能力返回稳定的 `capability_unavailable`。
+- [x] 生成 OpenAPI client 和事件类型，禁止前后端手写重复 DTO。
+- [x] 加入 Provider contract fake，只用于接口测试，不作为真实运行模式的 fixture 或静默 fallback。
 
 验收标准：
 
