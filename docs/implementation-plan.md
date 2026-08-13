@@ -61,6 +61,8 @@ Knowledge 的公共接口仍在前期冻结，避免延后部署 RAGFlow 反过�
 
 ## 4. 阶段 1：Control Plane 最小骨架
 
+状态：**已完成。**
+
 目标：建立一个可独立构建和运行的 Go 模块化单体，但暂不接入任何 Provider 或展开业务实现。
 
 建议新增：
@@ -75,12 +77,12 @@ internal/adapters/
 
 任务：
 
-- [ ] 初始化 Go module，设置统一 lint、test 和 build 命令。
-- [ ] 实现 `/health/live` 和 `/health/ready`。
-- [ ] 建立配置加载、结构化日志、request ID、trace ID 和受控错误模型。
-- [ ] 建立依赖装配和优雅关闭，不创建 RAG、Workflow 或 Agent 运行时。
-- [ ] 将配置分为必需、可选和敏感项；未配置 Provider 时服务仍可启动并明确报告能力不可用。
-- [ ] 建立根目录统一开发命令，使前端和 Control Plane 可分别验证。
+- [x] 初始化 Go module，设置统一 lint、test 和 build 命令。
+- [x] 实现 `/health/live` 和 `/health/ready`。
+- [x] 建立配置加载、结构化日志、request ID、trace ID 和受控错误模型。
+- [x] 建立依赖装配和优雅关闭，不创建 RAG、Workflow 或 Agent 运行时。
+- [x] 将配置分为必需、可选和敏感项；未配置 Provider 时服务仍可启动并明确报告能力不可用。
+- [x] 建立根目录统一开发命令，使前端和 Control Plane 可分别验证。
 
 验收标准：
 
