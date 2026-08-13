@@ -31,3 +31,36 @@ export interface PlaybookValidationResult {
   valid: boolean;
   errors: PlaybookValidationIssue[];
 }
+
+export type PlaybookRunStatus =
+  | 'queued'
+  | 'running'
+  | 'waiting_for_input'
+  | 'waiting_for_approval'
+  | 'succeeded'
+  | 'failed'
+  | 'cancelled';
+
+export interface PlaybookRunStep {
+  id: string;
+  name: string;
+  status: PlaybookRunStatus;
+  startedAt?: string;
+  endedAt?: string;
+}
+
+export interface PlaybookRunRecord {
+  id: string;
+  playbookId: string;
+  status: PlaybookRunStatus;
+  startedAt: string;
+  updatedAt: string;
+  endedAt?: string;
+  steps: PlaybookRunStep[];
+}
+
+export interface StartPlaybookRunInput {
+  parameters?: Record<string, string>;
+  /** 同一次用户执行操作和网络重试必须复用同一个键。 */
+  idempotencyKey: string;
+}

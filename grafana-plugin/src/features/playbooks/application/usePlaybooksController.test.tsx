@@ -11,6 +11,7 @@ describe('usePlaybooksController', () => {
       listPlaybooks: jest.fn(() => promise),
       getPlaybook: jest.fn(), createPlaybook: jest.fn(), updatePlaybook: jest.fn(),
       deletePlaybook: jest.fn(), validatePlaybook: jest.fn(),
+      listRuns: jest.fn(), startRun: jest.fn(), getRun: jest.fn(), cancelRun: jest.fn(),
     });
     const oldGateway = gateway(first.promise);
     const newGateway = gateway(second.promise);

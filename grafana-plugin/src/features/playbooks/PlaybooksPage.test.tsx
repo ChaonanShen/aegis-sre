@@ -92,6 +92,10 @@ function fakeGateway(): jest.Mocked<PlaybookCrudGateway> {
     updatePlaybook: jest.fn(async (_id, { source }) => document(source)),
     deletePlaybook: jest.fn(async (_id: string, _signal?: AbortSignal) => undefined),
     validatePlaybook: jest.fn(async (_source: string, _signal?: AbortSignal) => ({ valid: true, errors: [] })),
+    listRuns: jest.fn(async (_playbookId: string, _signal?: AbortSignal) => []),
+    startRun: jest.fn(),
+    getRun: jest.fn(),
+    cancelRun: jest.fn(),
   };
 }
 

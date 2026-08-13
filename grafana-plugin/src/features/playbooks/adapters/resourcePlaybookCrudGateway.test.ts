@@ -7,6 +7,16 @@ description: Diagnose service
 steps: []
 `;
 
+const run = {
+  id: 'run_abcdefgh',
+  playbook_id: 'pbk_scope_abcdefgh',
+  status: 'running',
+  sequence: 1,
+  started_at: '2026-08-14T10:00:00Z',
+  updated_at: '2026-08-14T10:00:01Z',
+  steps: [{ id: 'inspect', name: 'Inspect', status: 'running' }],
+};
+
 describe('Control Plane Playbook CRUD gateway', () => {
   test('lists summaries without N+1 detail requests', async () => {
     const backend = fakeBackend([{ items: [{ id: 'pbk_scope_abcdefgh', name: 'diagnose', description: 'Diagnose service', status: 'active' }], has_more: false }]);
@@ -47,6 +57,42 @@ describe('Control Plane Playbook CRUD gateway', () => {
     const requests = (backend.fetch as jest.Mock).mock.calls.map(([request]) => request as BackendSrvRequest);
     expect(requests.map(({ method }) => method)).toEqual(['POST', 'PUT', 'DELETE']);
     expect(requests[0].url).toContain('/playbooks/validate');
+  });
+
+  test('does not impose the legacy steps projection on native Dagu YAML', async () => {
+    const controllerSource = `name: controller\nhandler_on:\n  success:\n    command: echo done\n`;
+    const backend = fakeBackend([
+      { valid: true, errors: [] },
+      { id: 'pbk_scope_abcdefgh', name: 'controller', description: '', status: 'active', source: controllerSource },
+    ]);
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+    await expect(gateway.validatePlaybook(controllerSource)).resolves.toEqual({ valid: true, errors: [] });
+    await expect(gateway.getPlaybook('pbk_scope_abcdefgh')).resolves.toMatchObject({ source: controllerSource });
+  });
+
+  test('starts, polls, lists and cancels real Dagu runs', async () => {
+    const backend = fakeBackend([{ ...run, status: 'queued' }, run, { items: [run], has_more: false }, undefined]);
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+
+    await expect(
+      gateway.startRun('pbk_scope_abcdefgh', { parameters: { service: 'api' }, idempotencyKey: 'run-operation-123' })
+    ).resolves.toMatchObject({ id: 'run_abcdefgh', status: 'queued' });
+    await expect(gateway.getRun('run_abcdefgh')).resolves.toMatchObject({ status: 'running', steps: [{ id: 'inspect' }] });
+    await expect(gateway.listRuns('pbk_scope_abcdefgh')).resolves.toHaveLength(1);
+    await gateway.cancelRun('run_abcdefgh');
+
+    const requests = (backend.fetch as jest.Mock).mock.calls.map(([request]) => request as BackendSrvRequest);
+    expect(requests).toEqual([
+      expect.objectContaining({
+        method: 'POST',
+        data: { parameters: { service: 'api' } },
+        headers: { 'Idempotency-Key': 'run-operation-123' },
+        url: expect.stringContaining('/playbooks/pbk_scope_abcdefgh/runs'),
+      }),
+      expect.objectContaining({ method: 'GET', url: expect.stringContaining('/runs/run_abcdefgh') }),
+      expect.objectContaining({ method: 'GET', url: expect.stringContaining('/playbooks/pbk_scope_abcdefgh/runs') }),
+      expect.objectContaining({ method: 'POST', url: expect.stringContaining('/runs/run_abcdefgh:cancel') }),
+    ]);
   });
 });
 
