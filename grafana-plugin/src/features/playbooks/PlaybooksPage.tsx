@@ -20,7 +20,7 @@ import './playbooks.css';
 export default function PlaybooksPage() {
   const location = useLocation();
   const routeTail = location.pathname.split(`/${ROUTES.Playbooks}/`)[1] ?? '';
-  const { playbookGateway, workbenchGateway } = useAppServices();
+  const { playbookGateway, runtimeMode, workbenchGateway } = useAppServices();
   const { folders } = useAppShell();
   const folderList = useMemo(() => (folders.status === 'success' ? folders.data : []), [folders]);
   const controller = usePlaybooksController({ folders: folderList, gateway: playbookGateway });
@@ -49,6 +49,7 @@ export default function PlaybooksPage() {
         folders={folderList}
         gateway={playbookGateway}
         key={`new:${draftId ?? 'empty'}`}
+        nativeMode={runtimeMode === 'real'}
         onSaved={controller.reload}
       />
     );
@@ -85,6 +86,7 @@ export default function PlaybooksPage() {
         folders={folderList}
         gateway={playbookGateway}
         key={`edit:${playbook.id}`}
+        nativeMode={runtimeMode === 'real'}
         onSaved={controller.reload}
         playbook={playbook}
       />

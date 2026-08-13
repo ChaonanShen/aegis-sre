@@ -17,20 +17,22 @@ export function PlaybookEditor({
   draftId,
   folders,
   gateway,
+  nativeMode = false,
   onSaved,
   playbook,
 }: {
   draftId?: string;
   folders: Folder[];
   gateway: PlaybookGateway;
+  nativeMode?: boolean;
   onSaved: () => Promise<void>;
   playbook?: Playbook;
 }) {
   const navigate = useNavigate();
   const [definition, setDefinition] = useState<PlaybookDefinition>(() =>
-    playbook ? definitionOf(playbook) : emptyDefinition()
+    playbook ? definitionOf(playbook) : nativeMode ? projectDaguSource(emptyDaguSource) : emptyDefinition()
   );
-  const [source, setSource] = useState(() => playbook?.source ?? serializePlaybook(definition));
+  const [source, setSource] = useState(() => playbook?.source ?? (nativeMode ? emptyDaguSource : serializePlaybook(definition)));
   const [changeNote, setChangeNote] = useState(playbook ? '' : '初始创建');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -103,6 +105,10 @@ export function PlaybookEditor({
   );
 
   const update = (next: PlaybookDefinition) => {
+    if (nativeMode) {
+      setError('真实模式请直接编辑原生 Dagu YAML，再点击“应用 YAML”。');
+      return;
+    }
     setDefinition(next);
     setSource(serializePlaybook(next));
     setDirty(true);
@@ -212,7 +218,7 @@ export function PlaybookEditor({
             <span>/</span>
             <code>{playbook ? `编辑 ${playbook.name}` : '新建 Playbook'}</code>
           </div>
-          <p>结构化表单与 YAML 使用同一份草稿；源码修改需点击“应用 YAML”。</p>
+          <p>{nativeMode ? '原生 Dagu YAML 是唯一可写事实来源；修改后请点击“应用 YAML”。' : '结构化表单与 YAML 使用同一份草稿；源码修改需点击“应用 YAML”。'}</p>
         </div>
         <div className="playbook-header-actions">
           <button className="playbook-button secondary" onClick={cancel} type="button">
@@ -463,10 +469,10 @@ export function PlaybookEditor({
               className="playbook-button secondary"
               onClick={() => {
                   try {
-                    const parsed = definition.source ? projectDaguSource(source) : parsePlaybookSource(source);
+                    const parsed = nativeMode || definition.source ? projectDaguSource(source) : parsePlaybookSource(source);
                     configDraftsRef.current.clear();
                     setDefinition(parsed);
-                  setSource(serializePlaybook(parsed));
+                  setSource(nativeMode ? source : serializePlaybook(parsed));
                   setDirty(true);
                   setError('');
                 } catch (reason) {
@@ -713,6 +719,10 @@ function definitionWithConfigDrafts(
     }),
   };
 }
+
+const emptyDaguSource = `description: 新建 Aegis Playbook
+steps: []
+`;
 
 function emptyDefinition(): PlaybookDefinition {
   return {

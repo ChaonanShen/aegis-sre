@@ -109,6 +109,32 @@ describe('PlaybooksPage', () => {
     expect(updatePlaybook).not.toHaveBeenCalled();
   });
 
+  test('starts a real-mode playbook with native Dagu YAML', async () => {
+	const baseGateway = createFixturePlaybookGateway({ latencyMs: 0 });
+	const createPlaybook = jest.fn(async (input: Parameters<PlaybookGateway['createPlaybook']>[0]) => ({
+	  ...input,
+	  id: 'pbk_abcdefgh', ownerId: 'user', usageCount: 0, recordVersion: 1,
+	  latestChangeNote: input.changeNote, revisions: [], createdAt: '', updatedAt: '',
+	}));
+	const gateway: PlaybookGateway = { ...baseGateway, createPlaybook };
+	render(
+	  <MemoryRouter>
+		<PlaybookEditor folders={[]} gateway={gateway} nativeMode onSaved={async () => undefined} />
+	  </MemoryRouter>
+	);
+
+	const yaml = screen.getByRole('textbox', { name: 'Playbook YAML 编辑器' });
+	expect(yaml).toHaveValue('description: 新建 Aegis Playbook\nsteps: []\n');
+	fireEvent.change(yaml, { target: { value: 'description: Diagnose\nsteps:\n  - id: inspect\n    run: echo ok\n' } });
+	fireEvent.click(screen.getByRole('button', { name: '应用 YAML' }));
+	fireEvent.click(screen.getByRole('button', { name: '保存' }));
+
+	expect(await screen.findByRole('button', { name: '已保存' })).toBeDisabled();
+	expect(createPlaybook).toHaveBeenCalledWith(expect.objectContaining({
+	  source: 'description: Diagnose\nsteps:\n  - id: inspect\n    run: echo ok\n',
+	}));
+  });
+
   test('does not repeat a committed save when the list refresh fails', async () => {
     const playbook = playbookFixtureData.playbooks[0];
     const baseGateway = createFixturePlaybookGateway({ latencyMs: 0 });
@@ -311,6 +337,7 @@ function renderPage(initialEntry: string) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <AppServicesProvider
+		runtimeMode="fixture"
         services={{
           folderGateway: createFixtureFolderGateway({ latencyMs: 0 }),
           playbookGateway: createFixturePlaybookGateway({ latencyMs: 0, storageKey, streamDelayMs: 0 }),
