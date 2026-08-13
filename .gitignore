@@ -1,0 +1,15 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+# 本地运行数据和密钥不得进入版本库。
+.run/
+secrets/
+
+# 编辑器与临时文件。
+.idea/
+.vscode/
+*.swp
+*.tmp
+

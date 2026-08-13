@@ -1,0 +1,10 @@
+apiVersion: 1
+
+apps:
+  - type: grafana-plugin-app
+    org_id: 1
+    disabled: false
+    # 本地测试环境和 PR Preview 使用内置会话、图表和流式回复，避免依赖
+    # 未配置身份或模型的真实 Resource API。
+    jsonData:
+      workbenchMode: fixture

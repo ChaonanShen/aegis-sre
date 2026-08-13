@@ -1,0 +1,20 @@
+services:
+  grafana:
+    extends:
+      file: .config/docker-compose-base.yaml
+      service: grafana
+    build:
+      args:
+        grafana_image: grafana-enterprise
+        grafana_version: 13.0.2
+        development: 'false'
+        anonymous_auth_enabled: 'false'
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_AUTH_BASIC_ENABLED: 'true'
+      GF_PATHS_CONFIG: /etc/grafana/torchbearing.ini
+      # 两项都是非敏感运行参数；显式必填，避免插件以空模型或错误上游启动。
+      TORCHBEARING_AI_CORE_URL: ${TORCHBEARING_AI_CORE_URL:?required}
+      TORCHBEARING_AI_MODEL_ID: ${TORCHBEARING_AI_MODEL_ID:?required}
+    volumes:
+      - ./config/grafana.ini:/etc/grafana/torchbearing.ini:ro
