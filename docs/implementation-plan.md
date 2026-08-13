@@ -130,6 +130,8 @@ internal/application/contracts/
 
 ## 6. 阶段 3：Control Plane 持久化与 Plugin Gateway
 
+状态：**已完成。阶段 4 的 Dagu 接入尚未开始。**
+
 目标：让 Grafana Plugin 通过薄 Plugin Backend 访问冻结后的 Control Plane 契约，为后续 Provider 垂直切片建立唯一入口。
 
 任务：
@@ -137,11 +139,11 @@ internal/application/contracts/
 - [x] 建立 PostgreSQL migrations 和 repository。
 - [x] 实现业务 ID 与 Provider ID 映射 repository，但不预建 Provider 业务逻辑。
 - [x] 建立 operation idempotency、approval reference 和跨组件 trace 关联。
-- [ ] Plugin Backend 从 Grafana PluginContext 提取受信的用户、Org 和请求上下文。
-- [ ] Plugin Backend 只做 REST/SSE 透明代理、超时和受控错误转发。
-- [ ] 移除 Plugin Backend 对旧仓库 `../api` 的构建依赖。
-- [ ] 前端 Resource Client 只根据 OpenAPI 和 Event Schema 生成或适配。
-- [ ] 为 REST、SSE、身份伪造、请求取消和错误净化建立契约测试。
+- [x] Plugin Backend 从 Grafana PluginContext 提取受信的用户、Org 和请求上下文。
+- [x] Plugin Backend 只做 REST/SSE 透明代理、超时和受控错误转发。
+- [x] 移除 Plugin Backend 对旧仓库 `../api` 的构建依赖。
+- [x] 前端 Resource Client 只根据 OpenAPI 和 Event Schema 生成或适配。
+- [x] 为 REST、SSE、身份伪造、请求取消和错误净化建立契约测试。
 
 首批数据库对象：
 

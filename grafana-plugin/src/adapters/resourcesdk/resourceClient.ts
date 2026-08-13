@@ -1,6 +1,6 @@
 import { BackendSrv, BackendSrvRequest, getBackendSrv, isFetchError } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
-import { isResponse, Response as ResourceResponse } from '../../api/generated/pluginBackend';
+import type { components } from '../../api/generated/controlPlane';
 import { PLUGIN_RESOURCE_BASE_URL } from '../../constants';
 
 export type ResourceDataGuard<T> = (value: unknown) => value is T;
@@ -10,13 +10,16 @@ export interface ResourceRequestOptions {
   data?: unknown;
   params?: BackendSrvRequest['params'];
   signal?: AbortSignal;
+  headers?: BackendSrvRequest['headers'];
 }
+
+type Problem = components['schemas']['Problem'];
 
 /** ResourceClientError 同时保留 HTTP 状态和公共业务码。 */
 export class ResourceClientError extends Error {
   constructor(
     readonly status: number,
-    readonly code: number,
+    readonly code: string | number,
     message: string
   ) {
     super(message);
@@ -38,13 +41,14 @@ export class ResourceClient {
       data: options.data,
       params: options.params,
       abortSignal: options.signal,
+      headers: options.headers,
       showErrorAlert: false,
       validatePath: true,
     };
 
     try {
-      const response = await lastValueFrom(this.backendSrv.fetch<ResourceResponse>(request));
-      return unwrap(response.data, response.status, guard);
+      const response = await lastValueFrom(this.backendSrv.fetch<unknown>(request));
+      return validateData(response.data, response.status, guard);
     } catch (error) {
       if (error instanceof ResourceClientError) {
         throw error;
@@ -53,11 +57,37 @@ export class ResourceClient {
         if (error.cancelled) {
           throw new DOMException('The operation was aborted.', 'AbortError');
         }
-        const envelope = error.data;
-        if (isResponse(envelope)) {
-          throw new ResourceClientError(error.status, envelope.code, envelope.message || '请求失败。');
+        const problem = error.data;
+        if (isProblem(problem)) {
+          throw new ResourceClientError(error.status, problem.code, problem.detail || problem.title || '请求失败。');
         }
         throw new ResourceClientError(error.status, 0, error.message || error.statusText || '请求失败。');
+      }
+      throw error;
+    }
+  }
+
+  async requestVoid(path: string, options: ResourceRequestOptions = {}): Promise<void> {
+    const request: BackendSrvRequest = {
+      url: resourceURL(path),
+      method: options.method ?? 'DELETE',
+      data: options.data,
+      params: options.params,
+      abortSignal: options.signal,
+      headers: options.headers,
+      showErrorAlert: false,
+      validatePath: true,
+    };
+    try {
+      await lastValueFrom(this.backendSrv.fetch(request));
+    } catch (error) {
+      if (isFetchError<unknown>(error)) {
+        if (error.cancelled) {
+          throw new DOMException('The operation was aborted.', 'AbortError');
+        }
+        if (isProblem(error.data)) {
+          throw new ResourceClientError(error.status, error.data.code, error.data.detail || error.data.title);
+        }
       }
       throw error;
     }
@@ -71,15 +101,26 @@ function resourceURL(path: string): string {
   return `${PLUGIN_RESOURCE_BASE_URL}${path}`;
 }
 
-function unwrap<T>(envelope: unknown, status: number, guard: ResourceDataGuard<T>): T {
-  if (!isResponse(envelope)) {
-    throw new ResourceClientError(status, 0, 'Plugin Backend 返回了无效响应信封。');
-  }
-  if (envelope.code !== 0) {
-    throw new ResourceClientError(status, envelope.code, envelope.message || '请求失败。');
-  }
-  if (!guard(envelope.data)) {
+function validateData<T>(data: unknown, status: number, guard: ResourceDataGuard<T>): T {
+  if (!guard(data)) {
     throw new ResourceClientError(status, 0, 'Plugin Backend 返回了无效业务数据。');
   }
-  return envelope.data;
+  return data;
+}
+
+function isProblem(value: unknown): value is Problem {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'status' in value &&
+    typeof value.status === 'number' &&
+    'code' in value &&
+    typeof value.code === 'string' &&
+    'title' in value &&
+    typeof value.title === 'string' &&
+    'request_id' in value &&
+    typeof value.request_id === 'string' &&
+    'trace_id' in value &&
+    typeof value.trace_id === 'string'
+  );
 }

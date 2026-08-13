@@ -7,7 +7,7 @@ export type AppConfigProps = PluginConfigPageProps<AppPluginMeta<Record<string, 
 const AppConfig = (_: AppConfigProps) => (
   <FieldSet label="AI 服务连接">
     <p>
-      AI Core 地址由 Grafana 服务端通过 TORCHBEARING_AI_CORE_URL 配置。浏览器端不保存上游地址、身份信息或凭据。
+      Control Plane 地址由 Grafana 服务端通过 AEGIS_CONTROL_PLANE_URL 配置。浏览器端不保存上游地址、身份信息或凭据。
     </p>
   </FieldSet>
 );

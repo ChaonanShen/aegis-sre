@@ -7,8 +7,8 @@ const isPayload = (value: unknown): value is typeof validPayload =>
   typeof value === 'object' && value !== null && 'value' in value && value.value === 'ok';
 
 describe('ResourceClient', () => {
-  test('calls the current plugin Resource API and unwraps valid data', async () => {
-    const fetch = jest.fn(() => of(response({ code: 0, data: validPayload })));
+  test('calls the current plugin Resource API and validates direct data', async () => {
+    const fetch = jest.fn(() => of(response(validPayload)));
     const client = new ResourceClient({ fetch } as unknown as BackendSrv);
 
     await expect(client.request('/api/v1/sessions', isPayload)).resolves.toEqual(validPayload);
@@ -23,8 +23,8 @@ describe('ResourceClient', () => {
     );
   });
 
-  test('rejects a successful envelope with invalid business data', async () => {
-    const fetch = jest.fn(() => of(response({ code: 0, data: { unexpected: true } })));
+  test('rejects a successful response with invalid business data', async () => {
+    const fetch = jest.fn(() => of(response({ unexpected: true })));
     const client = new ResourceClient({ fetch } as unknown as BackendSrv);
 
     await expect(client.request('/api/v1/sessions', isPayload)).rejects.toMatchObject({
@@ -39,14 +39,17 @@ describe('ResourceClient', () => {
       throwError(() => ({
         status: 403,
         statusText: 'Forbidden',
-        data: { code: 3001, message: 'folder denied' },
+        data: {
+          type: 'about:blank', title: 'Forbidden', status: 403, code: 'forbidden', detail: 'folder denied',
+          request_id: 'req-1', trace_id: 'trace-1', retryable: false,
+        },
         config: {} as BackendSrvRequest,
       }))
     );
     const client = new ResourceClient({ fetch } as unknown as BackendSrv);
 
     await expect(client.request('/api/v1/sessions', isPayload)).rejects.toEqual(
-      new ResourceClientError(403, 3001, 'folder denied')
+      new ResourceClientError(403, 'forbidden', 'folder denied')
     );
   });
 
