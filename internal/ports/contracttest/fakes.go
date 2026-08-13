@@ -77,7 +77,13 @@ func (*KnowledgeProvider) Retrieve(context.Context, domain.ActorContext, ports.R
 
 type PlaybookProvider struct{ Err error }
 
-func (*PlaybookProvider) Create(context.Context, domain.ActorContext, []byte) (ports.PlaybookRef, error) {
+func (*PlaybookProvider) List(context.Context, domain.ActorContext, domain.PageRequest) (domain.Page[ports.PlaybookResource], error) {
+	return domain.Page[ports.PlaybookResource]{}, ErrNotConfigured
+}
+func (*PlaybookProvider) Get(context.Context, domain.ActorContext, ports.PlaybookRef) (ports.PlaybookResource, error) {
+	return ports.PlaybookResource{}, ErrNotConfigured
+}
+func (*PlaybookProvider) Create(context.Context, domain.ActorContext, ports.CreatePlaybookInput) (ports.PlaybookRef, error) {
 	return ports.PlaybookRef{}, ErrNotConfigured
 }
 func (fake *PlaybookProvider) Update(context.Context, domain.ActorContext, ports.PlaybookRef, []byte) error {
@@ -92,14 +98,32 @@ func (*PlaybookProvider) Validate(context.Context, domain.ActorContext, []byte) 
 func (*PlaybookProvider) StartRun(context.Context, domain.ActorContext, ports.PlaybookRef, ports.RunPlaybookInput) (ports.PlaybookRunRef, error) {
 	return ports.PlaybookRunRef{}, ErrNotConfigured
 }
+func (*PlaybookProvider) GetRun(context.Context, domain.ActorContext, ports.PlaybookRunRef) (ports.PlaybookRunState, error) {
+	return ports.PlaybookRunState{}, ErrNotConfigured
+}
 func (fake *PlaybookProvider) CancelRun(context.Context, domain.ActorContext, ports.PlaybookRunRef) error {
 	return fake.Err
 }
-func (*PlaybookProvider) RetryRun(context.Context, domain.ActorContext, ports.PlaybookRunRef) (ports.PlaybookRunRef, error) {
+func (*PlaybookProvider) RetryRun(context.Context, domain.ActorContext, ports.PlaybookRunRef, domain.ID) (ports.PlaybookRunRef, error) {
 	return ports.PlaybookRunRef{}, ErrNotConfigured
 }
 func (*PlaybookProvider) StreamRun(context.Context, domain.ActorContext, ports.PlaybookRunRef, int64) (ports.EventStream, error) {
 	return nil, ErrNotConfigured
+}
+func (fake *PlaybookProvider) CompleteHumanTask(context.Context, domain.ActorContext, ports.PlaybookRunRef, string, map[string]any) error {
+	return fake.Err
+}
+func (fake *PlaybookProvider) ResolveApproval(context.Context, domain.ActorContext, ports.PlaybookRunRef, string, ports.ApprovalAction, map[string]string) error {
+	return fake.Err
+}
+func (*PlaybookProvider) ListArtifacts(context.Context, domain.ActorContext, ports.PlaybookRunRef) ([]ports.ArtifactRef, error) {
+	return nil, ErrNotConfigured
+}
+func (*PlaybookProvider) PreviewArtifact(context.Context, domain.ActorContext, ports.PlaybookRunRef, string) (ports.ArtifactPreview, error) {
+	return ports.ArtifactPreview{}, ErrNotConfigured
+}
+func (*PlaybookProvider) DownloadArtifact(context.Context, domain.ActorContext, ports.PlaybookRunRef, string) (ports.ArtifactDownload, error) {
+	return ports.ArtifactDownload{}, ErrNotConfigured
 }
 
 var (
