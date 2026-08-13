@@ -1,9 +1,10 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build plugin-typecheck plugin-lint plugin-test plugin-build db-up db-status
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build db-up db-status
 
 OAPI_CODEGEN_VERSION := v2.8.0
 GOOSE_VERSION := v3.27.3
+MAGE_VERSION := v1.17.2
 
-verify: contracts-check control-plane-test control-plane-build plugin-typecheck plugin-lint plugin-test plugin-build
+verify: contracts-check control-plane-test control-plane-build plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 contracts-generate: contracts-go-generate contracts-ts-generate
 
@@ -32,6 +33,12 @@ control-plane-test:
 
 control-plane-build:
 	go build ./cmd/control-plane
+
+plugin-backend-test:
+	cd grafana-plugin && go test ./pkg/... && go vet ./pkg/...
+
+plugin-backend-build:
+	cd grafana-plugin && go run github.com/magefile/mage@$(MAGE_VERSION) -v buildAll
 
 plugin-typecheck:
 	npm --prefix grafana-plugin run typecheck

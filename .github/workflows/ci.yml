@@ -61,7 +61,7 @@ jobs:
         run: go build ./cmd/control-plane
 
   grafana-plugin:
-    name: Grafana plugin
+    name: Grafana plugin frontend
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -96,3 +96,33 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  grafana-plugin-backend:
+    name: Grafana plugin backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: grafana-plugin
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: grafana-plugin/go.mod
+          cache-dependency-path: grafana-plugin/go.sum
+
+      - name: Format
+        run: test -z "$(gofmt -l pkg)"
+
+      - name: Test
+        run: go test ./pkg/...
+
+      - name: Vet
+        run: go vet ./pkg/...
+
+      - name: Build all platforms
+        run: go run github.com/magefile/mage@v1.17.2 -v buildAll
