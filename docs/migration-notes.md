@@ -10,6 +10,8 @@
 
 迁移使用来源提交中的已跟踪文件，不包含 `node_modules`、`dist`、覆盖率、Playwright 输出或其他本地缓存，也没有修改来源仓库。
 
+迁移来源中的 PostgreSQL 产品元数据方案不属于本仓库的保留边界。纠正阶段已经移除曾过早加入但未接入运行路径的 migration 和 repository；当前 Control Plane 默认无状态，Provider 数据由对应引擎持久化。
+
 ## 本次迁移范围
 
 已迁移：

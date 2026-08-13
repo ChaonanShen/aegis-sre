@@ -150,7 +150,7 @@ internal/application/contracts/
 
 ## 纠正阶段：移除过早引入的 PostgreSQL 持久化
 
-状态：**执行中。必须在阶段 4 开始前完成。**
+状态：**已完成。阶段 4 尚未开始。**
 
 背景：阶段 3 沿用了迁移前项目以 PostgreSQL 保存产品元数据、业务 ID 与 Provider ID 映射的假设，但该假设没有先经过 Codex/OpenCode、Dagu、RAGFlow 和 Grafana 原生能力验证。当前 PostgreSQL repository 也未接入 Control Plane 的真实运行路径。继续保留会造成事实来源重复、无消费者抽象和不必要的部署依赖，因此需要在接入首个 Provider 前纠正。
 
@@ -172,27 +172,29 @@ internal/application/contracts/
 - [x] 删除 `pgx`、`pgxmock`、Goose 等仅为 Control Plane PostgreSQL 引入的依赖和命令，并运行 `go mod tidy`。
 - [x] 删除 `AEGIS_DATABASE_URL`、database capability、readiness 数据库状态及其他未使用配置。
 - [x] 删除根 CI 中的 PostgreSQL service、migration 步骤和对应 Makefile target，确保 CI 不再启动数据库。
-- [ ] 检查 `api/openapi.yaml`、Event Schema、domain model 和前端生成类型，移除只为影子持久化设计且尚无 Provider 语义依据的字段；兼容性不确定的公共字段先记录审计结论，不盲目破坏已冻结契约。
+- [x] 检查 `api/openapi.yaml`、Event Schema、domain model 和前端生成类型，移除只为影子持久化设计且尚无 Provider 语义依据的字段；兼容性不确定的公共字段先记录审计结论，不盲目破坏已冻结契约。
 
 Provider 数据归属与标识策略复核：
 
-- [ ] Session 的 list/read/resume/archive/delete 直接委托 Agent Provider，不读取 Aegis Session 表。
-- [ ] Playbook 与 Run 使用 Dagu 原生标识、调用方可控标识或原生 metadata；不建立 Playbook/Run 映射表和状态摘要表。
-- [ ] KnowledgeBase 与 Document 使用 RAGFlow 原生资源及 metadata 能力；不建立 Dataset/Document 影子表。
-- [ ] Approval resolve 委托产生 Approval 的 Agent 或 Dagu，不建立 `approval_refs`。
-- [ ] trace ID 通过请求上下文、结构化日志和后续可观测性链路传递，不作为关系数据库记录保存。
-- [ ] 幂等优先使用 Provider 原生机制或调用方生成的稳定操作 ID；没有可靠幂等能力时不得用内存或 mock 静默冒充生产保证，应在对应 Provider 阶段明确暴露限制。
-- [ ] 对无法在不泄漏 Provider ID 的前提下实现稳定公共 ID 的 Provider，暂停该垂直切片并提交 ADR；不得为了预想的可替换性恢复通用映射数据库。
-- [ ] 复核 `ServiceEntry` 是否仍是独立产品实体；优先从 Grafana Folder、Dashboard、标签、注解或受版本控制的配置派生，只有出现无法由 Grafana 表达的真实业务状态时才单独决策。
+- [x] Session 的 list/read/resume/archive/delete 直接委托 Agent Provider，不读取 Aegis Session 表。
+- [x] Playbook 与 Run 使用 Dagu 原生标识、调用方可控标识或原生 metadata；不建立 Playbook/Run 映射表和状态摘要表。
+- [x] KnowledgeBase 与 Document 使用 RAGFlow 原生资源及 metadata 能力；不建立 Dataset/Document 影子表。
+- [x] Approval resolve 委托产生 Approval 的 Agent 或 Dagu，不建立 `approval_refs`。
+- [x] trace ID 通过请求上下文、结构化日志和后续可观测性链路传递，不作为关系数据库记录保存。
+- [x] 幂等优先使用 Provider 原生机制或调用方生成的稳定操作 ID；没有可靠幂等能力时不得用内存或 mock 静默冒充生产保证，应在对应 Provider 阶段明确暴露限制。
+- [x] 对无法在不泄漏 Provider ID 的前提下实现稳定公共 ID 的 Provider，暂停该垂直切片并提交 ADR；不得为了预想的可替换性恢复通用映射数据库。
+- [x] 复核 `ServiceEntry` 是否仍是独立产品实体；当前只允许从 Grafana 资源派生和只读查询，已从公共契约删除 Aegis 自有创建接口。若 Grafana 无法表达必要状态，再单独决策。
+
+公共契约审计结论：当前 v1 OpenAPI 删除了尚无 Provider 语义依据的统一整数 `version` 字段，以及会迫使 Aegis 成为服务目录事实来源的 `POST /services`。`BusinessID`、时间戳和 `Idempotency-Key` 仍是 Provider-neutral 的协议约束，分别由调用方或 adapter、Provider 原生时间信息、Provider 原生幂等能力承载。统一事件 Schema 不依赖数据库，因此无需修改。迁移来源的 fixture 模型及 `pluginBackend.ts` 兼容契约仍包含其自身的版本字段；它们不属于 Control Plane v1 契约，按兼容窗口保留，待对应模块接入真实 Provider 时另行迁移。
 
 文档清理：
 
 - [x] 更新 `docs/architecture.md`，移除 PostgreSQL 拓扑、持久化模型和影子数据归属，明确 Control Plane 默认无状态及各引擎唯一事实来源。
-- [ ] 回写本实施计划中阶段 2、阶段 3 及后续阶段受影响的任务和验收项，包括持久化映射、全局数据库幂等、Provider ID 映射和 PostgreSQL 备份演练。
-- [ ] 更新根 `README.md` 的仓库结构、依赖要求、启动命令和当前阶段说明。
-- [ ] 审计 `docs/migration-notes.md`，确保迁移边界没有暗示继续保留旧项目数据库。
-- [ ] 将 `docs/research/knowledge-base-replacement-research.md` 中 Torchbearing PostgreSQL 方案明确标记为历史调研和已废弃结论；保留有价值的 Provider 调研事实，但不得继续充当当前规范。
-- [ ] 全仓搜索 PostgreSQL、repository、产品元数据、映射表和备份恢复等表述；规范性文档不得残留数据库前提，历史文档中的残留必须带有明确的废弃上下文。
+- [x] 回写本实施计划中阶段 2、阶段 3 及后续阶段受影响的任务和验收项，包括持久化映射、全局数据库幂等、Provider ID 映射和 PostgreSQL 备份演练。
+- [x] 更新根 `README.md` 的仓库结构、依赖要求、启动命令和当前阶段说明。
+- [x] 审计 `docs/migration-notes.md`，确保迁移边界没有暗示继续保留旧项目数据库。
+- [x] 将 `docs/research/knowledge-base-replacement-research.md` 中 Torchbearing PostgreSQL 方案明确标记为历史调研和已废弃结论；保留有价值的 Provider 调研事实，但不得继续充当当前规范。
+- [x] 全仓搜索 PostgreSQL、repository、产品元数据、映射表和备份恢复等表述；规范性文档不得残留数据库前提，历史文档中的残留必须带有明确的废弃上下文。
 
 建议按以下小步提交执行：
 

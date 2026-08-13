@@ -2,14 +2,14 @@
 
 Aegis SRE 是一个以 Grafana App Plugin 为入口的开源 SRE 工作台。项目本身只维护产品控制面与必要的集成层，Agent、知识检索、Playbook 编排和 Grafana 工具能力分别交给成熟组件。
 
-当前已完成实施计划的阶段 0–3：仓库迁移基线、Control Plane 骨架、v1 公共契约、PostgreSQL 持久化基础，以及 Grafana Plugin Backend 到 Control Plane 的受信代理。阶段 4 的 Dagu 接入尚未开始。
+当前已完成实施计划的阶段 0–3 及其纠正阶段：仓库迁移基线、无状态 Control Plane 骨架、v1 公共契约，以及 Grafana Plugin Backend 到 Control Plane 的受信代理。阶段 4 的 Dagu 接入尚未开始。
 
 ## 目标组件
 
 | 能力 | 组件 | Aegis SRE 的职责 |
 | --- | --- | --- |
 | Grafana 内产品界面 | Grafana App Plugin | 页面、交互、Resource Gateway |
-| 产品控制面 | Aegis Control Plane | 稳定 API、业务 ID、关联关系、Provider 适配 |
+| 产品控制面 | Aegis Control Plane | 稳定 API、授权收敛、协议归一化、Provider 适配 |
 | Agent | Codex App Server；OpenCode 可替换 | 仅通过 `AgentProvider` 接入 |
 | 知识库 | RAGFlow | Dataset、文档解析、Chunk、Embedding、检索 |
 | Playbook | Dagu | 原生 YAML、调度、审批、运行、日志、Artifact |
@@ -22,8 +22,7 @@ Aegis SRE 是一个以 Grafana App Plugin 为入口的开源 SRE 工作台。项
 aegis-sre/
 ├── api/                         # OpenAPI 与统一事件 Schema
 ├── cmd/control-plane/           # Control Plane 进程入口
-├── internal/                    # 领域、端口、应用层与 Provider adapter
-├── migrations/                  # PostgreSQL migrations
+├── internal/                    # 领域、Provider ports 与必要 adapter
 ├── grafana-plugin/              # Grafana 前端与薄 Plugin Backend
 ├── docs/
 │   ├── architecture.md          # 目标架构和稳定边界
@@ -37,12 +36,11 @@ aegis-sre/
 
 ## 本地验证与运行
 
-要求 Go 1.26.4、Node.js 22，以及可用的 PostgreSQL 18。
+要求 Go 1.26.4 和 Node.js 22；当前阶段不需要自有数据库。
 
 ```bash
 make verify
-AEGIS_DATABASE_URL='postgres://aegis:aegis@localhost:5432/aegis?sslmode=disable' make db-up
-AEGIS_DATABASE_URL='postgres://aegis:aegis@localhost:5432/aegis?sslmode=disable' go run ./cmd/control-plane
+go run ./cmd/control-plane
 ```
 
 Plugin Backend 通过以下环境变量连接 Control Plane：
@@ -77,6 +75,7 @@ npm run build
 - 不重写 Grafana 官方 MCP 已经提供的工具。
 - 不让浏览器直接持有 RAGFlow、Dagu、Grafana MCP 或 Agent Provider 凭据。
 - 不在 Plugin Backend 中实现业务逻辑；它只负责受信身份注入和 REST/SSE 代理。
+- 不在 Control Plane 中复制 Agent、Dagu、RAGFlow 或 Grafana 已持有的数据；确需自有状态时先提交 ADR。
 
 ## License
 

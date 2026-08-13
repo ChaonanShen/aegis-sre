@@ -2,8 +2,10 @@
 
 > 调研日期：2026-08-13  
 > 范围：以成熟开源方案替换 Torchbearing 当前手写的文档解析、切分、向量化和检索实现；保留 Grafana 插件形态与产品业务边界。
+>
+> **历史状态：本文件记录迁移来源 Torchbearing 的调研过程，不是 Aegis SRE 当前架构规范。** 其中由 PostgreSQL 保存产品元数据、稳定 ID 和 Provider 映射表的建议已在阶段 3 纠正中废弃。当前规范以 `docs/architecture.md` 为准：RAGFlow 是 Dataset、Document 及检索数据的唯一事实来源，Control Plane 默认无状态；若真实接入证明存在 Provider 无法承载的产品自有状态，必须另行提交 ADR。
 
-## 结论
+## 历史结论（PostgreSQL 部分已废弃）
 
 推荐采用 **RAGFlow** 作为独立部署的文档与检索引擎，但不让它接管 Torchbearing 的整个 Knowledge 领域。
 
@@ -16,7 +18,7 @@
 
 这能以较小的产品结构变化，去掉当前最重、最通用的 RAG 基础设施实现，同时维持未来更换知识引擎的能力。
 
-## 当前实现的实际职责
+## 迁移来源实现的历史职责
 
 当前知识库并非单一的“向量检索”模块，而是混合了产品领域模型和通用 RAG 基础设施。
 
@@ -85,7 +87,7 @@ RAGFlow 的外部模型与当前 API 具有直接映射关系：
 
 因此，RAGFlow 的代码维护成本低，但基础设施成本高于当前 PostgreSQL + Kodo。若目标环境无法提供该资源，才进入 FastGPT 的备选评估。
 
-## 最终架构边界
+## 历史架构边界（已废弃）
 
 ```mermaid
 flowchart LR
@@ -111,7 +113,7 @@ flowchart LR
 - Torchbearing 在检索前先完成身份鉴别、Folder 授权和业务范围收敛。
 - Codex 使用受限的 `knowledge.search_docs` 等领域工具，不使用拥有全库权限的通用 RAGFlow MCP Key。
 
-## 数据归属
+## 历史数据归属（已废弃）
 
 | 数据 | 最终归属 |
 | --- | --- |
@@ -176,7 +178,7 @@ type KnowledgeProvider interface {
 - 内置 MCP 对外暴露。
 - Reranker，除非检索评测明确证明基础模式不足。
 
-## 迁移计划
+## 历史迁移计划（映射表方案已废弃）
 
 1. 在 Torchbearing 中引入 `KnowledgeProvider` 边界与 `legacy | ragflow` 功能开关；不删除旧实现。
 2. 实现 RAGFlow Adapter，优先覆盖建库、上传、解析、状态查询、文档/Chunk 列表、检索与删除。
