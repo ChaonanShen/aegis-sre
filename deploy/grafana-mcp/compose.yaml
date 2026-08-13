@@ -1,0 +1,54 @@
+services:
+  grafana-read:
+    image: grafana/mcp-grafana:1.0.0@sha256:5efeafd01cd7e1aea9c4b0f03305951f2944db8f43e5ae290cce9578c977f241
+    command:
+      - --transport=streamable-http
+      - --address=:8000
+      - --endpoint-path=/mcp
+      - --allowed-hosts=grafana-read:8000
+      - --enabled-tools=search,datasource,prometheus,loki,alerting,dashboard,navigation,rendering
+      - --disable-write
+      - --disable-proxied
+      - --max-loki-log-limit=100
+      - --metrics
+      - --slow-request-threshold=5s
+    environment:
+      GRAFANA_URL: ${GRAFANA_URL:?set GRAFANA_URL}
+      GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE: /run/secrets/grafana-token
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${GRAFANA_READ_TOKEN_FILE:?set GRAFANA_READ_TOKEN_FILE}:/run/secrets/grafana-token:ro
+    networks:
+      - aegis-mcp
+
+  grafana-write:
+    profiles: [write]
+    image: grafana/mcp-grafana:1.0.0@sha256:5efeafd01cd7e1aea9c4b0f03305951f2944db8f43e5ae290cce9578c977f241
+    command:
+      - --transport=streamable-http
+      - --address=:8000
+      - --endpoint-path=/mcp
+      - --allowed-hosts=grafana-write:8000
+      - --enabled-tools=alerting,dashboard,annotations
+      - --disable-proxied
+      - --metrics
+      - --slow-request-threshold=5s
+    environment:
+      GRAFANA_URL: ${GRAFANA_URL:?set GRAFANA_URL}
+      GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE: /run/secrets/grafana-token
+    read_only: true
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${GRAFANA_WRITE_TOKEN_FILE:?set GRAFANA_WRITE_TOKEN_FILE}:/run/secrets/grafana-token:ro
+    networks:
+      - aegis-mcp
+
+networks:
+  aegis-mcp:
+    internal: true
+

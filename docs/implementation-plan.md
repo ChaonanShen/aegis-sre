@@ -274,19 +274,21 @@ Provider 数据归属与标识策略复核：
 
 ## 8. 阶段 5：Grafana 官方 MCP
 
+状态：**部署与版本化策略已完成；真实 Grafana 冒烟和入口网关验收需要部署环境。**
+
 目标：完全替代自研 Grafana/Prometheus MCP 工具。
 
 任务：
 
-- [ ] 固定 `grafana/mcp-grafana` 版本。
-- [ ] 部署 `grafana-read`，强制 `--disable-write`。
-- [ ] 只启用当前产品需要的工具类别。
-- [ ] 为服务端启用调用方 Bearer Token。
-- [ ] 设置 allowed hosts/origins 和 TLS 或可信反向代理。
-- [ ] 使用文件挂载 Service Account Token，支持轮换。
-- [ ] 按需部署 `grafana-write`，使用独立低权限账号。
-- [ ] 发布供后续 Codex、OpenCode 和 `mcp.call` 消费的版本化连接配置。
-- [ ] 为常用 PromQL、LogQL、告警和 Dashboard 工具建立冒烟测试。
+- [x] 固定 `grafana/mcp-grafana` 版本和多平台镜像 digest。
+- [x] 部署 `grafana-read`，强制 `--disable-write`。
+- [x] 只启用当前产品需要的工具类别。
+- [ ] 为服务端启用调用方 Bearer Token（官方 v1.0.0 不提供入站认证，已要求由可信入口网关完成）。
+- [ ] 设置 allowed hosts/origins 和 TLS 或可信反向代理（Host/Origin 已限制；TLS 网关待部署环境验收）。
+- [x] 使用文件挂载 Service Account Token，支持轮换。
+- [x] 按需部署 `grafana-write`，使用独立低权限账号。
+- [x] 发布供后续 Codex、OpenCode 和 `mcp.call` 消费的版本化连接配置。
+- [x] 为常用 PromQL、LogQL、告警和 Dashboard 工具建立显式真实冒烟命令。
 - [ ] 使用阶段 4 的 `mcp.call` Runner 对 `grafana-read` 完成真实调用验收。
 
 初期权限：

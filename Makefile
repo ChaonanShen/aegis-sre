@@ -1,11 +1,11 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate grafana-mcp-config-check grafana-mcp-smoke plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 OAPI_CODEGEN_VERSION := v2.8.0
 MAGE_VERSION := v1.17.2
 DAGU_VERSION := v2.13.0
 DAGU_BIN ?= dagu
 
-verify: contracts-check control-plane-test control-plane-build dagu-validate plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+verify: contracts-check control-plane-test control-plane-build dagu-validate grafana-mcp-config-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 contracts-generate: contracts-go-generate contracts-ts-generate
 
@@ -34,6 +34,18 @@ dagu-validate:
 	trap 'rm -rf "$$dagu_tmp"' EXIT; \
 	cp deploy/dagu/base.yaml "$$dagu_tmp/base.yaml"; \
 	$(DAGU_BIN) validate --dagu-home "$$dagu_tmp" -c deploy/dagu/config.yaml deploy/dagu/dags/mcp-call-contract.yaml
+
+grafana-mcp-config-check:
+	GRAFANA_URL=http://grafana:3000 GRAFANA_READ_TOKEN_FILE=/run/secrets/read GRAFANA_WRITE_TOKEN_FILE=/run/secrets/write docker compose -f deploy/grafana-mcp/compose.yaml config --quiet
+
+# 真实冒烟验收显式要求两个 datasource UID，避免以 fixture 假装 Grafana 已连通。
+grafana-mcp-smoke:
+	@: $${GRAFANA_PROMETHEUS_UID:?set GRAFANA_PROMETHEUS_UID}
+	@: $${GRAFANA_LOKI_UID:?set GRAFANA_LOKI_UID}
+	go run ./cmd/mcp-call --config deploy/mcp/v1/servers.yaml --server grafana-read --tool search_dashboards --args-json '{"query":"","limit":1}'
+	go run ./cmd/mcp-call --config deploy/mcp/v1/servers.yaml --server grafana-read --tool query_prometheus --args-json "{\"datasourceUid\":\"$$GRAFANA_PROMETHEUS_UID\",\"expr\":\"up\",\"endTime\":\"now\",\"queryType\":\"instant\"}"
+	go run ./cmd/mcp-call --config deploy/mcp/v1/servers.yaml --server grafana-read --tool query_loki_logs --args-json "{\"datasourceUid\":\"$$GRAFANA_LOKI_UID\",\"logql\":\"{job=~\\\".+\\\"}\",\"limit\":1}"
+	go run ./cmd/mcp-call --config deploy/mcp/v1/servers.yaml --server grafana-read --tool alerting_manage_rules --args-json '{"operation":"list","limit":1}'
 
 plugin-backend-test:
 	cd grafana-plugin && go test ./pkg/... && go vet ./pkg/...

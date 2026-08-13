@@ -1,0 +1,32 @@
+servers:
+  grafana-read:
+    url: https://grafana-mcp.aegis.internal/mcp
+    bearer_token_file: /run/secrets/aegis/grafana-mcp-caller-token
+    allowed_tools:
+      - search_dashboards
+      - get_dashboard_summary
+      - get_dashboard_property
+      - get_dashboard_panel_queries
+      - list_datasources
+      - get_datasource
+      - query_prometheus
+      - list_prometheus_metric_metadata
+      - list_prometheus_metric_names
+      - list_prometheus_label_names
+      - list_prometheus_label_values
+      - query_prometheus_histogram
+      - query_loki_logs
+      - list_loki_label_names
+      - list_loki_label_values
+      - query_loki_stats
+      - query_loki_patterns
+      - alerting_manage_rules
+      - get_panel_image
+      - generate_deeplink
+    connect_timeout: 5s
+    handshake_timeout: 10s
+    call_timeout: 30s
+    total_timeout: 45s
+    max_text_bytes: 262144
+    max_structured_bytes: 524288
+    max_binary_bytes: 8388608
