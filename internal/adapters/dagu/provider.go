@@ -346,14 +346,18 @@ func mapRun(ref ports.PlaybookRunRef, run DAGRun) ports.PlaybookRunState {
 		}
 		if json.Unmarshal(run.Nodes, &nodes) == nil {
 			for _, node := range nodes {
-				step := ports.PlaybookStepState{ID: stringValue(node.Step["id"]), Name: stringValue(node.Step["name"]), Status: mapRunStatus(node.StatusLabel)}
+				step := ports.PlaybookStepState{ID: stringValue(node.Step["id"]), Name: stringValue(node.Step["name"])}
 				step.StartedAt, _ = time.Parse(time.RFC3339, node.StartedAt)
 				step.FinishedAt, _ = time.Parse(time.RFC3339, node.FinishedAt)
 				step.HumanTask, _ = node.Step["humanTask"].(map[string]any)
 				step.Approval, _ = node.Step["approval"].(map[string]any)
+				step.Status = mapStepStatus(node.StatusLabel, step.HumanTask, step.Approval)
 				state.Steps = append(state.Steps, step)
 			}
 		}
+	}
+	if strings.EqualFold(run.StatusText, "waiting") {
+		state.Status = waitingRunStatus(state.Steps)
 	}
 	return state
 }
@@ -368,13 +372,45 @@ func mapRunStatus(value string) domain.RunStatus {
 		return domain.RunSucceeded
 	case "failed", "error":
 		return domain.RunFailed
-	case "cancelled", "canceled", "terminated":
+	case "aborted", "cancelled", "canceled", "terminated":
 		return domain.RunCancelled
+	case "partially_succeeded", "rejected":
+		return domain.RunFailed
+	case "waiting_for_input", "waiting for input":
+		return domain.RunWaitingForInput
 	case "waiting", "waiting_for_approval", "waiting for approval":
 		return domain.RunWaitingForApproval
 	default:
 		return domain.RunQueued
 	}
+}
+
+func mapStepStatus(value string, humanTask, approval map[string]any) domain.RunStatus {
+	if strings.EqualFold(value, "waiting") {
+		if humanTask != nil {
+			return domain.RunWaitingForInput
+		}
+		if approval != nil {
+			return domain.RunWaitingForApproval
+		}
+	}
+	switch strings.ToLower(value) {
+	case "retrying":
+		return domain.RunRunning
+	case "skipped":
+		return domain.RunSucceeded
+	default:
+		return mapRunStatus(value)
+	}
+}
+
+func waitingRunStatus(steps []ports.PlaybookStepState) domain.RunStatus {
+	for _, step := range steps {
+		if step.Status == domain.RunWaitingForInput {
+			return domain.RunWaitingForInput
+		}
+	}
+	return domain.RunWaitingForApproval
 }
 
 func terminalRunStatus(status domain.RunStatus) bool {

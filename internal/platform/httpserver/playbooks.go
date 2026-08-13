@@ -152,7 +152,11 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		writeJSON(w, http.StatusOK, map[string]any{"valid": len(issues) == 0, "errors": issues})
 	})
 	mux.HandleFunc("POST /api/v1/playbooks/{playbook_id}/runs", func(w http.ResponseWriter, request *http.Request) {
-		ref, ok := playbookRef(w, request)
+		actor, allowed := requirePlaybookActor(w, request, true)
+		if !allowed {
+			return
+		}
+		ref, ok := scopedPlaybookRef(w, request, actor)
 		if !ok {
 			return
 		}
@@ -166,20 +170,24 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if !decodeJSONBody(w, request, &input, 1<<20) {
 			return
 		}
-		runID := stableBusinessID("run", actorFromRequest(request), key)
-		runRef, err := provider.StartRun(request.Context(), actorFromRequest(request), ref, ports.RunPlaybookInput{ID: runID, Parameters: input.Parameters})
+		runID := stableRunID(actor, ref.ID, key)
+		runRef, err := provider.StartRun(request.Context(), actor, ref, ports.RunPlaybookInput{ID: runID, Parameters: input.Parameters})
 		if handleProviderError(w, request, err) {
 			return
 		}
 		writeJSON(w, http.StatusAccepted, queuedRunJSON(runRef))
 	})
 	mux.HandleFunc("GET /api/v1/playbooks/{playbook_id}/runs", func(w http.ResponseWriter, request *http.Request) {
-		ref, ok := playbookRef(w, request)
+		actor, allowed := requirePlaybookActor(w, request, false)
+		if !allowed {
+			return
+		}
+		ref, ok := scopedPlaybookRef(w, request, actor)
 		if !ok {
 			return
 		}
 		limit, _ := strconv.Atoi(request.URL.Query().Get("limit"))
-		page, err := provider.ListRuns(request.Context(), actorFromRequest(request), ref, domain.PageRequest{Cursor: request.URL.Query().Get("cursor"), Limit: limit})
+		page, err := provider.ListRuns(request.Context(), actor, ref, domain.PageRequest{Cursor: request.URL.Query().Get("cursor"), Limit: limit})
 		if handleProviderError(w, request, err) {
 			return
 		}
@@ -194,12 +202,8 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		writeJSON(w, http.StatusOK, response)
 	})
 	mux.HandleFunc("GET /api/v1/runs/{run_id}", func(w http.ResponseWriter, request *http.Request) {
-		ref, ok := runRef(w, request)
+		_, state, ok := scopedRunState(w, request, provider, false)
 		if !ok {
-			return
-		}
-		state, err := provider.GetRun(request.Context(), actorFromRequest(request), ref)
-		if handleProviderError(w, request, err) {
 			return
 		}
 		writeJSON(w, http.StatusOK, runJSON(state))
@@ -212,12 +216,13 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 			return
 		}
 		request.SetPathValue("run_id", runID)
-		ref, valid := runRef(w, request)
+		actor, state, valid := scopedRunState(w, request, provider, true)
 		if !valid {
 			return
 		}
+		ref := state.Ref
 		if action == "cancel" {
-			if err := provider.CancelRun(request.Context(), actorFromRequest(request), ref); handleProviderError(w, request, err) {
+			if err := provider.CancelRun(request.Context(), actor, ref); handleProviderError(w, request, err) {
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -227,19 +232,19 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if !valid {
 			return
 		}
-		newRef, err := provider.RetryRun(request.Context(), actorFromRequest(request), ref, stableBusinessID("run", actorFromRequest(request), key))
+		newRef, err := provider.RetryRun(request.Context(), actor, ref, stableRunID(actor, ref.PlaybookID, key))
 		if handleProviderError(w, request, err) {
 			return
 		}
 		writeJSON(w, http.StatusAccepted, queuedRunJSON(newRef))
 	})
 	mux.HandleFunc("GET /api/v1/runs/{run_id}/events", func(w http.ResponseWriter, request *http.Request) {
-		ref, ok := runRef(w, request)
+		actor, state, ok := scopedRunState(w, request, provider, false)
 		if !ok {
 			return
 		}
 		after, _ := strconv.ParseInt(request.URL.Query().Get("after_sequence"), 10, 64)
-		stream, err := provider.StreamRun(request.Context(), actorFromRequest(request), ref, after)
+		stream, err := provider.StreamRun(request.Context(), actor, state.Ref, after)
 		if handleProviderError(w, request, err) {
 			return
 		}
@@ -253,7 +258,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 			return
 		}
 		request.SetPathValue("step_id", stepID)
-		ref, ok := runRef(w, request)
+		actor, state, ok := scopedRunState(w, request, provider, true)
 		if !ok || !requireStepID(w, request) || !requireIdempotencyHeader(w, request) {
 			return
 		}
@@ -261,7 +266,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if !decodeJSONBody(w, request, &input, 1<<20) {
 			return
 		}
-		if err := provider.CompleteHumanTask(request.Context(), actorFromRequest(request), ref, request.PathValue("step_id"), input); handleProviderError(w, request, err) {
+		if err := provider.CompleteHumanTask(request.Context(), actor, state.Ref, request.PathValue("step_id"), input); handleProviderError(w, request, err) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -273,7 +278,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 			return
 		}
 		request.SetPathValue("step_id", stepID)
-		ref, ok := runRef(w, request)
+		actor, state, ok := scopedRunState(w, request, provider, true)
 		if !ok || !requireStepID(w, request) || !requireIdempotencyHeader(w, request) {
 			return
 		}
@@ -284,39 +289,39 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if !decodeJSONBody(w, request, &input, 1<<20) {
 			return
 		}
-		if err := provider.ResolveApproval(request.Context(), actorFromRequest(request), ref, request.PathValue("step_id"), input.Decision, input.Inputs); handleProviderError(w, request, err) {
+		if err := provider.ResolveApproval(request.Context(), actor, state.Ref, request.PathValue("step_id"), input.Decision, input.Inputs); handleProviderError(w, request, err) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("GET /api/v1/runs/{run_id}/artifacts", func(w http.ResponseWriter, request *http.Request) {
-		ref, ok := runRef(w, request)
+		actor, state, ok := scopedRunState(w, request, provider, false)
 		if !ok {
 			return
 		}
-		items, err := provider.ListArtifacts(request.Context(), actorFromRequest(request), ref)
+		items, err := provider.ListArtifacts(request.Context(), actor, state.Ref)
 		if handleProviderError(w, request, err) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"items": items})
 	})
 	mux.HandleFunc("GET /api/v1/runs/{run_id}/artifacts/preview", func(w http.ResponseWriter, request *http.Request) {
-		ref, ok := runRef(w, request)
+		actor, state, ok := scopedRunState(w, request, provider, false)
 		if !ok {
 			return
 		}
-		preview, err := provider.PreviewArtifact(request.Context(), actorFromRequest(request), ref, request.URL.Query().Get("path"))
+		preview, err := provider.PreviewArtifact(request.Context(), actor, state.Ref, request.URL.Query().Get("path"))
 		if handleProviderError(w, request, err) {
 			return
 		}
 		writeJSON(w, http.StatusOK, preview)
 	})
 	mux.HandleFunc("GET /api/v1/runs/{run_id}/artifacts/download", func(w http.ResponseWriter, request *http.Request) {
-		ref, ok := runRef(w, request)
+		actor, state, ok := scopedRunState(w, request, provider, false)
 		if !ok {
 			return
 		}
-		download, err := provider.DownloadArtifact(request.Context(), actorFromRequest(request), ref, request.URL.Query().Get("path"))
+		download, err := provider.DownloadArtifact(request.Context(), actor, state.Ref, request.URL.Query().Get("path"))
 		if handleProviderError(w, request, err) {
 			return
 		}
@@ -384,6 +389,27 @@ func runRef(w http.ResponseWriter, request *http.Request) (ports.PlaybookRunRef,
 	return ports.PlaybookRunRef{ID: id}, true
 }
 
+// Run URL 只有公共 run ID，必须先向 Provider 解析所属 playbook，再校验 Grafana 组织范围。
+func scopedRunState(w http.ResponseWriter, request *http.Request, provider ports.PlaybookProvider, write bool) (domain.ActorContext, ports.PlaybookRunState, bool) {
+	actor, allowed := requirePlaybookActor(w, request, write)
+	if !allowed {
+		return domain.ActorContext{}, ports.PlaybookRunState{}, false
+	}
+	ref, ok := runRef(w, request)
+	if !ok {
+		return domain.ActorContext{}, ports.PlaybookRunState{}, false
+	}
+	state, err := provider.GetRun(request.Context(), actor, ref)
+	if handleProviderError(w, request, err) {
+		return domain.ActorContext{}, ports.PlaybookRunState{}, false
+	}
+	if !domain.PlaybookIDInScope(state.Ref.PlaybookID, actor) {
+		writeAPIProblem(w, request, http.StatusNotFound, "not_found", "run not found", false)
+		return domain.ActorContext{}, ports.PlaybookRunState{}, false
+	}
+	return actor, state, true
+}
+
 func requireStepID(w http.ResponseWriter, request *http.Request) bool {
 	value := request.PathValue("step_id")
 	if value == "" || len(value) > 128 || strings.ContainsAny(value, "/\\\r\n\x00") {
@@ -407,9 +433,9 @@ func requireIdempotencyKey(w http.ResponseWriter, request *http.Request) (string
 	return value, true
 }
 
-func stableBusinessID(prefix string, actor domain.ActorContext, key string) domain.ID {
-	sum := sha256.Sum256([]byte(prefix + "\x00" + actor.TenantID + "\x00" + actor.OrgID + "\x00" + actor.UserID + "\x00" + key))
-	return domain.ID(prefix + "_" + base64.RawURLEncoding.EncodeToString(sum[:18]))
+func stableRunID(actor domain.ActorContext, playbookID domain.ID, key string) domain.ID {
+	sum := sha256.Sum256([]byte("run\x00" + actor.TenantID + "\x00" + actor.OrgID + "\x00" + actor.UserID + "\x00" + string(playbookID) + "\x00" + key))
+	return domain.ID("run_" + base64.RawURLEncoding.EncodeToString(sum[:18]))
 }
 
 func scopedPlaybookID(actor domain.ActorContext, key string) domain.ID {

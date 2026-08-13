@@ -26,7 +26,7 @@ func TestClientUsesCallerSuppliedRunIDAndRotatingToken(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body["dagRunId"] != "run_example" || body["params"] != `{"service":"api"}` {
+		if body["dagName"] != "pbk_example.yaml" || body["dagRunId"] != "run_example" || body["params"] != `{"service":"api"}` {
 			t.Errorf("body = %#v", body)
 		}
 		_, _ = w.Write([]byte(`{"dagRunId":"run_example"}`))

@@ -2,6 +2,7 @@ package dagu
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,13 @@ func TestProviderUsesPublicIDsWithoutMappingStore(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/api/v1/dags/pbk_abcdefgh/start":
+			var body map[string]any
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body["dagName"] != "pbk_abcdefgh" {
+				t.Errorf("dagName = %#v", body["dagName"])
+			}
 			_, _ = w.Write([]byte(`{"dagRunId":"run_abcdefgh"}`))
 		case "/api/v1/dag-runs/pbk_abcdefgh/run_abcdefgh":
 			_, _ = w.Write([]byte(`{"dagRunDetails":{"dagRunId":"run_abcdefgh","name":"pbk_abcdefgh","statusLabel":"success","nodes":[]}}`))
@@ -75,12 +83,40 @@ func TestProviderRejectsInvalidIDsAndArtifactTraversalBeforeCallingDagu(t *testi
 	}
 }
 
-func TestMapRunPreservesHumanTaskAndApproval(t *testing.T) {
+func TestMapRunDistinguishesDaguWaitingStates(t *testing.T) {
 	t.Parallel()
-	run := DAGRun{StatusText: "waiting", Nodes: []byte(`[{"statusLabel":"waiting","step":{"id":"review","name":"Review","humanTask":{"prompt":"check"},"approval":{"prompt":"approve"}}}]`)}
-	state := mapRun(ports.PlaybookRunRef{ID: "run_abcdefgh", PlaybookID: "pbk_abcdefgh"}, run)
-	if state.Status != domain.RunWaitingForApproval || len(state.Steps) != 1 || state.Steps[0].HumanTask["prompt"] != "check" || state.Steps[0].Approval["prompt"] != "approve" {
-		t.Fatalf("state = %#v", state)
+	tests := []struct {
+		name       string
+		step       string
+		wantStatus domain.RunStatus
+	}{
+		{name: "human task", step: `"humanTask":{"prompt":"check"}`, wantStatus: domain.RunWaitingForInput},
+		{name: "approval", step: `"approval":{"prompt":"approve"}`, wantStatus: domain.RunWaitingForApproval},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			run := DAGRun{StatusText: "waiting", Nodes: []byte(`[{"statusLabel":"waiting","step":{"id":"review","name":"Review",` + test.step + `}}]`)}
+			state := mapRun(ports.PlaybookRunRef{ID: "run_abcdefgh", PlaybookID: "pbk_abcdefgh"}, run)
+			if state.Status != test.wantStatus || len(state.Steps) != 1 || state.Steps[0].Status != test.wantStatus {
+				t.Fatalf("state = %#v", state)
+			}
+		})
+	}
+}
+
+func TestMapRunHandlesAllTerminalDaguStatuses(t *testing.T) {
+	t.Parallel()
+	tests := map[string]domain.RunStatus{
+		"succeeded":           domain.RunSucceeded,
+		"failed":              domain.RunFailed,
+		"partially_succeeded": domain.RunFailed,
+		"rejected":            domain.RunFailed,
+		"aborted":             domain.RunCancelled,
+	}
+	for input, expected := range tests {
+		if actual := mapRunStatus(input); actual != expected || !terminalRunStatus(actual) {
+			t.Errorf("status %q = %q, terminal = %t", input, actual, terminalRunStatus(actual))
+		}
 	}
 }
 

@@ -119,7 +119,8 @@ func (client *Client) StartDAG(ctx context.Context, fileName, runID string, para
 	if enqueue {
 		action = "enqueue"
 	}
-	request := map[string]any{"dagRunId": runID, "params": string(encodedParams)}
+	// 覆盖 Dagu DAG 的逻辑名称，使后续 run 查询始终使用稳定的 Aegis playbook ID。
+	request := map[string]any{"dagName": fileName, "dagRunId": runID, "params": string(encodedParams)}
 	var response struct {
 		DAGRunID string `json:"dagRunId"`
 	}

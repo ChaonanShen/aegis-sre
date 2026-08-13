@@ -19,10 +19,16 @@ import (
 
 type playbookHTTPFake struct {
 	contracttest.PlaybookProvider
-	created  ports.CreatePlaybookInput
-	runRef   ports.PlaybookRunRef
-	err      error
-	getCalls int
+	created        ports.CreatePlaybookInput
+	runRef         ports.PlaybookRunRef
+	runPlaybookID  domain.ID
+	err            error
+	getCalls       int
+	runGetCalls    int
+	startCalls     int
+	cancelCalls    int
+	humanTaskCalls int
+	approvalCalls  int
 }
 
 func (fake *playbookHTTPFake) ListRuns(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRef, _ domain.PageRequest) (domain.Page[ports.PlaybookRunState], error) {
@@ -46,10 +52,37 @@ func (fake *playbookHTTPFake) Validate(_ context.Context, _ domain.ActorContext,
 	return []ports.ValidationIssue{{Path: "steps[0]", Message: "action is required"}}, fake.err
 }
 
-func (fake *playbookHTTPFake) GetRun(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef) (ports.PlaybookRunState, error) {
+func (fake *playbookHTTPFake) StartRun(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRef, input ports.RunPlaybookInput) (ports.PlaybookRunRef, error) {
+	fake.startCalls++
+	return ports.PlaybookRunRef{ID: input.ID, PlaybookID: ref.ID}, fake.err
+}
+
+func (fake *playbookHTTPFake) GetRun(_ context.Context, actor domain.ActorContext, ref ports.PlaybookRunRef) (ports.PlaybookRunState, error) {
+	fake.runGetCalls++
 	fake.runRef = ref
-	ref.PlaybookID = "pbk_abcdefgh"
+	ref.PlaybookID = fake.runPlaybookID
+	if ref.PlaybookID == "" {
+		ref.PlaybookID = scopedPlaybookID(actor, "run-owner")
+	}
 	return ports.PlaybookRunState{Ref: ref, Status: domain.RunRunning, StartedAt: time.Date(2026, 8, 13, 1, 0, 0, 0, time.UTC)}, fake.err
+}
+
+func (fake *playbookHTTPFake) CancelRun(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef) error {
+	fake.cancelCalls++
+	fake.runRef = ref
+	return fake.err
+}
+
+func (fake *playbookHTTPFake) CompleteHumanTask(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef, _ string, _ map[string]any) error {
+	fake.humanTaskCalls++
+	fake.runRef = ref
+	return fake.err
+}
+
+func (fake *playbookHTTPFake) ResolveApproval(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef, _ string, _ ports.ApprovalAction, _ map[string]string) error {
+	fake.approvalCalls++
+	fake.runRef = ref
+	return fake.err
 }
 
 func (fake *playbookHTTPFake) StreamRun(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef, after int64) (ports.EventStream, error) {
@@ -153,9 +186,91 @@ func TestListPlaybookRunsReturnsProviderHistory(t *testing.T) {
 	fake := &playbookHTTPFake{}
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/playbooks/pbk_abcdefgh/runs", ""))
+	id := scopedPlaybookID(domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}, "run-history")
+	handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id)+"/runs", ""))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"run_abcdefgh"`) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestPlaybookRunStartEnforcesScopeRoleAndResourceScopedIdempotency(t *testing.T) {
+	t.Parallel()
+	actor := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}
+	firstID := scopedPlaybookID(actor, "first-playbook")
+	secondID := scopedPlaybookID(actor, "second-playbook")
+	fake := &playbookHTTPFake{}
+	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
+
+	viewer := actorRequest(http.MethodPost, "/api/v1/playbooks/"+string(firstID)+"/runs", `{}`)
+	viewer.Header.Set("X-Aegis-Roles", "Viewer")
+	viewer.Header.Set("Idempotency-Key", "same-request-key")
+	viewerResponse := httptest.NewRecorder()
+	handler.ServeHTTP(viewerResponse, viewer)
+	if viewerResponse.Code != http.StatusForbidden || fake.startCalls != 0 {
+		t.Fatalf("viewer status = %d, start calls = %d", viewerResponse.Code, fake.startCalls)
+	}
+
+	foreign := actorRequest(http.MethodPost, "/api/v1/playbooks/"+string(firstID)+"/runs", `{}`)
+	foreign.Header.Set(headerOrgID, "another-org")
+	foreign.Header.Set("Idempotency-Key", "same-request-key")
+	foreignResponse := httptest.NewRecorder()
+	handler.ServeHTTP(foreignResponse, foreign)
+	if foreignResponse.Code != http.StatusNotFound || fake.startCalls != 0 {
+		t.Fatalf("foreign status = %d, start calls = %d", foreignResponse.Code, fake.startCalls)
+	}
+
+	var runIDs []string
+	for _, id := range []domain.ID{firstID, secondID} {
+		request := actorRequest(http.MethodPost, "/api/v1/playbooks/"+string(id)+"/runs", `{}`)
+		request.Header.Set("Idempotency-Key", "same-request-key")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusAccepted {
+			t.Fatalf("start %s status = %d, body = %s", id, response.Code, response.Body.String())
+		}
+		var body map[string]any
+		_ = json.Unmarshal(response.Body.Bytes(), &body)
+		runIDs = append(runIDs, body["id"].(string))
+	}
+	if runIDs[0] == runIDs[1] || fake.startCalls != 2 {
+		t.Fatalf("run IDs = %v, start calls = %d", runIDs, fake.startCalls)
+	}
+}
+
+func TestPlaybookRunRoutesRejectForeignOrgAndViewerMutations(t *testing.T) {
+	t.Parallel()
+	owner := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}
+	fake := &playbookHTTPFake{runPlaybookID: scopedPlaybookID(owner, "owned-run")}
+	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
+
+	foreign := actorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh", "")
+	foreign.Header.Set(headerOrgID, "another-org")
+	foreignResponse := httptest.NewRecorder()
+	handler.ServeHTTP(foreignResponse, foreign)
+	if foreignResponse.Code != http.StatusNotFound {
+		t.Fatalf("foreign status = %d, body = %s", foreignResponse.Code, foreignResponse.Body.String())
+	}
+
+	mutations := []struct {
+		target string
+		body   string
+	}{
+		{target: "/api/v1/runs/run_abcdefgh:cancel"},
+		{target: "/api/v1/runs/run_abcdefgh/human-tasks/review:complete", body: `{}`},
+		{target: "/api/v1/runs/run_abcdefgh/approvals/review:resolve", body: `{"decision":"approve"}`},
+	}
+	for _, mutation := range mutations {
+		request := actorRequest(http.MethodPost, mutation.target, mutation.body)
+		request.Header.Set("X-Aegis-Roles", "Viewer")
+		request.Header.Set("Idempotency-Key", "viewer-action")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusForbidden {
+			t.Errorf("%s status = %d, body = %s", mutation.target, response.Code, response.Body.String())
+		}
+	}
+	if fake.cancelCalls != 0 || fake.humanTaskCalls != 0 || fake.approvalCalls != 0 {
+		t.Fatalf("mutation calls = cancel:%d human:%d approval:%d", fake.cancelCalls, fake.humanTaskCalls, fake.approvalCalls)
 	}
 }
 
