@@ -150,7 +150,7 @@ internal/application/contracts/
 
 ## 纠正阶段：移除过早引入的 PostgreSQL 持久化
 
-状态：**已完成。阶段 4 尚未开始。**
+状态：**已完成。**
 
 背景：阶段 3 沿用了迁移前项目以 PostgreSQL 保存产品元数据、业务 ID 与 Provider ID 映射的假设，但该假设没有先经过 Codex/OpenCode、Dagu、RAGFlow 和 Grafana 原生能力验证。当前 PostgreSQL repository 也未接入 Control Plane 的真实运行路径。继续保留会造成事实来源重复、无消费者抽象和不必要的部署依赖，因此需要在接入首个 Provider 前纠正。
 
@@ -214,53 +214,55 @@ Provider 数据归属与标识策略复核：
 
 ## 7. 阶段 4：Dagu 与 `mcp.call`
 
+状态：**主体接入已完成；日志与 Human Task/Artifact 前端交互仍需在阶段 7 收口。真实外部 Grafana 调用留在阶段 5。**
+
 目标：Dagu 成为 Playbook 唯一执行引擎，插件不再依赖自定义 DSL。
 
 ### 4.1 迁入实验成果
 
 从 `/Users/a1111/proj/codex-playbook-dagu` 迁入并整理：
 
-- [ ] Dagu REST client 和 API 类型。
-- [ ] 原生 YAML 解析与前端 DAG 映射。
-- [ ] Run、Step、日志、Artifact 查询。
-- [ ] `human.task` 表单提交。
-- [ ] Approval approve/reject/rewind。
-- [ ] `mcp.call` Runner、配置和验收用例。
+- [x] Dagu REST client 和 API 类型。
+- [x] 原生 YAML 解析与前端 DAG 映射。
+- [ ] Run、Step、日志、Artifact 查询（Run、Step、Artifact 已完成，日志待补）。
+- [x] `human.task` 表单提交。
+- [x] Approval approve/reject/rewind。
+- [x] `mcp.call` Runner、配置和验收用例。
 
 迁入时不得复制实验用 Prometheus MCP 实现，正式环境直接使用 Grafana 官方 MCP。
 
 ### 4.2 Playbook Provider
 
-- [ ] YAML CRUD 和服务端 validate。
-- [ ] Run、enqueue、cancel、retry。
-- [ ] Run/Step 状态映射和事件轮询。
-- [ ] Human Task 与 Approval 统一映射。
-- [ ] Artifact 列表、预览和下载代理。
-- [ ] 验证调用方生成 DAG/Run ID、Dagu 原生名称或 metadata 的公共标识策略，不建立映射表。
-- [ ] GitOps 与 UI 写入冲突策略 ADR。
+- [x] YAML CRUD 和服务端 validate。
+- [x] Run、enqueue、cancel、retry。
+- [x] Run/Step 状态映射和事件轮询。
+- [x] Human Task 与 Approval 统一映射。
+- [x] Artifact 列表、预览和下载代理。
+- [x] 验证调用方生成 DAG/Run ID、Dagu 原生名称或 metadata 的公共标识策略，不建立映射表。
+- [x] GitOps 与 UI 写入冲突策略 ADR。
 
 ### 4.3 `mcp.call` 生产化
 
-- [ ] Server 和 Tool 双重 allowlist。
-- [ ] 连接、握手、调用和总超时。
-- [ ] 最大文本、结构化内容和二进制结果限制。
-- [ ] Bearer Token file、CA 和可选 mTLS。
-- [ ] Text、Image、Audio、ResourceLink 和 Embedded Resource 归一化。
-- [ ] 大结果进入 Dagu Artifact，只在 Step 输出中返回摘要和路径。
-- [ ] 为写操作传递幂等键和 trace ID。
-- [ ] 禁止调用 Dagu 自身执行类工具形成递归。
-- [ ] Write Tool 默认拒绝，逐项评审加入。
+- [x] Server 和 Tool 双重 allowlist。
+- [x] 连接、握手、调用和总超时。
+- [x] 最大文本、结构化内容和二进制结果限制。
+- [x] Bearer Token file、CA 和可选 mTLS。
+- [x] Text、Image、Audio、ResourceLink 和 Embedded Resource 归一化。
+- [x] 大结果进入 Dagu Artifact，只在 Step 输出中返回摘要和路径。
+- [x] 为写操作传递幂等键和 trace ID。
+- [x] 禁止调用 Dagu 自身执行类工具形成递归。
+- [x] Write Tool 默认拒绝，逐项评审加入。
 
 本阶段使用只实现允许工具的 MCP contract server 验证 `mcp.call` 协议、限制和 Artifact；
 不得迁入实验用 Prometheus MCP。对 Grafana 官方 MCP 的真实调用在阶段 5 补充验收。
 
 ### 4.4 前端接入
 
-- [ ] 使用原生 Dagu YAML 作为编辑内容和事实来源。
-- [ ] 迁移 Playbook DAG 可视化，不反向生成第二套 DSL。
-- [ ] 实现真实 `PlaybookGateway`。
-- [ ] 展示 Run、Step、Human Task、Approval 和 Artifact。
-- [ ] 删除真实模式下的 Playbook fixture fallback。
+- [x] 使用原生 Dagu YAML 作为编辑内容和事实来源。
+- [x] 迁移 Playbook DAG 可视化，不反向生成第二套 DSL。
+- [x] 实现真实 `PlaybookGateway`。
+- [ ] 展示 Run、Step、Human Task、Approval 和 Artifact（Run、Step、Approval 已接入）。
+- [x] 删除真实模式下的 Playbook fixture fallback。
 
 验收标准：
 
