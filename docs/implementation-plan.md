@@ -307,26 +307,28 @@ Provider 数据归属与标识策略复核：
 
 ## 9. 阶段 6：Codex 与 OpenCode Agent Provider
 
+状态：**协议基线、标识策略和底层客户端已完成；Provider 事件映射、Control Plane 装配与真实模型验收尚未完成。**
+
 目标：Codex 作为默认 Provider，同时用 OpenCode 证明抽象没有泄漏。
 
 ### 6.1 Codex Adapter
 
-- [ ] 固定 Codex CLI/App Server 版本。
-- [ ] 由 Control Plane 管理持久 `stdio + JSONL` 子进程。
-- [ ] 完成 initialize/initialized 握手。
+- [x] 固定 Codex CLI/App Server 版本，并提交版本化 JSON Schema。
+- [ ] 由 Control Plane 管理持久 `stdio + JSONL` 子进程（JSONL 客户端已完成，进程监管待装配）。
+- [x] 完成 initialize/initialized 握手。
 - [ ] 实现 thread start/resume/read/delete。
 - [ ] 实现 turn start/interrupt。
 - [ ] 映射 message delta、MCP call、完成和失败事件。
 - [ ] 处理命令、文件变更和 MCP 工具审批请求。
 - [ ] 启动时校验当前声明启用的 Grafana 和 Dagu MCP；Knowledge 未接入前不得注册虚假工具。
-- [ ] 验证 Codex Thread 的公共标识策略，不保存 Session/Thread 映射表。
-- [ ] 使用生成的版本化 JSON Schema 做协议兼容测试。
+- [x] 验证 Codex Thread 的公共标识策略，不保存 Session/Thread 映射表。
+- [x] 使用生成的版本化 JSON Schema 做协议兼容测试。
 
 ### 6.2 OpenCode Adapter
 
-- [ ] 固定 OpenCode 版本。
-- [ ] 使用带 Basic Auth 的 headless HTTP server。
-- [ ] 实现 session create/read/delete/abort。
+- [x] 固定 OpenCode 版本。
+- [x] 实现带可轮换 Basic Auth、响应上限和错误净化的 HTTP client。
+- [x] 实现底层 session create/read/delete/abort 和 caller-supplied ID。
 - [ ] 实现 async prompt 和 SSE event 订阅。
 - [ ] 映射 message part、tool call、permission 和完成事件。
 - [ ] 配置与 Codex 一致的已启用 MCP；Knowledge 在 RAGFlow 阶段完成后再加入。
@@ -347,18 +349,20 @@ Provider 数据归属与标识策略复核：
 
 ## 10. 阶段 7：核心前端真实模式收口
 
+状态：**真实模式 fallback 已收口；Playbook 已接 Dagu，Workbench 已接公共契约。Alerts、Approvals、Audit 与真实 Agent 组合仍待对应后端能力完成。**
+
 目标：先收口不依赖 RAGFlow 的真实功能；Knowledge 页面保持明确不可用，直到最后的 RAGFlow 垂直切片完成。
 
 任务：
 
-- [ ] 生成或实现 Control Plane Resource Client。
-- [ ] Workbench 使用统一 Agent Event，不再识别旧 AgentType。
-- [ ] Playbook 使用 Dagu-backed API。
+- [x] 生成或实现 Control Plane Resource Client。
+- [x] Workbench 使用统一 Agent Event，不再识别旧 AgentType。
+- [x] Playbook 使用 Dagu-backed API。
 - [ ] Approvals 汇总 Agent Approval 与 Dagu Approval。
 - [ ] Alerts 接入真实 Grafana 告警上下文。
 - [ ] Audit 页面接入跨 Provider trace 和操作摘要。
-- [ ] fixture 仅在显式 fixture/test 模式启用。
-- [ ] 真实模式中未实现能力显示明确不可用，不静默返回 fixture 数据。
+- [x] fixture 仅在显式 fixture/test 模式启用。
+- [x] 真实模式中未实现能力显示明确不可用，不静默返回 fixture 数据。
 - [ ] 更新 Playwright 用例覆盖 Grafana、Dagu 和 Agent 的真实服务组合。
 
 验收标准：
