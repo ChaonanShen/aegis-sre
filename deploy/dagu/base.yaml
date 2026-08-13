@@ -1,8 +1,5 @@
 hist_retention_days: 30
 
-auth:
-  mode: builtin
-
 actions:
   mcp.call:
     description: Call one allow-listed MCP tool through the Aegis runner.

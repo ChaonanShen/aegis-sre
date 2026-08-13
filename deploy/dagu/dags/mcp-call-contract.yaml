@@ -1,0 +1,50 @@
+type: graph
+description: Verify four parallel mcp.call steps and one report artifact.
+
+steps:
+  - id: query_metrics
+    action: mcp.call
+    with:
+      server: contract
+      tool: contract.echo
+      args: {value: metrics}
+
+  - id: query_logs
+    action: mcp.call
+    with:
+      server: contract
+      tool: contract.echo
+      args: {value: logs}
+
+  - id: query_alerts
+    action: mcp.call
+    with:
+      server: contract
+      tool: contract.echo
+      args: {value: alerts}
+
+  - id: query_dashboards
+    action: mcp.call
+    with:
+      server: contract
+      tool: contract.echo
+      args: {value: dashboards}
+
+  - id: report
+    depends: [query_metrics, query_logs, query_alerts, query_dashboards]
+    action: template.render
+    with:
+      data:
+        metrics: ${query_metrics.output.result.value}
+        logs: ${query_logs.output.result.value}
+        alerts: ${query_alerts.output.result.value}
+        dashboards: ${query_dashboards.output.result.value}
+      template: |
+        # MCP contract report
+
+        - metrics: {{ .metrics }}
+        - logs: {{ .logs }}
+        - alerts: {{ .alerts }}
+        - dashboards: {{ .dashboards }}
+    stdout:
+      artifact: reports/mcp-contract.md

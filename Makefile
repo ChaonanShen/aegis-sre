@@ -1,9 +1,11 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 OAPI_CODEGEN_VERSION := v2.8.0
 MAGE_VERSION := v1.17.2
+DAGU_VERSION := v2.13.0
+DAGU_BIN ?= dagu
 
-verify: contracts-check control-plane-test control-plane-build plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+verify: contracts-check control-plane-test control-plane-build dagu-validate plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 contracts-generate: contracts-go-generate contracts-ts-generate
 
@@ -26,6 +28,12 @@ control-plane-test:
 
 control-plane-build:
 	go build ./...
+
+dagu-validate:
+	dagu_tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$dagu_tmp"' EXIT; \
+	cp deploy/dagu/base.yaml "$$dagu_tmp/base.yaml"; \
+	$(DAGU_BIN) validate --dagu-home "$$dagu_tmp" -c deploy/dagu/config.yaml deploy/dagu/dags/mcp-call-contract.yaml
 
 plugin-backend-test:
 	cd grafana-plugin && go test ./pkg/... && go vet ./pkg/...

@@ -1,0 +1,10 @@
+FROM golang:1.26.5-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/mcp-contract-server ./cmd/mcp-contract-server
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/mcp-contract-server ./cmd/mcp-contract-server
+
+FROM alpine:3.23.3
+COPY --from=build /out/mcp-contract-server /usr/local/bin/mcp-contract-server
+ENTRYPOINT ["/usr/local/bin/mcp-contract-server"]

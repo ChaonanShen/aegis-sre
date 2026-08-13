@@ -1,0 +1,12 @@
+servers:
+  contract:
+    url: http://mcp-contract:8090/mcp
+    bearer_token_file: /run/secrets/mcp_contract_token
+    allowed_tools: [contract.echo]
+    connect_timeout: 2s
+    handshake_timeout: 5s
+    call_timeout: 10s
+    total_timeout: 15s
+    max_text_bytes: 65536
+    max_structured_bytes: 65536
+    max_binary_bytes: 1048576
