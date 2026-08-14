@@ -27,6 +27,13 @@ type KnowledgeBase struct {
 	UpdatedAt time.Time
 }
 
+type KnowledgeBaseStatus string
+
+const (
+	KnowledgeBaseActive   KnowledgeBaseStatus = "active"
+	KnowledgeBaseDisabled KnowledgeBaseStatus = "disabled"
+)
+
 type DocumentStatus string
 
 const (
@@ -43,6 +50,10 @@ type Document struct {
 	Name            string
 	MediaType       string
 	Status          DocumentStatus
+	Service         string
+	Tags            []string
+	FailureReason   string
+	Size            int64
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

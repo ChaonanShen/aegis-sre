@@ -87,3 +87,43 @@ func TestOpenAPIContractDoesNotAssumeControlPlanePersistence(t *testing.T) {
 		t.Fatal("services must remain a read-only view derived from Grafana")
 	}
 }
+
+func TestKnowledgeContractCoversTheCompleteVerticalSlice(t *testing.T) {
+	content, err := os.ReadFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	for _, expected := range []string{
+		"operationId: getKnowledgeBase",
+		"operationId: updateKnowledgeBase",
+		"operationId: deleteKnowledgeBase",
+		"operationId: getDocument",
+		"operationId: updateDocument",
+		"operationId: startDocumentIndexing",
+		"operationId: stopDocumentIndexing",
+		"operationId: listDocumentChunks",
+		"operationId: downloadDocumentContent",
+		"operationId: searchKnowledge",
+		"multipart/form-data:",
+		"failure_reason:",
+		"KnowledgeCitation:",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("Knowledge OpenAPI contract is missing %q", expected)
+		}
+	}
+}
+
+func TestKnowledgeSearchDoesNotAcceptArbitraryProviderFilters(t *testing.T) {
+	content, err := os.ReadFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lower := strings.ToLower(string(content))
+	for _, forbidden := range []string{"metadata_condition", "similarity_threshold", "vector_similarity_weight"} {
+		if strings.Contains(lower, forbidden) {
+			t.Fatalf("Knowledge public contract leaks provider filter %q", forbidden)
+		}
+	}
+}

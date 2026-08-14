@@ -148,6 +148,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/knowledge-bases/{knowledge_base_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getKnowledgeBase"];
+        put: operations["updateKnowledgeBase"];
+        post?: never;
+        delete: operations["deleteKnowledgeBase"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/knowledge-bases/{knowledge_base_id}/documents": {
         parameters: {
             query?: never;
@@ -160,6 +178,117 @@ export interface paths {
         get: operations["listDocuments"];
         put?: never;
         post: operations["createDocument"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getDocument"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteDocument"];
+        options?: never;
+        head?: never;
+        patch: operations["updateDocument"];
+        trace?: never;
+    };
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}:index": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["startDocumentIndexing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}:stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["stopDocumentIndexing"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        get: operations["listDocumentChunks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        get: operations["downloadDocumentContent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge:search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["searchKnowledge"];
         delete?: never;
         options?: never;
         head?: never;
@@ -533,6 +662,11 @@ export interface components {
             name: string;
             folder_uid: string;
         };
+        UpdateKnowledgeBaseRequest: {
+            name: string;
+            /** @enum {string} */
+            status: "active" | "disabled";
+        };
         KnowledgeBasePage: components["schemas"]["PageMetadata"] & {
             items: components["schemas"]["KnowledgeBase"][];
         };
@@ -541,8 +675,14 @@ export interface components {
             knowledge_base_id: components["schemas"]["BusinessID"];
             name: string;
             media_type: string;
+            service: string;
+            tags: string[];
             /** @enum {string} */
             status: "pending" | "indexing" | "ready" | "failed" | "disabled";
+            /** @description Sanitized parsing failure suitable for display. */
+            failure_reason?: string;
+            /** Format: int64 */
+            size: number;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -553,9 +693,60 @@ export interface components {
             media_type: string;
             /** @description Short-lived Aegis upload token; never a Provider credential. */
             upload_token: string;
+            service?: string;
+            tags?: string[];
+        };
+        DocumentUpload: {
+            /** Format: binary */
+            file: string;
+            service?: string;
+            tags?: string[];
+        };
+        UpdateDocumentRequest: {
+            service: string;
+            tags: string[];
         };
         DocumentPage: components["schemas"]["PageMetadata"] & {
             items: components["schemas"]["Document"][];
+        };
+        KnowledgeChunk: {
+            id: string;
+            document_id: components["schemas"]["BusinessID"];
+            text: string;
+            position: string;
+            page_number: number;
+            /** Format: date-time */
+            created_at: string;
+        };
+        KnowledgeChunkPage: components["schemas"]["PageMetadata"] & {
+            items: components["schemas"]["KnowledgeChunk"][];
+        };
+        KnowledgeSearchRequest: {
+            query: string;
+            knowledge_base_ids: components["schemas"]["BusinessID"][];
+            service?: string;
+            /** @default 5 */
+            limit: number;
+            /**
+             * Format: double
+             * @default 0.2
+             */
+            threshold: number;
+        };
+        KnowledgeCitation: {
+            document_id: components["schemas"]["BusinessID"];
+            source_name: string;
+            position: string;
+            page_number: number;
+        };
+        KnowledgeSearchHit: {
+            text: string;
+            /** Format: double */
+            score: number;
+            citation: components["schemas"]["KnowledgeCitation"];
+        };
+        KnowledgeSearchResponse: {
+            hits: components["schemas"]["KnowledgeSearchHit"][];
         };
         Playbook: {
             id: components["schemas"]["BusinessID"];
@@ -661,6 +852,7 @@ export interface components {
         SessionStatusFilter: "active" | "archived";
         ApprovalID: components["schemas"]["BusinessID"];
         KnowledgeBaseID: components["schemas"]["BusinessID"];
+        DocumentID: components["schemas"]["BusinessID"];
         PlaybookID: components["schemas"]["BusinessID"];
         RunID: components["schemas"]["BusinessID"];
         StepID: string;
@@ -976,6 +1168,77 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
+    getKnowledgeBase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Knowledge base visible in the trusted folder scope */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeBase"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateKnowledgeBase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateKnowledgeBaseRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated knowledge base */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeBase"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteKnowledgeBase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Knowledge base deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
     listDocuments: {
         parameters: {
             query?: {
@@ -1015,6 +1278,7 @@ export interface operations {
         };
         requestBody: {
             content: {
+                "multipart/form-data": components["schemas"]["DocumentUpload"];
                 "application/json": components["schemas"]["CreateDocumentRequest"];
             };
         };
@@ -1026,6 +1290,200 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Document"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document and current parsing state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    deleteDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Document deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateDocument: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateDocumentRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated document metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    startDocumentIndexing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Parsing accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    stopDocumentIndexing: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Stop accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    listDocumentChunks: {
+        parameters: {
+            query?: {
+                cursor?: components["parameters"]["Cursor"];
+                limit?: components["parameters"]["Limit"];
+            };
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Parsed chunks */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeChunkPage"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    downloadDocumentContent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+                document_id: components["parameters"]["DocumentID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Original document content */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    searchKnowledge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnowledgeSearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Ranked passages with stable citations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeSearchResponse"];
                 };
             };
             default: components["responses"]["Problem"];

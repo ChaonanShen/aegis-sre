@@ -5,6 +5,8 @@ package apiv1
 
 import (
 	"time"
+
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for ApprovalDecisionDecision.
@@ -325,6 +327,24 @@ func (e SessionStatus) Valid() bool {
 	}
 }
 
+// Defines values for UpdateKnowledgeBaseRequestStatus.
+const (
+	UpdateKnowledgeBaseRequestStatusActive   UpdateKnowledgeBaseRequestStatus = "active"
+	UpdateKnowledgeBaseRequestStatusDisabled UpdateKnowledgeBaseRequestStatus = "disabled"
+)
+
+// Valid indicates whether the value is a known member of the UpdateKnowledgeBaseRequestStatus enum.
+func (e UpdateKnowledgeBaseRequestStatus) Valid() bool {
+	switch e {
+	case UpdateKnowledgeBaseRequestStatusActive:
+		return true
+	case UpdateKnowledgeBaseRequestStatusDisabled:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateSessionRequestStatus.
 const (
 	UpdateSessionRequestStatusActive   UpdateSessionRequestStatus = "active"
@@ -429,8 +449,10 @@ type CapabilityList struct {
 
 // CreateDocumentRequest defines model for CreateDocumentRequest.
 type CreateDocumentRequest struct {
-	MediaType string `json:"media_type"`
-	Name      string `json:"name"`
+	MediaType string    `json:"media_type"`
+	Name      string    `json:"name"`
+	Service   *string   `json:"service,omitempty"`
+	Tags      *[]string `json:"tags,omitempty"`
 
 	// UploadToken Short-lived Aegis upload token; never a Provider credential.
 	UploadToken string `json:"upload_token"`
@@ -451,12 +473,18 @@ type CreateSessionRequest struct {
 
 // Document defines model for Document.
 type Document struct {
-	CreatedAt       time.Time      `json:"created_at"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// FailureReason Sanitized parsing failure suitable for display.
+	FailureReason   *string        `json:"failure_reason,omitempty"`
 	Id              BusinessID     `json:"id"`
 	KnowledgeBaseId BusinessID     `json:"knowledge_base_id"`
 	MediaType       string         `json:"media_type"`
 	Name            string         `json:"name"`
+	Service         string         `json:"service"`
+	Size            int64          `json:"size"`
 	Status          DocumentStatus `json:"status"`
+	Tags            []string       `json:"tags"`
 	UpdatedAt       time.Time      `json:"updated_at"`
 }
 
@@ -468,6 +496,13 @@ type DocumentPage struct {
 	HasMore    bool       `json:"has_more"`
 	Items      []Document `json:"items"`
 	NextCursor *string    `json:"next_cursor,omitempty"`
+}
+
+// DocumentUpload defines model for DocumentUpload.
+type DocumentUpload struct {
+	File    openapi_types.File `json:"file"`
+	Service *string            `json:"service,omitempty"`
+	Tags    *[]string          `json:"tags,omitempty"`
 }
 
 // KnowledgeBase defines model for KnowledgeBase.
@@ -488,6 +523,52 @@ type KnowledgeBasePage struct {
 	HasMore    bool            `json:"has_more"`
 	Items      []KnowledgeBase `json:"items"`
 	NextCursor *string         `json:"next_cursor,omitempty"`
+}
+
+// KnowledgeChunk defines model for KnowledgeChunk.
+type KnowledgeChunk struct {
+	CreatedAt  time.Time  `json:"created_at"`
+	DocumentId BusinessID `json:"document_id"`
+	Id         string     `json:"id"`
+	PageNumber int        `json:"page_number"`
+	Position   string     `json:"position"`
+	Text       string     `json:"text"`
+}
+
+// KnowledgeChunkPage defines model for KnowledgeChunkPage.
+type KnowledgeChunkPage struct {
+	HasMore    bool             `json:"has_more"`
+	Items      []KnowledgeChunk `json:"items"`
+	NextCursor *string          `json:"next_cursor,omitempty"`
+}
+
+// KnowledgeCitation defines model for KnowledgeCitation.
+type KnowledgeCitation struct {
+	DocumentId BusinessID `json:"document_id"`
+	PageNumber int        `json:"page_number"`
+	Position   string     `json:"position"`
+	SourceName string     `json:"source_name"`
+}
+
+// KnowledgeSearchHit defines model for KnowledgeSearchHit.
+type KnowledgeSearchHit struct {
+	Citation KnowledgeCitation `json:"citation"`
+	Score    float64           `json:"score"`
+	Text     string            `json:"text"`
+}
+
+// KnowledgeSearchRequest defines model for KnowledgeSearchRequest.
+type KnowledgeSearchRequest struct {
+	KnowledgeBaseIds []BusinessID `json:"knowledge_base_ids"`
+	Limit            *int         `json:"limit,omitempty"`
+	Query            string       `json:"query"`
+	Service          *string      `json:"service,omitempty"`
+	Threshold        *float64     `json:"threshold,omitempty"`
+}
+
+// KnowledgeSearchResponse defines model for KnowledgeSearchResponse.
+type KnowledgeSearchResponse struct {
+	Hits []KnowledgeSearchHit `json:"hits"`
 }
 
 // Message defines model for Message.
@@ -652,6 +733,21 @@ type StartTurnRequest struct {
 	Message  string    `json:"message"`
 }
 
+// UpdateDocumentRequest defines model for UpdateDocumentRequest.
+type UpdateDocumentRequest struct {
+	Service string   `json:"service"`
+	Tags    []string `json:"tags"`
+}
+
+// UpdateKnowledgeBaseRequest defines model for UpdateKnowledgeBaseRequest.
+type UpdateKnowledgeBaseRequest struct {
+	Name   string                           `json:"name"`
+	Status UpdateKnowledgeBaseRequestStatus `json:"status"`
+}
+
+// UpdateKnowledgeBaseRequestStatus defines model for UpdateKnowledgeBaseRequest.Status.
+type UpdateKnowledgeBaseRequestStatus string
+
 // UpdateSessionRequest defines model for UpdateSessionRequest.
 type UpdateSessionRequest struct {
 	Status *UpdateSessionRequestStatus `json:"status,omitempty"`
@@ -678,6 +774,9 @@ type ArtifactPath = string
 
 // Cursor defines model for Cursor.
 type Cursor = string
+
+// DocumentID defines model for DocumentID.
+type DocumentID = BusinessID
 
 // FolderUID defines model for FolderUID.
 type FolderUID = string
@@ -730,6 +829,12 @@ type ListDocumentsParams struct {
 // CreateDocumentParams defines parameters for CreateDocument.
 type CreateDocumentParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// ListDocumentChunksParams defines parameters for ListDocumentChunks.
+type ListDocumentChunksParams struct {
+	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListPlaybooksParams defines parameters for ListPlaybooks.
@@ -827,8 +932,20 @@ type StartTurnParams struct {
 // CreateKnowledgeBaseJSONRequestBody defines body for CreateKnowledgeBase for application/json ContentType.
 type CreateKnowledgeBaseJSONRequestBody = CreateKnowledgeBaseRequest
 
+// UpdateKnowledgeBaseJSONRequestBody defines body for UpdateKnowledgeBase for application/json ContentType.
+type UpdateKnowledgeBaseJSONRequestBody = UpdateKnowledgeBaseRequest
+
 // CreateDocumentJSONRequestBody defines body for CreateDocument for application/json ContentType.
 type CreateDocumentJSONRequestBody = CreateDocumentRequest
+
+// CreateDocumentMultipartRequestBody defines body for CreateDocument for multipart/form-data ContentType.
+type CreateDocumentMultipartRequestBody = DocumentUpload
+
+// UpdateDocumentJSONRequestBody defines body for UpdateDocument for application/json ContentType.
+type UpdateDocumentJSONRequestBody = UpdateDocumentRequest
+
+// SearchKnowledgeJSONRequestBody defines body for SearchKnowledge for application/json ContentType.
+type SearchKnowledgeJSONRequestBody = KnowledgeSearchRequest
 
 // StartPlaybookRunJSONRequestBody defines body for StartPlaybookRun for application/json ContentType.
 type StartPlaybookRunJSONRequestBody = StartPlaybookRunRequest
