@@ -16,6 +16,7 @@
         "approval.requested",
         "approval.resolved",
         "artifact.created",
+        "turn.started",
         "turn.completed",
         "turn.failed",
         "run.updated"
@@ -34,6 +35,7 @@
         { "$ref": "#/$defs/approval_requested" },
         { "$ref": "#/$defs/approval_resolved" },
         { "$ref": "#/$defs/artifact_created" },
+        { "$ref": "#/$defs/turn_started" },
         { "$ref": "#/$defs/turn_completed" },
         { "$ref": "#/$defs/turn_failed" },
         { "$ref": "#/$defs/run_updated" }
@@ -107,11 +109,17 @@
         "size_bytes": { "type": "integer", "minimum": 0 }
       }
     },
+    "turn_started": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": { "status": { "const": "running" } }
+    },
     "turn_completed": {
       "type": "object",
       "additionalProperties": false,
       "required": ["status"],
-      "properties": { "status": { "const": "succeeded" } }
+      "properties": { "status": { "enum": ["succeeded", "interrupted"] } }
     },
     "turn_failed": {
       "type": "object",

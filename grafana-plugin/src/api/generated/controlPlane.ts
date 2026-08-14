@@ -74,6 +74,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{session_id}/turns/{turn_id}:cancel": {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                session_id: components["parameters"]["SessionID"];
+                turn_id: components["parameters"]["TurnID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["cancelTurn"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{session_id}/approvals/{approval_id}:resolve": {
         parameters: {
             query?: never;
@@ -416,7 +437,7 @@ export interface components {
             title: string;
             status: number;
             /** @enum {string} */
-            code: "invalid_argument" | "unauthenticated" | "forbidden" | "not_found" | "conflict" | "capability_unavailable" | "provider_timeout" | "provider_unavailable" | "internal";
+            code: "invalid_argument" | "unauthenticated" | "forbidden" | "not_found" | "conflict" | "capability_unavailable" | "provider_timeout" | "provider_unavailable" | "provider_result_unknown" | "internal";
             detail?: string;
             request_id: string;
             trace_id: string;
@@ -442,6 +463,10 @@ export interface components {
             title: string;
             /** @enum {string} */
             status: "active" | "archived" | "busy";
+            /**
+             * @deprecated
+             * @description Request authorization context only; Agent Providers do not persist this value.
+             */
             folder_uid?: string;
             /** Format: date-time */
             created_at: string;
@@ -465,6 +490,7 @@ export interface components {
         };
         CreateSessionRequest: {
             title: string;
+            /** @description Request authorization context only; it is not persisted as Session state. */
             folder_uid?: string;
         };
         UpdateSessionRequest: {
@@ -631,6 +657,8 @@ export interface components {
         IdempotencyKey: string;
         FolderUID: string;
         SessionID: components["schemas"]["BusinessID"];
+        TurnID: components["schemas"]["BusinessID"];
+        SessionStatusFilter: "active" | "archived";
         ApprovalID: components["schemas"]["BusinessID"];
         KnowledgeBaseID: components["schemas"]["BusinessID"];
         PlaybookID: components["schemas"]["BusinessID"];
@@ -670,6 +698,7 @@ export interface operations {
             query?: {
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
+                status?: components["parameters"]["SessionStatusFilter"];
             };
             header?: never;
             path?: never;
@@ -812,6 +841,30 @@ export interface operations {
                 content: {
                     "text/event-stream": string;
                 };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    cancelTurn: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                session_id: components["parameters"]["SessionID"];
+                turn_id: components["parameters"]["TurnID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Turn cancellation requested */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             default: components["responses"]["Problem"];
         };

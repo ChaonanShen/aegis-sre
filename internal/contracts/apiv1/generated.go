@@ -270,6 +270,7 @@ const (
 	Internal              ProblemCode = "internal"
 	InvalidArgument       ProblemCode = "invalid_argument"
 	NotFound              ProblemCode = "not_found"
+	ProviderResultUnknown ProblemCode = "provider_result_unknown"
 	ProviderTimeout       ProblemCode = "provider_timeout"
 	ProviderUnavailable   ProblemCode = "provider_unavailable"
 	Unauthenticated       ProblemCode = "unauthenticated"
@@ -289,6 +290,8 @@ func (e ProblemCode) Valid() bool {
 	case InvalidArgument:
 		return true
 	case NotFound:
+		return true
+	case ProviderResultUnknown:
 		return true
 	case ProviderTimeout:
 		return true
@@ -334,6 +337,42 @@ func (e UpdateSessionRequestStatus) Valid() bool {
 	case UpdateSessionRequestStatusActive:
 		return true
 	case UpdateSessionRequestStatusArchived:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SessionStatusFilter.
+const (
+	SessionStatusFilterActive   SessionStatusFilter = "active"
+	SessionStatusFilterArchived SessionStatusFilter = "archived"
+)
+
+// Valid indicates whether the value is a known member of the SessionStatusFilter enum.
+func (e SessionStatusFilter) Valid() bool {
+	switch e {
+	case SessionStatusFilterActive:
+		return true
+	case SessionStatusFilterArchived:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListSessionsParamsStatus.
+const (
+	ListSessionsParamsStatusActive   ListSessionsParamsStatus = "active"
+	ListSessionsParamsStatusArchived ListSessionsParamsStatus = "archived"
+)
+
+// Valid indicates whether the value is a known member of the ListSessionsParamsStatus enum.
+func (e ListSessionsParamsStatus) Valid() bool {
+	switch e {
+	case ListSessionsParamsStatusActive:
+		return true
+	case ListSessionsParamsStatusArchived:
 		return true
 	default:
 		return false
@@ -405,6 +444,7 @@ type CreateKnowledgeBaseRequest struct {
 
 // CreateSessionRequest defines model for CreateSessionRequest.
 type CreateSessionRequest struct {
+	// FolderUid Request authorization context only; it is not persisted as Session state.
 	FolderUid *string `json:"folder_uid,omitempty"`
 	Title     string  `json:"title"`
 }
@@ -574,7 +614,10 @@ type ServicePage struct {
 
 // Session defines model for Session.
 type Session struct {
-	CreatedAt time.Time     `json:"created_at"`
+	CreatedAt time.Time `json:"created_at"`
+
+	// FolderUid Request authorization context only; Agent Providers do not persist this value.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	FolderUid *string       `json:"folder_uid,omitempty"`
 	Id        BusinessID    `json:"id"`
 	Status    SessionStatus `json:"status"`
@@ -657,8 +700,14 @@ type RunID = BusinessID
 // SessionID defines model for SessionID.
 type SessionID = BusinessID
 
+// SessionStatusFilter defines model for SessionStatusFilter.
+type SessionStatusFilter string
+
 // StepID defines model for StepID.
 type StepID = string
+
+// TurnID defines model for TurnID.
+type TurnID = BusinessID
 
 // ListKnowledgeBasesParams defines parameters for ListKnowledgeBases.
 type ListKnowledgeBasesParams struct {
@@ -747,9 +796,13 @@ type ListServicesParams struct {
 
 // ListSessionsParams defines parameters for ListSessions.
 type ListSessionsParams struct {
-	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *Cursor                   `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit  *Limit                    `form:"limit,omitempty" json:"limit,omitempty"`
+	Status *ListSessionsParamsStatus `form:"status,omitempty" json:"status,omitempty"`
 }
+
+// ListSessionsParamsStatus defines parameters for ListSessions.
+type ListSessionsParamsStatus string
 
 // CreateSessionParams defines parameters for CreateSession.
 type CreateSessionParams struct {
@@ -758,6 +811,11 @@ type CreateSessionParams struct {
 
 // ResolveAgentApprovalParams defines parameters for ResolveAgentApproval.
 type ResolveAgentApprovalParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// CancelTurnParams defines parameters for CancelTurn.
+type CancelTurnParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 

@@ -24,6 +24,33 @@ func TestEventSchemaIsJSONAndContainsStableEnvelope(t *testing.T) {
 	}
 }
 
+func TestAgentContractExposesExplicitTurnLifecycle(t *testing.T) {
+	openAPI, err := os.ReadFile("../../api/openapi.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{
+		"/sessions/{session_id}/turns/{turn_id}:cancel:",
+		"operationId: cancelTurn",
+		"name: turn_id",
+		"name: status",
+	} {
+		if !strings.Contains(string(openAPI), expected) {
+			t.Fatalf("OpenAPI is missing %q", expected)
+		}
+	}
+
+	events, err := os.ReadFile("../../api/events.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`"turn.started"`, `"interrupted"`} {
+		if !strings.Contains(string(events), expected) {
+			t.Fatalf("event contract is missing %s", expected)
+		}
+	}
+}
+
 func TestPublicContractsDoNotExposeProviderIdentifiers(t *testing.T) {
 	for _, path := range []string{"../../api/openapi.yaml", "../../api/events.schema.json"} {
 		content, err := os.ReadFile(path)

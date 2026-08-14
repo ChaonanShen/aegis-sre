@@ -24,6 +24,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/SessionStatusFilter'
       responses:
         '200':
           description: Sessions visible to the current actor
@@ -109,6 +110,18 @@ paths:
             text/event-stream:
               schema:
                 type: string
+        default:
+          $ref: '#/components/responses/Problem'
+  /sessions/{session_id}/turns/{turn_id}:cancel:
+    parameters:
+      - $ref: '#/components/parameters/SessionID'
+      - $ref: '#/components/parameters/TurnID'
+      - $ref: '#/components/parameters/IdempotencyKey'
+    post:
+      operationId: cancelTurn
+      responses:
+        '204':
+          description: Turn cancellation requested
         default:
           $ref: '#/components/responses/Problem'
   /sessions/{session_id}/approvals/{approval_id}:resolve:
@@ -552,6 +565,19 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/BusinessID'
+    TurnID:
+      name: turn_id
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/BusinessID'
+    SessionStatusFilter:
+      name: status
+      in: query
+      schema:
+        type: string
+        enum: [active, archived]
+        default: active
     ApprovalID:
       name: approval_id
       in: path
@@ -618,7 +644,7 @@ components:
           maximum: 599
         code:
           type: string
-          enum: [invalid_argument, unauthenticated, forbidden, not_found, conflict, capability_unavailable, provider_timeout, provider_unavailable, internal]
+          enum: [invalid_argument, unauthenticated, forbidden, not_found, conflict, capability_unavailable, provider_timeout, provider_unavailable, provider_result_unknown, internal]
         detail:
           type: string
         request_id:
@@ -675,6 +701,8 @@ components:
           enum: [active, archived, busy]
         folder_uid:
           type: string
+          deprecated: true
+          description: Request authorization context only; Agent Providers do not persist this value.
         created_at:
           type: string
           format: date-time
@@ -729,6 +757,7 @@ components:
         folder_uid:
           type: string
           maxLength: 128
+          description: Request authorization context only; it is not persisted as Session state.
     UpdateSessionRequest:
       type: object
       additionalProperties: false

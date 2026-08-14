@@ -14,6 +14,7 @@ export interface AegisEvent {
     | "approval.requested"
     | "approval.resolved"
     | "artifact.created"
+    | "turn.started"
     | "turn.completed"
     | "turn.failed"
     | "run.updated";
@@ -29,6 +30,7 @@ export interface AegisEvent {
     | ApprovalRequested
     | ApprovalResolved
     | ArtifactCreated
+    | TurnStarted
     | TurnCompleted
     | TurnFailed
     | RunUpdated;
@@ -69,8 +71,11 @@ export interface ArtifactCreated {
   media_type: string;
   size_bytes: number;
 }
+export interface TurnStarted {
+  status: "running";
+}
 export interface TurnCompleted {
-  status: "succeeded";
+  status: "succeeded" | "interrupted";
 }
 export interface TurnFailed {
   code: string;
