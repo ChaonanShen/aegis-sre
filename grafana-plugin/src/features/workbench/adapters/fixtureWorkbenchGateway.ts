@@ -1,6 +1,5 @@
 import {
   AgentEvent,
-  CanvasPreview,
   CreateSessionInput,
   OpenedSession,
   ResolveInterruptInput,
@@ -95,6 +94,16 @@ export function createFixtureWorkbenchGateway(options: FixtureWorkbenchGatewayOp
       };
       writeSessions([created, ...readSessions()]);
       return clone(created);
+    },
+    async renameSession(sessionId: string, title: string, signal?: AbortSignal) {
+      await delay(latencyMs, signal);
+      const sessions = readSessions();
+      const found = sessions.find(({ session }) => session.id === sessionId);
+      if (!found) throw new SessionNotFoundError(sessionId);
+      found.session.title = title.trim();
+      found.session.updatedAt = now().toISOString();
+      writeSessions(sessions);
+      return clone(found.session);
     },
 
     async archiveSession(sessionId: string, signal?: AbortSignal) {

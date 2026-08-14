@@ -3,7 +3,7 @@ import { Observable } from 'rxjs';
 import type { components } from '../../../api/generated/controlPlane';
 import { ResourceClient, ResourceClientError } from '../../../adapters/resourcesdk/resourceClient';
 import { PLUGIN_RESOURCE_BASE_URL } from '../../../constants';
-import { PlaybookArtifact, PlaybookArtifactPreview, PlaybookApprovalDecision, PlaybookDocument, PlaybookRunRecord, PlaybookSummary } from '../crudModel';
+import { PlaybookArtifact, PlaybookArtifactPreview, PlaybookDocument, PlaybookRunRecord, PlaybookSummary } from '../crudModel';
 import { PlaybookCrudGateway } from '../ports/PlaybookCrudGateway';
 
 type ContractPlaybook = components['schemas']['Playbook'];
@@ -256,7 +256,8 @@ function isArtifact(value: unknown): value is ContractArtifact {
 
 function isArtifactPreview(value: unknown): value is ContractArtifactPreview {
   const item = record(value);
-  return Boolean(item && isArtifact(item) && typeof item.text === 'string' && typeof item.truncated === 'boolean');
+  const raw = item as Record<string, unknown> | undefined;
+  return Boolean(raw && isArtifact(raw) && typeof (raw as Record<string, unknown>).text === 'string' && typeof (raw as Record<string, unknown>).truncated === 'boolean');
 }
 
 function isRunStatus(value: unknown): boolean {

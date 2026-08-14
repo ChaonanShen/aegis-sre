@@ -29,7 +29,6 @@ import { PLUGIN_RESOURCE_BASE_URL } from '../../../constants';
 import {
   AgentEvent,
   CanvasLayout,
-  CanvasPreview,
   OpenedSession,
   PendingHITL,
   ResourceRequestError,
@@ -83,6 +82,15 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
         signal,
       });
       return emptyOpenedSession(created);
+    },
+    async renameSession(sessionId: string, title: string, signal?: AbortSignal) {
+      const detail = await resources().request(sessionPath(sessionId), isGetSessionResponse, { signal });
+      const renamed = await resources().request(sessionPath(sessionId), isSession, {
+        method: 'PUT',
+        data: { title: title.trim(), status: detail.session.status, version: detail.session.version },
+        signal,
+      });
+      return toSessionSummary(renamed, lastUserMessage(detail));
     },
 
     async archiveSession(sessionId: string, signal?: AbortSignal) {

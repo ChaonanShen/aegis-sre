@@ -828,6 +828,22 @@ export function useWorkbenchController({
     }
   }, [gateway, loadSessions, publishOpened, streaming]);
 
+  const renameCurrentSession = useCallback(async (title: string) => {
+    const opened = openedRef.current;
+    const value = title.trim();
+    if (!opened || !value || opened.session.id !== routeSessionIdRef.current || streaming) return false;
+    try {
+      const summary = await gateway.renameSession(opened.session.id, value);
+      if (openedRef.current?.session.id !== summary.id || routeSessionIdRef.current !== summary.id) return false;
+      publishOpened({ ...openedRef.current, session: summary });
+      await loadSessions();
+      return true;
+    } catch (error) {
+      if (!isAbortError(error)) setArchiveError(toError(error).message);
+      return false;
+    }
+  }, [gateway, loadSessions, publishOpened, streaming]);
+
   const deleteCurrentSession = useCallback(async () => {
     const opened = openedRef.current;
     if (!opened || opened.session.id !== routeSessionIdRef.current || streaming || deleting.status === 'loading') {
@@ -926,6 +942,7 @@ export function useWorkbenchController({
     },
     updateCanvas,
     archiveCurrentSession,
+    renameCurrentSession,
     resetArchiveError: () => {
       archiveErrorSessionIdRef.current = undefined;
       setArchiveError(undefined);

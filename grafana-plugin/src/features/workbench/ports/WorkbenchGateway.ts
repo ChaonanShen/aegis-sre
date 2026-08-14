@@ -1,6 +1,5 @@
 import {
   AgentEvent,
-  CanvasPreview,
   CreateSessionInput,
   OpenedSession,
   ResolveInterruptInput,
@@ -13,6 +12,7 @@ export interface WorkbenchGateway {
   listSessions(signal?: AbortSignal): Promise<SessionSummary[]>;
   openSession(sessionId: string, signal?: AbortSignal): Promise<OpenedSession>;
   createSession(input: CreateSessionInput, signal?: AbortSignal): Promise<OpenedSession>;
+  renameSession(sessionId: string, title: string, signal?: AbortSignal): Promise<SessionSummary>;
   archiveSession(sessionId: string, signal?: AbortSignal): Promise<SessionSummary>;
   deleteSession(sessionId: string, signal?: AbortSignal): Promise<void>;
   getContext(folderUid: string, signal?: AbortSignal): Promise<WorkbenchContext>;

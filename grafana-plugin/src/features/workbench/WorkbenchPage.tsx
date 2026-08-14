@@ -262,6 +262,7 @@ export default function WorkbenchPage() {
                   contextOpen={contextOpen}
                   historyOpen={historyOpen}
                   onArchive={() => void controller.archiveCurrentSession()}
+                  onRename={(title) => void controller.renameCurrentSession(title)}
                   onDelete={openDeleteModal}
                   onSend={(value, attachments) => void controller.sendMessage(value, attachments)}
                   onStop={controller.stopStreaming}

@@ -26,6 +26,7 @@ interface ChatPaneProps {
   historyOpen: boolean;
   contextOpen: boolean;
   onArchive: () => void;
+  onRename?: (title: string) => void;
   onDelete: () => void;
   onSend: (value: string, attachments?: MessageAttachment[]) => void;
   onStop: () => void;
@@ -43,6 +44,7 @@ export function ChatPane({
   historyOpen,
   contextOpen,
   onArchive,
+  onRename,
   onDelete,
   onSend,
   onStop,
@@ -91,6 +93,7 @@ export function ChatPane({
           archived={opened.session.status === 'archived'}
           key={`menu:${opened.session.id}`}
           onArchive={onArchive}
+          onRename={onRename}
           onDelete={onDelete}
           streaming={streaming}
         />
@@ -130,15 +133,19 @@ export function ChatPane({
 function SessionMenu({
   archived,
   onArchive,
+  onRename,
   onDelete,
   streaming,
 }: {
   archived: boolean;
   onArchive: () => void;
+  onRename?: (title: string) => void;
   onDelete: () => void;
   streaming: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [title, setTitle] = useState('');
 
   return (
     <div className="session-menu">
@@ -152,6 +159,13 @@ function SessionMenu({
       </button>
       {open && (
         <div className="session-menu-popover">
+          {renaming && (
+            <form onSubmit={(event) => { event.preventDefault(); if (title.trim()) { onRename?.(title); setRenaming(false); setOpen(false); } }}>
+              <input aria-label="新会话标题" autoFocus onChange={(event) => setTitle(event.currentTarget.value)} value={title} />
+              <button disabled={!title.trim()} type="submit">保存</button>
+            </form>
+          )}
+          {!renaming && <button disabled={streaming} onClick={() => { setTitle(''); setRenaming(true); }} type="button">重命名会话</button>}
           <button
             onClick={() => {
               const copy = navigator.clipboard?.writeText(window.location.href);

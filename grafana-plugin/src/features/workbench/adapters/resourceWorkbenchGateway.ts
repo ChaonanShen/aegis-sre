@@ -54,6 +54,14 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
       });
       return emptyOpenedSession(session);
     },
+    async renameSession(sessionId, title, signal) {
+      const session = await resources().request(sessionPath(sessionId), isSession, {
+        method: 'PATCH',
+        data: { title: title.trim() },
+        signal,
+      });
+      return toSessionSummary(session);
+    },
     async archiveSession(sessionId, signal) {
       const session = await resources().request(sessionPath(sessionId), isSession, {
         method: 'PATCH',
