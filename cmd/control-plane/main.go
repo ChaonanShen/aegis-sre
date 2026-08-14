@@ -15,8 +15,10 @@ import (
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/agentscope"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/codex"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/dagu"
+	"github.com/1024XEngineer/aegis-sre/internal/adapters/opencode"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/httpserver"
+	"github.com/1024XEngineer/aegis-sre/internal/ports"
 )
 
 func main() {
@@ -37,7 +39,7 @@ func run(logger *slog.Logger) error {
 
 	var serverOptions []httpserver.Option
 	var codexProcess *codex.Process
-	if cfg.AgentProvider == "codex" {
+	if cfg.AgentProvider != "" {
 		keyContent, err := os.ReadFile(cfg.AgentIDKeyFile)
 		if err != nil {
 			return errors.New("read agent ID key")
@@ -50,22 +52,39 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		codexProcess, err = codex.StartProcess(runCtx, cfg.CodexInitTimeout, codex.ProcessConfig{Command: cfg.CodexCommand, Args: []string{"app-server"}, Dir: cfg.AgentWorkDir})
-		if err != nil {
-			return err
+		var agentProvider ports.AgentProvider
+		if cfg.AgentProvider == "codex" {
+			codexProcess, err = codex.StartProcess(runCtx, cfg.CodexInitTimeout, codex.ProcessConfig{Command: cfg.CodexCommand, Args: []string{"app-server"}, Dir: cfg.AgentWorkDir})
+			if err != nil {
+				return err
+			}
+			defer codexProcess.Close()
+			provider, err := codex.NewProvider(codexProcess.Client(), codec, cfg.AgentWorkDir)
+			if err != nil {
+				return err
+			}
+			agentProvider = provider
+		} else {
+			transport := http.DefaultTransport.(*http.Transport).Clone()
+			transport.ResponseHeaderTimeout = 15 * time.Second
+			client, err := opencode.NewClient(cfg.Endpoints[config.CapabilityAgent], &http.Client{Transport: transport}, cfg.OpenCodeUsername, func() (string, error) {
+				content, err := os.ReadFile(cfg.OpenCodePasswordFile)
+				return string(content), err
+			})
+			if err != nil {
+				return err
+			}
+			provider, err := opencode.NewProvider(client, codec)
+			if err != nil {
+				return err
+			}
+			agentProvider = provider
 		}
-		defer codexProcess.Close()
-		provider, err := codex.NewProvider(codexProcess.Client(), codec, cfg.AgentWorkDir)
-		if err != nil {
-			return err
-		}
-		scoped, err := agentscope.New(provider, agentscope.Scope{TenantID: cfg.AgentTenantID, OrgID: cfg.AgentOrgID, UserID: cfg.AgentUserID})
+		scoped, err := agentscope.New(agentProvider, agentscope.Scope{TenantID: cfg.AgentTenantID, OrgID: cfg.AgentOrgID, UserID: cfg.AgentUserID})
 		if err != nil {
 			return err
 		}
 		serverOptions = append(serverOptions, httpserver.WithAgentProvider(scoped))
-	} else if cfg.AgentProvider != "" {
-		return errors.New("configured agent provider is not connected")
 	}
 	if endpoint := cfg.Endpoints[config.CapabilityPlaybook]; endpoint != "" {
 		var tokenSource dagu.TokenSource

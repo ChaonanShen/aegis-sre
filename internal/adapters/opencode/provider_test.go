@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/agentid"
 	"github.com/1024XEngineer/aegis-sre/internal/domain"
@@ -145,5 +146,79 @@ func TestProviderUsesNativeMutationsAndReportsUnarchiveGap(t *testing.T) {
 	}
 	if len(patches) != 2 || patches[0]["title"] != "Renamed" || patches[1]["time"] == nil {
 		t.Fatalf("patches = %#v", patches)
+	}
+}
+
+func TestProviderStreamsDurableTurnEventsAndVerifiesCancellationOwnership(t *testing.T) {
+	t.Parallel()
+	var messageID string
+	provider, _ := newOpenCodeProvider(t, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodPost && request.URL.Path == "/api/session/ses_abcdefgh/prompt":
+			var body struct {
+				ID string `json:"id"`
+			}
+			_ = json.NewDecoder(request.Body).Decode(&body)
+			messageID = body.ID
+			_, _ = w.Write([]byte(`{"data":{"admittedSeq":7,"id":"` + messageID + `","sessionID":"ses_abcdefgh","prompt":{"text":"check"},"delivery":"queue","timeCreated":1}}`))
+		case request.Method == http.MethodGet && request.URL.Path == "/api/session/ses_abcdefgh/event":
+			if request.URL.Query().Get("after") != "7" {
+				t.Errorf("after = %q", request.URL.Query().Get("after"))
+			}
+			w.Header().Set("Content-Type", "text/event-stream")
+			frames := []string{
+				`{"id":"evt_text0001","type":"session.next.text.ended","durable":{"aggregateID":"ses_abcdefgh","seq":8,"version":1},"data":{"timestamp":1786673000000,"sessionID":"ses_abcdefgh","assistantMessageID":"msg_assistant","textID":"text-1","text":"healthy"}}`,
+				`{"id":"evt_tool0001","type":"session.next.tool.called","durable":{"aggregateID":"ses_abcdefgh","seq":9,"version":1},"data":{"timestamp":1786673000100,"sessionID":"ses_abcdefgh","assistantMessageID":"msg_assistant","callID":"provider-call","tool":"query_metrics","input":{"expr":"up"},"provider":{"executed":true}}}`,
+				`{"id":"evt_tool0002","type":"session.next.tool.success","durable":{"aggregateID":"ses_abcdefgh","seq":10,"version":1},"data":{"timestamp":1786673000200,"sessionID":"ses_abcdefgh","assistantMessageID":"msg_assistant","callID":"provider-call","structured":{},"content":[],"provider":{"executed":true}}}`,
+				`{"id":"evt_step0001","type":"session.next.step.ended","durable":{"aggregateID":"ses_abcdefgh","seq":11,"version":1},"data":{"timestamp":1786673000300,"sessionID":"ses_abcdefgh","assistantMessageID":"msg_assistant","finish":"stop","cost":0,"tokens":{"input":1,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}}}`,
+			}
+			for _, frame := range frames {
+				_, _ = w.Write([]byte("data: " + frame + "\n\n"))
+			}
+		case request.Method == http.MethodGet && request.URL.Path == "/api/session/ses_abcdefgh/message":
+			_, _ = w.Write([]byte(`{"data":[{"id":"` + messageID + `","type":"user","time":{"created":1},"text":"check"}],"cursor":{}}`))
+		case request.Method == http.MethodPost && request.URL.Path == "/api/session/ses_abcdefgh/interrupt":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Errorf("unexpected request: %s %s", request.Method, request.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	actor := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}
+	turn, stream, err := provider.StartTurn(context.Background(), actor, ports.AgentSessionRef{ID: "ses_abcdefgh"}, ports.StartTurnInput{Message: "check", OperationID: "turn-operation-1"})
+	if err != nil || !turn.ID.Valid() || messageID != "msg_"+strings.TrimPrefix(string(turn.ID), "turn_") {
+		t.Fatalf("turn = %#v, message = %q, err = %v", turn, messageID, err)
+	}
+	defer stream.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	want := []domain.EventType{domain.EventMessageDelta, domain.EventToolStarted, domain.EventToolCompleted, domain.EventTurnCompleted}
+	for sequence, eventType := range want {
+		event, err := stream.Next(ctx)
+		if err != nil || event.Type != eventType || event.Sequence != int64(sequence+1) || event.SessionID != "ses_abcdefgh" || event.TurnID != turn.ID || !event.ID.Valid() {
+			t.Fatalf("event %d = %#v, err = %v", sequence, event, err)
+		}
+		if strings.Contains(string(event.ID), "evt_") && string(event.ID) == "evt_text0001" {
+			t.Fatalf("provider event ID leaked: %q", event.ID)
+		}
+	}
+	if err := provider.CancelTurn(context.Background(), actor, ports.AgentSessionRef{ID: "ses_abcdefgh"}, turn); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestProviderRejectsCancellationForTurnOutsideSession(t *testing.T) {
+	t.Parallel()
+	provider, _ := newOpenCodeProvider(t, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path == "/api/session/ses_abcdefgh/message" {
+			_, _ = w.Write([]byte(`{"data":[],"cursor":{}}`))
+			return
+		}
+		t.Errorf("unexpected request: %s %s", request.Method, request.URL.Path)
+	}))
+	err := provider.CancelTurn(context.Background(), domain.ActorContext{}, ports.AgentSessionRef{ID: "ses_abcdefgh"}, ports.AgentTurnRef{ID: "turn_abcdefgh"})
+	var appErr *domain.AppError
+	if !errors.As(err, &appErr) || appErr.Code != domain.ErrorNotFound || appErr.Retryable {
+		t.Fatalf("error = %#v", err)
 	}
 }

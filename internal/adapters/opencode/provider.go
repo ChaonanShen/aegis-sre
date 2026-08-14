@@ -1,9 +1,13 @@
 package opencode
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,12 +113,200 @@ func (provider *Provider) DeleteSession(ctx context.Context, _ domain.ActorConte
 	return provider.client.DeleteSession(ctx, string(ref.ID))
 }
 
-func (provider *Provider) StartTurn(context.Context, domain.ActorContext, ports.AgentSessionRef, ports.StartTurnInput) (ports.AgentTurnRef, ports.EventStream, error) {
-	return ports.AgentTurnRef{}, nil, &domain.AppError{Code: domain.ErrorCapabilityUnavailable, Message: "OpenCode event streaming is not connected", Retryable: false}
+func (provider *Provider) StartTurn(ctx context.Context, actor domain.ActorContext, session ports.AgentSessionRef, input ports.StartTurnInput) (ports.AgentTurnRef, ports.EventStream, error) {
+	if err := validateOpenCodeSessionRef(session); err != nil {
+		return ports.AgentTurnRef{}, nil, err
+	}
+	turnID, err := provider.codec.EncodeTurnKey(actor.TenantID + "\x00" + actor.OrgID + "\x00" + actor.UserID + "\x00" + string(session.ID) + "\x00" + input.OperationID)
+	if err != nil {
+		return ports.AgentTurnRef{}, nil, invalidOpenCodeArgument(err)
+	}
+	messageID := "msg_" + strings.TrimPrefix(string(turnID), "turn_")
+	admitted, err := provider.client.Prompt(ctx, string(session.ID), messageID, input.Message)
+	if err != nil {
+		return ports.AgentTurnRef{}, nil, &domain.AppError{Code: domain.ErrorProviderResultUnknown, Message: "OpenCode prompt admission result is unknown", Retryable: false, Cause: err}
+	}
+	body, err := provider.client.SubscribeEvents(ctx, string(session.ID), strconv.FormatInt(admitted.Sequence, 10))
+	if err != nil {
+		return ports.AgentTurnRef{}, nil, err
+	}
+	return ports.AgentTurnRef{ID: turnID}, newOpenCodeEventStream(body, provider.codec, session.ID, turnID), nil
 }
 
-func (provider *Provider) CancelTurn(context.Context, domain.ActorContext, ports.AgentSessionRef, ports.AgentTurnRef) error {
-	return &domain.AppError{Code: domain.ErrorCapabilityUnavailable, Message: "OpenCode turn cancellation is not connected", Retryable: false}
+func (provider *Provider) CancelTurn(ctx context.Context, _ domain.ActorContext, session ports.AgentSessionRef, turn ports.AgentTurnRef) error {
+	if err := validateOpenCodeSessionRef(session); err != nil {
+		return err
+	}
+	if !turn.ID.Valid() || !strings.HasPrefix(string(turn.ID), "turn_") {
+		return invalidOpenCodeArgument(errors.New("invalid OpenCode turn ID"))
+	}
+	wantedMessageID := "msg_" + strings.TrimPrefix(string(turn.ID), "turn_")
+	found, err := provider.messageExists(ctx, string(session.ID), wantedMessageID)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return &domain.AppError{Code: domain.ErrorNotFound, Message: "agent turn not found", Retryable: false}
+	}
+	return provider.client.Interrupt(ctx, string(session.ID))
+}
+
+func (provider *Provider) messageExists(ctx context.Context, sessionID, messageID string) (bool, error) {
+	cursor := ""
+	seen := map[string]struct{}{}
+	for {
+		messages, next, err := provider.client.ListMessages(ctx, sessionID, cursor, 200)
+		if err != nil {
+			return false, err
+		}
+		for _, message := range messages {
+			if message.ID == messageID {
+				return true, nil
+			}
+		}
+		if next == "" {
+			return false, nil
+		}
+		if _, duplicate := seen[next]; duplicate {
+			return false, errors.New("OpenCode returned a repeated message cursor")
+		}
+		seen[next] = struct{}{}
+		cursor = next
+	}
+}
+
+type openCodeEventStream struct {
+	body      io.ReadCloser
+	scanner   *bufio.Scanner
+	codec     *agentid.Codec
+	sessionID domain.ID
+	turnID    domain.ID
+	sequence  int64
+}
+
+func newOpenCodeEventStream(body io.ReadCloser, codec *agentid.Codec, sessionID, turnID domain.ID) *openCodeEventStream {
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 64<<10), int(maxResponseBytes))
+	return &openCodeEventStream{body: body, scanner: scanner, codec: codec, sessionID: sessionID, turnID: turnID}
+}
+
+func (stream *openCodeEventStream) Next(ctx context.Context) (domain.Event, error) {
+	for {
+		select {
+		case <-ctx.Done():
+			return domain.Event{}, ctx.Err()
+		default:
+		}
+		data, err := stream.nextSSEData()
+		if err != nil {
+			return domain.Event{}, err
+		}
+		event, ok, err := stream.project(data)
+		if err != nil {
+			return domain.Event{}, &domain.AppError{Code: domain.ErrorProviderResultUnknown, Message: "OpenCode event cannot be projected", Retryable: false, Cause: err}
+		}
+		if ok {
+			return event, nil
+		}
+	}
+}
+
+func (stream *openCodeEventStream) Close() error { return stream.body.Close() }
+
+func (stream *openCodeEventStream) nextSSEData() (json.RawMessage, error) {
+	var lines []string
+	for stream.scanner.Scan() {
+		line := stream.scanner.Text()
+		if line == "" {
+			if len(lines) == 0 {
+				continue
+			}
+			return json.RawMessage(strings.Join(lines, "\n")), nil
+		}
+		if value, ok := strings.CutPrefix(line, "data:"); ok {
+			lines = append(lines, strings.TrimPrefix(value, " "))
+		}
+	}
+	if err := stream.scanner.Err(); err != nil {
+		return nil, err
+	}
+	if len(lines) > 0 {
+		return json.RawMessage(strings.Join(lines, "\n")), nil
+	}
+	return nil, io.EOF
+}
+
+func (stream *openCodeEventStream) project(raw json.RawMessage) (domain.Event, bool, error) {
+	var event struct {
+		ID      string `json:"id"`
+		Type    string `json:"type"`
+		Durable struct {
+			Sequence int64 `json:"seq"`
+		} `json:"durable"`
+		Data struct {
+			Timestamp int64          `json:"timestamp"`
+			Text      string         `json:"text"`
+			Finish    string         `json:"finish"`
+			CallID    string         `json:"callID"`
+			Tool      string         `json:"tool"`
+			Input     map[string]any `json:"input"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &event) != nil || event.ID == "" || event.Type == "" {
+		return domain.Event{}, false, errors.New("invalid OpenCode durable event")
+	}
+	var eventType domain.EventType
+	var payload any
+	switch event.Type {
+	case "session.next.text.ended":
+		eventType, payload = domain.EventMessageDelta, map[string]any{"delta": event.Data.Text}
+	case "session.next.tool.called":
+		callID, err := stream.codec.EncodeCallKey(string(stream.sessionID) + "\x00" + event.Data.CallID)
+		if err != nil {
+			return domain.Event{}, false, err
+		}
+		eventType, payload = domain.EventToolStarted, map[string]any{"call_id": callID, "server": "agent", "tool": event.Data.Tool, "arguments": event.Data.Input, "access": openCodeToolAccess(event.Data.Tool)}
+	case "session.next.tool.success", "session.next.tool.failed":
+		callID, err := stream.codec.EncodeCallKey(string(stream.sessionID) + "\x00" + event.Data.CallID)
+		if err != nil {
+			return domain.Event{}, false, err
+		}
+		status := "succeeded"
+		if event.Type == "session.next.tool.failed" {
+			status = "failed"
+		}
+		eventType, payload = domain.EventToolCompleted, map[string]any{"call_id": callID, "status": status, "duration_ms": 0}
+	case "session.next.step.ended":
+		if strings.Contains(strings.ToLower(event.Data.Finish), "tool") {
+			return domain.Event{}, false, nil
+		}
+		eventType, payload = domain.EventTurnCompleted, map[string]any{"status": "succeeded"}
+	case "session.next.step.failed":
+		eventType, payload = domain.EventTurnFailed, map[string]any{"code": "agent_failed", "message": "Agent turn failed", "retryable": false}
+	default:
+		return domain.Event{}, false, nil
+	}
+	stream.sequence++
+	publicEventID, err := stream.codec.EncodeEventKey(string(stream.sessionID) + "\x00" + string(stream.turnID) + "\x00" + event.ID)
+	if err != nil {
+		return domain.Event{}, false, err
+	}
+	content, _ := json.Marshal(payload)
+	occurredAt := time.Now().UTC()
+	if event.Data.Timestamp > 0 {
+		occurredAt = unixMilliseconds(event.Data.Timestamp)
+	}
+	return domain.Event{ID: publicEventID, Type: eventType, SessionID: stream.sessionID, TurnID: stream.turnID, Sequence: stream.sequence, OccurredAt: occurredAt, Payload: content}, true, nil
+}
+
+func openCodeToolAccess(tool string) string {
+	lower := strings.ToLower(tool)
+	for _, marker := range []string{"get", "list", "read", "query", "search", "find"} {
+		if strings.Contains(lower, marker) {
+			return "read"
+		}
+	}
+	return "execute"
 }
 
 func (provider *Provider) ResolveApproval(context.Context, domain.ActorContext, ports.AgentSessionRef, ports.ApprovalDecision) (ports.EventStream, error) {

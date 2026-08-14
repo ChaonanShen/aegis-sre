@@ -103,13 +103,14 @@ func TestLoadRejectsIncompleteOrConflictingAgentConfiguration(t *testing.T) {
 	}
 	base := map[string]string{EnvAgentProvider: "codex", EnvAgentTenantID: "tenant", EnvAgentOrgID: "org", EnvAgentUserID: "user", EnvAgentIDKeyFile: keyFile, EnvAgentWorkDir: t.TempDir()}
 	tests := map[string]map[string]string{
-		"unknown provider":  {EnvAgentProvider: "unknown"},
-		"missing actor":     {EnvAgentProvider: "codex", EnvAgentIDKeyFile: keyFile, EnvAgentWorkDir: base[EnvAgentWorkDir]},
-		"relative workdir":  {EnvAgentProvider: "codex", EnvAgentTenantID: "tenant", EnvAgentOrgID: "org", EnvAgentUserID: "user", EnvAgentIDKeyFile: keyFile, EnvAgentWorkDir: "relative"},
-		"codex HTTP URL":    mergeAgentConfig(base, map[string]string{EnvAgentURL: "http://codex.invalid"}),
-		"opencode no URL":   mergeAgentConfig(base, map[string]string{EnvAgentProvider: "opencode", EnvAgentWorkDir: ""}),
-		"URL no provider":   {EnvAgentURL: "http://agent.internal"},
-		"invalid init time": mergeAgentConfig(base, map[string]string{EnvCodexInitTimeout: "0s"}),
+		"unknown provider":     {EnvAgentProvider: "unknown"},
+		"missing actor":        {EnvAgentProvider: "codex", EnvAgentIDKeyFile: keyFile, EnvAgentWorkDir: base[EnvAgentWorkDir]},
+		"relative workdir":     {EnvAgentProvider: "codex", EnvAgentTenantID: "tenant", EnvAgentOrgID: "org", EnvAgentUserID: "user", EnvAgentIDKeyFile: keyFile, EnvAgentWorkDir: "relative"},
+		"codex HTTP URL":       mergeAgentConfig(base, map[string]string{EnvAgentURL: "http://codex.invalid"}),
+		"opencode no URL":      mergeAgentConfig(base, map[string]string{EnvAgentProvider: "opencode", EnvAgentWorkDir: ""}),
+		"opencode no password": mergeAgentConfig(base, map[string]string{EnvAgentProvider: "opencode", EnvAgentURL: "http://opencode.internal", EnvAgentWorkDir: ""}),
+		"URL no provider":      {EnvAgentURL: "http://agent.internal"},
+		"invalid init time":    mergeAgentConfig(base, map[string]string{EnvCodexInitTimeout: "0s"}),
 	}
 	for name, values := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -118,6 +119,25 @@ func TestLoadRejectsIncompleteOrConflictingAgentConfiguration(t *testing.T) {
 				t.Fatalf("error = %v", err)
 			}
 		})
+	}
+}
+
+func TestLoadAcceptsAuthenticatedOpenCodeProvider(t *testing.T) {
+	keyFile := filepath.Join(t.TempDir(), "agent-id-key")
+	passwordFile := filepath.Join(t.TempDir(), "opencode-password")
+	if err := os.WriteFile(keyFile, []byte("0123456789abcdef0123456789abcdef"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(passwordFile, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{
+		EnvAgentProvider: "opencode", EnvAgentURL: "https://opencode.internal", EnvAgentTenantID: "tenant", EnvAgentOrgID: "org", EnvAgentUserID: "user",
+		EnvAgentIDKeyFile: keyFile, EnvOpenCodeUsername: "aegis", EnvOpenCodePasswordFile: passwordFile,
+	}
+	cfg, err := Load(func(key string) string { return values[key] })
+	if err != nil || cfg.AgentProvider != "opencode" || cfg.OpenCodeUsername != "aegis" || cfg.OpenCodePasswordFile != passwordFile {
+		t.Fatalf("config = %+v, err = %v", cfg, err)
 	}
 }
 
