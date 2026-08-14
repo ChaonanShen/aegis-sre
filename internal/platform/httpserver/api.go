@@ -47,6 +47,7 @@ func apiHandler(cfg config.Config, deps dependencies) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"items": items})
 	})
+	registerAgentHandlers(mux, deps.agents)
 	registerPlaybookHandlers(mux, deps.playbooks)
 	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, request *http.Request) {
 		writeAPIProblem(w, request, http.StatusServiceUnavailable, "capability_unavailable", "capability is not configured", false)
@@ -87,26 +88,31 @@ type dependencyStatus struct {
 func dependencyStatuses(ctx context.Context, cfg config.Config, deps dependencies) map[config.Capability]dependencyStatus {
 	statuses := make(map[config.Capability]dependencyStatus)
 	for _, name := range []config.Capability{config.CapabilityAgent, config.CapabilityPlaybook, config.CapabilityKnowledge, config.CapabilityGrafanaMCP} {
-		if cfg.Endpoints[name] == "" {
+		if !dependencyConfigured(name, cfg, deps) {
 			statuses[name] = dependencyStatus{status: "unavailable", reason: "not configured"}
 			continue
 		}
 		statuses[name] = dependencyStatus{status: "degraded", reason: "adapter not connected"}
 	}
-	if cfg.Endpoints[config.CapabilityPlaybook] != "" && deps.playbooks != nil {
-		if deps.playbookHealth == nil {
-			statuses[config.CapabilityPlaybook] = dependencyStatus{status: "degraded", reason: "health probe unavailable"}
-			return statuses
-		}
-		probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		defer cancel()
-		if err := deps.playbookHealth(probeCtx); err != nil {
-			statuses[config.CapabilityPlaybook] = dependencyStatus{status: "degraded", reason: "provider health check failed"}
-		} else {
-			statuses[config.CapabilityPlaybook] = dependencyStatus{status: "available"}
-		}
+	if deps.agents != nil {
+		statuses[config.CapabilityAgent] = probeDependency(ctx, deps.agentHealth)
+	}
+	if deps.playbooks != nil {
+		statuses[config.CapabilityPlaybook] = probeDependency(ctx, deps.playbookHealth)
 	}
 	return statuses
+}
+
+func probeDependency(ctx context.Context, check func(context.Context) error) dependencyStatus {
+	if check == nil {
+		return dependencyStatus{status: "degraded", reason: "health probe unavailable"}
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := check(probeCtx); err != nil {
+		return dependencyStatus{status: "degraded", reason: "provider health check failed"}
+	}
+	return dependencyStatus{status: "available"}
 }
 
 func writeAPIProblem(w http.ResponseWriter, request *http.Request, status int, code, detail string, retryable bool) {

@@ -522,6 +522,11 @@ func runJSON(state ports.PlaybookRunState) map[string]any {
 }
 
 func streamSSE(w http.ResponseWriter, request *http.Request, stream ports.EventStream) {
+	if stream == nil {
+		writeAPIProblem(w, request, http.StatusBadGateway, "provider_result_unknown", "provider returned no event stream", false)
+		return
+	}
+	defer stream.Close()
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeAPIProblem(w, request, http.StatusInternalServerError, "internal", "streaming is unavailable", false)
@@ -542,6 +547,12 @@ func streamSSE(w http.ResponseWriter, request *http.Request, stream ports.EventS
 		if event.RunID != "" {
 			envelope["run_id"] = event.RunID
 		}
+		if event.SessionID != "" {
+			envelope["session_id"] = event.SessionID
+		}
+		if event.TurnID != "" {
+			envelope["turn_id"] = event.TurnID
+		}
 		content, _ := json.Marshal(envelope)
 		_, _ = fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", event.Sequence, event.Type, content)
 		flusher.Flush()
@@ -560,29 +571,54 @@ func handleProviderError(w http.ResponseWriter, request *http.Request, err error
 	status := http.StatusBadGateway
 	code := "provider_unavailable"
 	retryable := true
-	var httpError providerHTTPError
-	if errors.As(err, &httpError) {
-		status = httpError.HTTPStatus()
-		retryable = httpError.CanRetry()
-		switch status {
-		case http.StatusBadRequest:
-			code, retryable = "invalid_argument", false
-		case http.StatusUnauthorized:
-			code, retryable = "provider_unavailable", false
-		case http.StatusForbidden:
-			code, retryable = "forbidden", false
-		case http.StatusNotFound:
-			code, retryable = "not_found", false
-		case http.StatusConflict:
-			code, retryable = "conflict", false
-		default:
+	var appError *domain.AppError
+	if errors.As(err, &appError) {
+		code, retryable = string(appError.Code), appError.Retryable
+		switch appError.Code {
+		case domain.ErrorInvalidArgument:
+			status = http.StatusBadRequest
+		case domain.ErrorUnauthenticated:
+			status = http.StatusUnauthorized
+		case domain.ErrorForbidden:
+			status = http.StatusForbidden
+		case domain.ErrorNotFound:
+			status = http.StatusNotFound
+		case domain.ErrorConflict:
+			status = http.StatusConflict
+		case domain.ErrorProviderTimeout:
+			status = http.StatusGatewayTimeout
+		case domain.ErrorCapabilityUnavailable:
+			status = http.StatusServiceUnavailable
+		case domain.ErrorProviderUnavailable, domain.ErrorProviderResultUnknown:
 			status = http.StatusBadGateway
+		default:
+			status, code, retryable = http.StatusInternalServerError, "internal", false
 		}
-	} else if errors.Is(err, context.DeadlineExceeded) {
-		status, code, retryable = http.StatusGatewayTimeout, "provider_timeout", true
-	} else if strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "unsupported") {
-		status, code, retryable = http.StatusBadRequest, "invalid_argument", false
+	} else {
+		var httpError providerHTTPError
+		if errors.As(err, &httpError) {
+			status = httpError.HTTPStatus()
+			retryable = httpError.CanRetry()
+			switch status {
+			case http.StatusBadRequest:
+				code, retryable = "invalid_argument", false
+			case http.StatusUnauthorized:
+				code, retryable = "provider_unavailable", false
+			case http.StatusForbidden:
+				code, retryable = "forbidden", false
+			case http.StatusNotFound:
+				code, retryable = "not_found", false
+			case http.StatusConflict:
+				code, retryable = "conflict", false
+			default:
+				status = http.StatusBadGateway
+			}
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			status, code, retryable = http.StatusGatewayTimeout, "provider_timeout", true
+		} else if strings.Contains(err.Error(), "invalid") || strings.Contains(err.Error(), "required") || strings.Contains(err.Error(), "unsupported") {
+			status, code, retryable = http.StatusBadRequest, "invalid_argument", false
+		}
 	}
-	writeAPIProblem(w, request, status, code, "playbook provider request failed", retryable)
+	writeAPIProblem(w, request, status, code, "provider request failed", retryable)
 	return true
 }

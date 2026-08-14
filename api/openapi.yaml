@@ -762,6 +762,7 @@ components:
       type: object
       additionalProperties: false
       minProperties: 1
+      maxProperties: 1
       properties:
         title:
           type: string

@@ -25,8 +25,19 @@ type healthResponse struct {
 }
 
 type dependencies struct {
+	agents         ports.AgentProvider
+	agentHealth    func(context.Context) error
 	playbooks      ports.PlaybookProvider
 	playbookHealth func(context.Context) error
+}
+
+func WithAgentProvider(provider ports.AgentProvider) Option {
+	return func(deps *dependencies) {
+		deps.agents = provider
+		if provider != nil {
+			deps.agentHealth = provider.Check
+		}
+	}
 }
 
 type Option func(*dependencies)
@@ -58,7 +69,7 @@ func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server
 		ready := true
 		for name, status := range statuses {
 			capabilities[string(name)] = status.status
-			if cfg.Endpoints[name] != "" && status.status != "available" {
+			if dependencyConfigured(name, cfg, deps) && status.status != "available" {
 				ready = false
 			}
 		}
@@ -75,6 +86,17 @@ func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server
 		Handler:           requestContext(logger, mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       60 * time.Second,
+	}
+}
+
+func dependencyConfigured(name config.Capability, cfg config.Config, deps dependencies) bool {
+	switch name {
+	case config.CapabilityAgent:
+		return deps.agents != nil || cfg.Endpoints[name] != ""
+	case config.CapabilityPlaybook:
+		return deps.playbooks != nil || cfg.Endpoints[name] != ""
+	default:
+		return cfg.Endpoints[name] != ""
 	}
 }
 
