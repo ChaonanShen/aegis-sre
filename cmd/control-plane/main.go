@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -26,13 +27,20 @@ func main() {
 	var serverOptions []httpserver.Option
 	if endpoint := cfg.Endpoints[config.CapabilityPlaybook]; endpoint != "" {
 		var tokenSource dagu.TokenSource
+		var basicAuthSource dagu.BasicAuthSource
 		if cfg.DaguTokenFile != "" {
 			tokenSource = func() (string, error) {
 				content, err := os.ReadFile(cfg.DaguTokenFile)
 				return string(content), err
 			}
 		}
-		client, err := dagu.NewClient(endpoint, &http.Client{Timeout: 45 * time.Second}, dagu.WithTokenSource(tokenSource))
+		if cfg.DaguBasicPass != "" {
+			basicAuthSource = func() (string, string, error) {
+				content, err := os.ReadFile(cfg.DaguBasicPass)
+				return cfg.DaguBasicUser, strings.TrimSpace(string(content)), err
+			}
+		}
+		client, err := dagu.NewClient(endpoint, &http.Client{Timeout: 45 * time.Second}, dagu.WithTokenSource(tokenSource), dagu.WithBasicAuthSource(basicAuthSource))
 		if err != nil {
 			logger.Error("configure Dagu client", "error", err)
 			os.Exit(1)

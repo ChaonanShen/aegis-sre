@@ -16,11 +16,13 @@ import (
 const defaultMaxResponseBytes int64 = 4 << 20
 
 type TokenSource func() (string, error)
+type BasicAuthSource func() (username string, password string, err error)
 
 type Client struct {
 	baseURL          *url.URL
 	httpClient       *http.Client
 	tokenSource      TokenSource
+	basicAuthSource  BasicAuthSource
 	maxResponseBytes int64
 }
 
@@ -28,6 +30,10 @@ type Option func(*Client)
 
 func WithTokenSource(source TokenSource) Option {
 	return func(client *Client) { client.tokenSource = source }
+}
+
+func WithBasicAuthSource(source BasicAuthSource) Option {
+	return func(client *Client) { client.basicAuthSource = source }
 }
 
 func WithMaxResponseBytes(limit int64) Option {
@@ -278,7 +284,16 @@ func (client *Client) newRequest(ctx context.Context, method, path string, body 
 		return nil, fmt.Errorf("build Dagu request: %w", err)
 	}
 	request.Header.Set("Accept", "application/json")
-	if client.tokenSource != nil {
+	if client.basicAuthSource != nil {
+		username, password, err := client.basicAuthSource()
+		if err != nil {
+			return nil, fmt.Errorf("read Dagu basic auth: %w", err)
+		}
+		if strings.TrimSpace(username) == "" || strings.ContainsAny(username, "\r\n\x00") || password == "" || strings.ContainsAny(password, "\r\n\x00") {
+			return nil, errors.New("read Dagu basic auth: invalid credentials")
+		}
+		request.SetBasicAuth(username, password)
+	} else if client.tokenSource != nil {
 		token, err := client.tokenSource()
 		if err != nil {
 			return nil, fmt.Errorf("read Dagu token: %w", err)

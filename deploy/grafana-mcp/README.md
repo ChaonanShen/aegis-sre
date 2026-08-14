@@ -5,7 +5,7 @@ The default service is read-only and exposes only the categories used by Aegis. 
 write service has a separate profile and must use a different, least-privilege Grafana service
 account.
 
-The compose services deliberately publish no host port. mcp-grafana v1.0.0 validates Host and
+The standalone compose services deliberately publish no host port. mcp-grafana v1.0.0 validates Host and
 Origin, but does not authenticate an incoming MCP client. Production traffic must therefore go
 through a trusted internal gateway that terminates TLS, validates the caller Bearer token, rewrites
 Host to the configured service name, and then joins `aegis-mcp`. Do not publish port 8000 directly.
@@ -14,6 +14,10 @@ every request.
 
 The Grafana service account token is also mounted as a file. The official server rereads it for
 every Grafana request, so rotation does not require restarting Aegis or mcp-grafana.
+
+For the complete local Aegis stack, use the repository root `compose.yaml`; it includes the caller
+authentication gateway and automatic creation of a Viewer Grafana service account. This standalone
+file is retained for deployment-specific integration and expects an external trusted gateway.
 
 Start the read-only service after setting `GRAFANA_URL` and `GRAFANA_READ_TOKEN_FILE`:
 
@@ -26,4 +30,3 @@ The write profile is opt-in and is not present in the default Aegis MCP policy:
 ```sh
 docker compose -f deploy/grafana-mcp/compose.yaml --profile write up -d grafana-write
 ```
-

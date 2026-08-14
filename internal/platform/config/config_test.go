@@ -37,11 +37,32 @@ func TestLoadKeepsDaguTokenAsRotatingFileReference(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsDaguBasicAuthPasswordFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "dagu-password")
+	if err := os.WriteFile(path, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(func(key string) string {
+		switch key {
+		case EnvDaguBasicUser:
+			return "aegis-control-plane"
+		case EnvDaguBasicPass:
+			return path
+		default:
+			return ""
+		}
+	})
+	if err != nil || cfg.DaguBasicUser != "aegis-control-plane" || cfg.DaguBasicPass != path {
+		t.Fatalf("config = %+v, err = %v", cfg, err)
+	}
+}
+
 func TestLoadRejectsInvalidValues(t *testing.T) {
 	tests := map[string]map[string]string{
-		"address":  {EnvHTTPAddress: "bad address"},
-		"timeout":  {EnvShutdownTimeout: "0s"},
-		"endpoint": {EnvAgentURL: "file:///tmp/agent.sock"},
+		"address":            {EnvHTTPAddress: "bad address"},
+		"timeout":            {EnvShutdownTimeout: "0s"},
+		"endpoint":           {EnvAgentURL: "file:///tmp/agent.sock"},
+		"partial basic auth": {EnvDaguBasicUser: "aegis"},
 	}
 	for name, values := range tests {
 		t.Run(name, func(t *testing.T) {

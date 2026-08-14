@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -24,13 +25,19 @@ type healthResponse struct {
 }
 
 type dependencies struct {
-	playbooks ports.PlaybookProvider
+	playbooks      ports.PlaybookProvider
+	playbookHealth func(context.Context) error
 }
 
 type Option func(*dependencies)
 
 func WithPlaybookProvider(provider ports.PlaybookProvider) Option {
-	return func(deps *dependencies) { deps.playbooks = provider }
+	return func(deps *dependencies) {
+		deps.playbooks = provider
+		if checker, ok := provider.(interface{ Check(context.Context) error }); ok {
+			deps.playbookHealth = checker.Check
+		}
+	}
 }
 
 func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server {
@@ -45,19 +52,19 @@ func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, healthResponse{Status: "live"})
 	})
-	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, _ *http.Request) {
-		capabilities := make(map[string]string)
-		for _, capability := range []config.Capability{
-			config.CapabilityAgent,
-			config.CapabilityPlaybook,
-			config.CapabilityKnowledge,
-			config.CapabilityGrafanaMCP,
-		} {
-			status := "disabled"
-			if cfg.Endpoints[capability] != "" {
-				status = "configured"
+	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, request *http.Request) {
+		statuses := dependencyStatuses(request.Context(), cfg, deps)
+		capabilities := make(map[string]string, len(statuses))
+		ready := true
+		for name, status := range statuses {
+			capabilities[string(name)] = status.status
+			if cfg.Endpoints[name] != "" && status.status != "available" {
+				ready = false
 			}
-			capabilities[string(capability)] = status
+		}
+		if !ready {
+			writeJSON(w, http.StatusServiceUnavailable, healthResponse{Status: "not_ready", Capabilities: capabilities})
+			return
 		}
 		writeJSON(w, http.StatusOK, healthResponse{Status: "ready", Capabilities: capabilities})
 	})

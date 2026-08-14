@@ -30,6 +30,11 @@ func NewProvider(client *Client) (*Provider, error) {
 	return &Provider{client: client, pollInterval: time.Second}, nil
 }
 
+func (provider *Provider) Check(ctx context.Context) error {
+	_, err := provider.client.ListDAGs(ctx, 1, 1)
+	return err
+}
+
 func (provider *Provider) List(ctx context.Context, actor domain.ActorContext, request domain.PageRequest) (domain.Page[ports.PlaybookResource], error) {
 	limit := request.Limit
 	if limit <= 0 || limit > 200 {

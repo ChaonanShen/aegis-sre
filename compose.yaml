@@ -1,0 +1,164 @@
+name: aegis-sre
+
+services:
+  grafana:
+    container_name: aegis-sre-grafana
+    build:
+      context: ./grafana-plugin/.config
+      args:
+        grafana_image: grafana-enterprise
+        grafana_version: 13.0.2
+        development: "false"
+        anonymous_auth_enabled: "false"
+    environment:
+      AEGIS_CONTROL_PLANE_URL: http://control-plane:8080
+      AEGIS_CONTROL_PLANE_TOKEN_FILE: /run/secrets/aegis-plugin-token
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_BASIC_ENABLED: "true"
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana-admin-password
+      GF_PATHS_CONFIG: /etc/grafana/aegis.ini
+      GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS: grafana-plugin-app
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./grafana-plugin/config/grafana.ini:/etc/grafana/aegis.ini:ro
+      - ./grafana-plugin/dist:/var/lib/grafana/plugins/grafana-plugin-app:ro
+      - ./grafana-plugin/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+      - ./deploy/local/secrets/plugin-token:/run/secrets/aegis-plugin-token:ro
+      - ./deploy/local/secrets/grafana-admin-password:/run/secrets/grafana-admin-password:ro
+    restart: unless-stopped
+    networks: [aegis-app, aegis-mcp]
+
+  control-plane:
+    build:
+      context: .
+      dockerfile: deploy/control-plane/Dockerfile
+    environment:
+      AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE: /run/secrets/dagu-basic-password
+      AEGIS_DAGU_BASIC_AUTH_USERNAME: aegis-control-plane
+      AEGIS_DAGU_URL: http://dagu:8080
+      AEGIS_HTTP_ADDRESS: :8080
+      AEGIS_PLUGIN_TOKEN_FILE: /run/secrets/aegis-plugin-token
+    volumes:
+      - ./deploy/local/secrets/dagu-basic-password:/run/secrets/dagu-basic-password:ro
+      - ./deploy/local/secrets/plugin-token:/run/secrets/aegis-plugin-token:ro
+    depends_on:
+      dagu:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    networks: [aegis-app]
+
+  dagu:
+    build:
+      context: .
+      dockerfile: deploy/dagu/Dockerfile
+    environment:
+      DAGU_AUTH_BASIC_PASSWORD_FILE: /run/secrets/dagu-basic-password
+      DAGU_AUTH_BASIC_USERNAME: aegis-control-plane
+      DAGU_AUTH_MODE: basic
+      DAGU_COORDINATOR_ENABLED: "false"
+      DAGU_HOME: /var/lib/dagu
+      DAGU_HOST: 0.0.0.0
+      DAGU_PORT: 8080
+      DAGU_TZ: Asia/Shanghai
+      MCP_CALL_CONFIG: /etc/aegis/mcp-servers.yaml
+    command: ["dagu", "start-all"]
+    ports:
+      - "127.0.0.1:${DAGU_PORT:-18081}:8080"
+    volumes:
+      - dagu-data:/var/lib/dagu
+      - ./deploy/local/mcp-servers.yaml:/etc/aegis/mcp-servers.yaml:ro
+      - ./deploy/local/secrets/dagu-basic-password:/run/secrets/dagu-basic-password:ro
+      - ./deploy/local/secrets/grafana-mcp-caller-token:/run/secrets/grafana-mcp-caller-token:ro
+    depends_on:
+      grafana-mcp-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "dagu", "version"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    networks: [aegis-app, aegis-mcp]
+
+  grafana-read:
+    image: grafana/mcp-grafana:1.0.0@sha256:5efeafd01cd7e1aea9c4b0f03305951f2944db8f43e5ae290cce9578c977f241
+    command:
+      - --transport=streamable-http
+      - --address=:8000
+      - --endpoint-path=/mcp
+      - --allowed-hosts=grafana-read:8000
+      - --enabled-tools=search,datasource,prometheus,loki,alerting,dashboard,navigation,rendering
+      - --disable-write
+      - --disable-proxied
+      - --max-loki-log-limit=100
+      - --metrics
+    volumes:
+      - grafana-mcp-secrets:/run/secrets/aegis:ro
+    environment:
+      GRAFANA_URL: http://grafana:3000
+      GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE: /run/secrets/aegis/grafana-service-account-token
+    depends_on:
+      grafana-bootstrap:
+        condition: service_completed_successfully
+    read_only: true
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    networks: [aegis-mcp]
+
+  grafana-bootstrap:
+    build:
+      context: .
+      dockerfile: deploy/grafana-bootstrap/Dockerfile
+    command:
+      - --grafana-url=http://grafana:3000
+      - --username=admin
+      - --password-file=/run/secrets/grafana-admin-password
+      - --output-file=/run/aegis/grafana-service-account-token
+    volumes:
+      - ./deploy/local/secrets/grafana-admin-password:/run/secrets/grafana-admin-password:ro
+      - grafana-mcp-secrets:/run/aegis
+    depends_on: [grafana]
+    restart: "no"
+    security_opt: [no-new-privileges:true]
+    networks: [aegis-mcp]
+
+  grafana-mcp-gateway:
+    build:
+      context: .
+      dockerfile: deploy/mcp-gateway/Dockerfile
+    command:
+      - --address=:8080
+      - --upstream=http://grafana-read:8000
+      - --token-file=/run/secrets/grafana-mcp-caller-token
+    volumes:
+      - ./deploy/local/secrets/grafana-mcp-caller-token:/run/secrets/grafana-mcp-caller-token:ro
+    depends_on: [grafana-read]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    networks: [aegis-mcp]
+
+networks:
+  aegis-app:
+  aegis-mcp:
+    internal: true
+
+volumes:
+  dagu-data:
+  grafana-data:
+  grafana-mcp-secrets:

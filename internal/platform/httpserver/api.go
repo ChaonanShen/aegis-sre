@@ -1,10 +1,12 @@
 package httpserver
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
 )
@@ -34,12 +36,13 @@ type capability struct {
 
 func apiHandler(cfg config.Config, deps dependencies) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v1/capabilities", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /api/v1/capabilities", func(w http.ResponseWriter, request *http.Request) {
+		statuses := dependencyStatuses(request.Context(), cfg, deps)
 		items := []capability{
-			{Name: "agent", Status: capabilityStatus(cfg, config.CapabilityAgent), Reason: capabilityReason(cfg, config.CapabilityAgent)},
-			{Name: "knowledge", Status: capabilityStatus(cfg, config.CapabilityKnowledge), Reason: capabilityReason(cfg, config.CapabilityKnowledge)},
-			{Name: "playbook", Status: capabilityStatus(cfg, config.CapabilityPlaybook), Reason: capabilityReason(cfg, config.CapabilityPlaybook)},
-			{Name: "grafana_read", Status: capabilityStatus(cfg, config.CapabilityGrafanaMCP), Reason: capabilityReason(cfg, config.CapabilityGrafanaMCP)},
+			{Name: "agent", Status: statuses[config.CapabilityAgent].status, Reason: statuses[config.CapabilityAgent].reason},
+			{Name: "knowledge", Status: statuses[config.CapabilityKnowledge].status, Reason: statuses[config.CapabilityKnowledge].reason},
+			{Name: "playbook", Status: statuses[config.CapabilityPlaybook].status, Reason: statuses[config.CapabilityPlaybook].reason},
+			{Name: "grafana_read", Status: statuses[config.CapabilityGrafanaMCP].status, Reason: statuses[config.CapabilityGrafanaMCP].reason},
 			{Name: "grafana_write", Status: "unavailable", Reason: "not configured"},
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -76,18 +79,34 @@ func requireActor(next http.Handler) http.Handler {
 	})
 }
 
-func capabilityStatus(cfg config.Config, name config.Capability) string {
-	if cfg.Endpoints[name] == "" {
-		return "unavailable"
-	}
-	return "degraded"
+type dependencyStatus struct {
+	status string
+	reason string
 }
 
-func capabilityReason(cfg config.Config, name config.Capability) string {
-	if cfg.Endpoints[name] == "" {
-		return "not configured"
+func dependencyStatuses(ctx context.Context, cfg config.Config, deps dependencies) map[config.Capability]dependencyStatus {
+	statuses := make(map[config.Capability]dependencyStatus)
+	for _, name := range []config.Capability{config.CapabilityAgent, config.CapabilityPlaybook, config.CapabilityKnowledge, config.CapabilityGrafanaMCP} {
+		if cfg.Endpoints[name] == "" {
+			statuses[name] = dependencyStatus{status: "unavailable", reason: "not configured"}
+			continue
+		}
+		statuses[name] = dependencyStatus{status: "degraded", reason: "adapter not connected"}
 	}
-	return "adapter not connected"
+	if cfg.Endpoints[config.CapabilityPlaybook] != "" && deps.playbooks != nil {
+		if deps.playbookHealth == nil {
+			statuses[config.CapabilityPlaybook] = dependencyStatus{status: "degraded", reason: "health probe unavailable"}
+			return statuses
+		}
+		probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		defer cancel()
+		if err := deps.playbookHealth(probeCtx); err != nil {
+			statuses[config.CapabilityPlaybook] = dependencyStatus{status: "degraded", reason: "provider health check failed"}
+		} else {
+			statuses[config.CapabilityPlaybook] = dependencyStatus{status: "available"}
+		}
+	}
+	return statuses
 }
 
 func writeAPIProblem(w http.ResponseWriter, request *http.Request, status int, code, detail string, retryable bool) {

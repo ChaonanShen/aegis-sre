@@ -29,7 +29,10 @@ type playbookHTTPFake struct {
 	cancelCalls    int
 	humanTaskCalls int
 	approvalCalls  int
+	checkErr       error
 }
+
+func (fake *playbookHTTPFake) Check(context.Context) error { return fake.checkErr }
 
 func (fake *playbookHTTPFake) ListRuns(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRef, _ domain.PageRequest) (domain.Page[ports.PlaybookRunState], error) {
 	return domain.Page[ports.PlaybookRunState]{Items: []ports.PlaybookRunState{{

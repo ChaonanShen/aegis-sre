@@ -1,0 +1,24 @@
+type: graph
+description: Verify the authenticated Dagu to Grafana MCP read path.
+
+steps:
+  - id: list_datasources
+    action: mcp.call
+    with:
+      server: grafana-read
+      tool: list_datasources
+      args: {}
+
+  - id: report
+    depends: [list_datasources]
+    action: template.render
+    with:
+      data:
+        total: ${list_datasources.output.result.total}
+      template: |
+        # Grafana MCP smoke report
+
+        Dagu reached the authenticated Grafana MCP read endpoint.
+        Datasource count: {{ .total }}
+    stdout:
+      artifact: reports/grafana-mcp-smoke.md

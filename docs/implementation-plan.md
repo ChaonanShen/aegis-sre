@@ -130,7 +130,7 @@ internal/application/contracts/
 
 ## 6. 阶段 3：Control Plane 与 Plugin Gateway
 
-状态：**Plugin Gateway 已完成；本阶段曾误引入的持久化在后续纠正阶段移除。阶段 4 的 Dagu 接入尚未开始。**
+状态：**已完成。Plugin Gateway 已接入无状态 Control Plane；本阶段曾误引入的持久化已在后续纠正阶段移除。**
 
 目标：让 Grafana Plugin 通过薄 Plugin Backend 访问冻结后的 Control Plane 契约，为后续 Provider 垂直切片建立唯一入口。
 
@@ -210,11 +210,11 @@ Provider 数据归属与标识策略复核：
 - 非历史文档、CI、Makefile、配置和发布拓扑中不再出现 PostgreSQL 依赖。
 - Provider ID 不进入前端公共契约；同时不以预建通用映射表规避具体 Provider 的标识能力验证。
 - `make verify`、契约生成一致性检查、Go test/vet/build、Plugin Backend 测试及前端 typecheck/lint/Jest/Webpack 全部通过。
-- 阶段 4 的 Dagu 代码尚未开始，原阶段编号保持不变。
+- 阶段 4 的 Dagu 垂直链路按原阶段编号继续推进。
 
 ## 7. 阶段 4：Dagu 与 `mcp.call`
 
-状态：**主体接入已完成；日志与 Human Task/Artifact 前端交互仍需在阶段 7 收口。真实外部 Grafana 调用留在阶段 5。**
+状态：**基本执行链已完成。插件可直接启动、查看和取消 Dagu Run，并展示 Step 状态；完整运行观测与交互仍需在阶段 7 收口。**
 
 目标：Dagu 成为 Playbook 唯一执行引擎，插件不再依赖自定义 DSL。
 
@@ -265,17 +265,19 @@ Provider 数据归属与标识策略复核：
 - [ ] 展示 Run、Step、Human Task、Approval 和 Artifact（Run、Step 已接入；Human Task、Approval、Artifact 待补）。
 - [x] 删除真实模式下的 Playbook fixture fallback。
 
+本轮明确只保证 Playbook 可以从 Grafana 插件基本执行，不把 Dagu UI 当作最终产品界面。当前插件仍缺少运行参数表单、retry 操作、Step 日志、Human Task、Approval、Artifact 预览/下载和更完整的失败诊断；这些能力后端契约已有部分基础，但前端尚未闭环，必须在阶段 7 补齐，不能把“Dagu UI 可查看”视为完成。
+
 验收标准：
 
 - CRUD、validate、run、cancel、retry 可用。
-- Human Task 和 Approval 暂停后可以从插件恢复运行。
+- Human Task 和 Approval 暂停后可以从插件恢复运行（本轮暂缓，保留为未完成验收项）。
 - 四个并行 `mcp.call` 节点能通过 contract server 稳定完成并生成报告 Artifact。
 - 未在 allowlist 中的工具在连接前或调用前被明确拒绝。
 - Dagu 重启后仍能读取既有 DAG 和运行记录。
 
 ## 8. 阶段 5：Grafana 官方 MCP
 
-状态：**部署与版本化策略已完成；真实 Grafana 冒烟和入口网关验收需要部署环境。**
+状态：**本地可复现的只读部署、调用方鉴权网关和真实 Dagu 调用验收已完成；生产 TLS 与写实例验收仍待完成。**
 
 目标：完全替代自研 Grafana/Prometheus MCP 工具。
 
@@ -284,13 +286,15 @@ Provider 数据归属与标识策略复核：
 - [x] 固定 `grafana/mcp-grafana` 版本和多平台镜像 digest。
 - [x] 部署 `grafana-read`，强制 `--disable-write`。
 - [x] 只启用当前产品需要的工具类别。
-- [ ] 为服务端启用调用方 Bearer Token（官方 v1.0.0 不提供入站认证，已要求由可信入口网关完成）。
-- [ ] 设置 allowed hosts/origins 和 TLS 或可信反向代理（Host/Origin 已限制；TLS 网关待部署环境验收）。
+- [x] 通过薄鉴权网关校验调用方 Bearer Token；官方 v1.0.0 后端保持内部不可直达。
+- [ ] 设置 allowed hosts/origins 和 TLS 或可信反向代理（本地 Host/网络边界与鉴权网关已完成；生产 TLS 待部署环境验收）。
 - [x] 使用文件挂载 Service Account Token，支持轮换。
 - [x] 按需部署 `grafana-write`，使用独立低权限账号。
 - [x] 发布供后续 Codex、OpenCode 和 `mcp.call` 消费的版本化连接配置。
 - [x] 为常用 PromQL、LogQL、告警和 Dashboard 工具建立显式真实冒烟命令。
-- [ ] 使用阶段 4 的 `mcp.call` Runner 对 `grafana-read` 完成真实调用验收。
+- [x] 使用阶段 4 的 `mcp.call` Runner 对 `grafana-read` 完成真实调用并验证 Artifact。
+
+补充完成项：根 Compose 会创建低权限 Viewer Service Account，凭据通过共享文件交给 Grafana MCP；Dagu REST 启用独立 Basic Auth；Grafana MCP 与鉴权网关均不发布主机端口；CI 运行四并行节点的 Dagu `mcp.call` 合同测试。生产环境仍需把本地文件凭据替换为 Secret Manager，并补齐 TLS、NetworkPolicy、轮换/吊销演练。
 
 初期权限：
 
@@ -308,9 +312,20 @@ Provider 数据归属与标识策略复核：
 
 ## 9. 阶段 6：Codex 与 OpenCode Agent Provider
 
-状态：**协议基线、标识策略和底层客户端已完成；Provider 事件映射、Control Plane 装配与真实模型验收尚未完成。**
+状态：**暂缓接入。协议基线、标识策略和部分底层客户端已存在，但按当前决策不继续装配 Codex/OpenCode Provider，直到 Dagu/Grafana 主链路验收通过。**
 
-目标：Codex 作为默认 Provider，同时用 OpenCode 证明抽象没有泄漏。
+目标：Codex 作为默认 Provider，同时用 OpenCode 证明抽象没有泄漏。Grafana 插件的 Workbench 是唯一会话入口，不增加 Codex 或 OpenCode 独立聊天页面。
+
+### 6.0 单一会话入口与实现顺序
+
+- [ ] 前端只使用 Aegis `Session / Turn / Event` 公共契约，不直接连接 Codex App Server、OpenCode Server 或解释其私有事件。
+- [ ] Control Plane 在创建会话时选择 Agent Provider；单个会话创建后固定绑定一个 Provider，中途不得静默切换执行引擎。
+- [ ] Codex 使用由 Control Plane 监管的长期运行 App Server，通过 `stdio + JSONL` 双向 JSON-RPC 管理 Thread、Turn、审批和流事件；不得为每条消息临时执行 CLI 命令。
+- [ ] OpenCode 使用长期运行的 Server HTTP API 与 SSE；SDK 只作为可选生成客户端，不为使用 SDK 额外引入 Node 中间服务。
+- [ ] Aegis 公共 Session ID 保持 Provider-neutral；Codex Thread ID、OpenCode Session ID 和 Provider 类型只存在于 adapter 内部。
+- [ ] 切换 Provider 时创建显式的新会话或分叉会话，不承诺把同一底层会话在 Codex 与 OpenCode 之间无损迁移。
+
+本阶段优先完成会话本身：create/list/read/resume/archive/delete、Turn 流、取消、审批、错误恢复和 Provider 重启恢复。图表、图片与 Canvas 的生成、恢复和编辑不作为会话首轮接入的阻塞条件，但必须按阶段 7 的已知缺口继续实现，不能因首轮暂缓而删除现有前端画布能力。
 
 ### 6.1 Codex Adapter
 
@@ -350,7 +365,7 @@ Provider 数据归属与标识策略复核：
 
 ## 10. 阶段 7：核心前端真实模式收口
 
-状态：**真实模式 fallback 已收口；Playbook 已接 Dagu，Workbench 已接公共契约。Alerts、Approvals、Audit 与真实 Agent 组合仍待对应后端能力完成。**
+状态：**部分完成。真实模式 fallback 已收口，Playbook 已接 Dagu，Workbench 已接公共契约；Playbook 完整运行观测、Alerts、Approvals、Audit 与真实 Agent 组合仍待完成。**
 
 目标：先收口不依赖 RAGFlow 的真实功能；Knowledge 页面保持明确不可用，直到最后的 RAGFlow 垂直切片完成。
 
@@ -358,13 +373,31 @@ Provider 数据归属与标识策略复核：
 
 - [x] 生成或实现 Control Plane Resource Client。
 - [x] Workbench 使用统一 Agent Event，不再识别旧 AgentType。
+- [ ] Workbench 真实会话支持完整的 create/list/read/resume/archive/delete、流式 Turn、取消和 Agent Approval；此项优先于 Canvas 增强。
 - [x] Playbook 使用 Dagu-backed API。
+- [ ] Playbook 在 Grafana 插件内完成参数、retry、日志、Human Task、Approval 和 Artifact 的运行闭环；不得要求用户跳转 Dagu UI 才能判断执行结果。
 - [ ] Approvals 汇总 Agent Approval 与 Dagu Approval。
 - [ ] Alerts 接入真实 Grafana 告警上下文。
 - [ ] Audit 页面接入跨 Provider trace 和操作摘要。
 - [x] fixture 仅在显式 fixture/test 模式启用。
 - [x] 真实模式中未实现能力显示明确不可用，不静默返回 fixture 数据。
 - [ ] 更新 Playwright 用例覆盖 Grafana、Dagu 和 Agent 的真实服务组合。
+
+### 7.1 Canvas 与视觉产物已知缺口（会话闭环后实施）
+
+当前前端已有 Chart/Canvas 模型、布局和 Grafana 查询渲染能力，但新的 Control Plane 真实会话链路尚未完整承载这些状态。本节全部暂缓到核心会话闭环之后，不得误标为已完成：
+
+- [ ] 定义 Provider-neutral 的视觉产物契约，至少区分 Grafana Chart Definition 与 PNG/JPEG/SVG 等普通图片 Artifact。
+- [ ] 将 Codex Image/Tool Item、OpenCode File/Message Part 和 Aegis 工具结果统一映射为稳定事件，不让前端识别 Provider 私有类型。
+- [ ] 扩展 `artifact.created` 或新增 Canvas 事件，携带受控资源引用、媒体类型、Chart Definition 及 upsert/remove/layout 语义；不得暴露 Provider 文件路径或内部 URL。
+- [ ] 修复真实 Workbench adapter 当前忽略 `artifact.created` 的问题，使流式生成的图表或图片可以直接进入消息和 Canvas。
+- [ ] 修复真实会话打开时 Canvas 总是为空、`updateCanvas` 只在前端原样返回的问题，保证刷新和 Provider 重启后仍能恢复布局、排序、删除与固定状态。
+- [ ] Grafana 图表优先保存 datasource、PromQL/LogQL、绝对时间范围和 VizConfig，由插件查询真实 Grafana 数据并原生渲染；不得用 Agent 生成的截图替代可交互 Grafana Panel。
+- [ ] 为 Agent 提供受控的 Aegis Canvas 发布工具，使 Codex 与 OpenCode 通过同一工具发布图表，而不是分别实现画布协议。
+- [ ] 先验证能否从 Provider 会话的结构化事件或 metadata 重建 Canvas；若无法可靠承载产品专有布局状态，先提交 ADR 说明事实来源和最小持久化范围，再决定是否引入存储。
+- [ ] 添加刷新恢复、重复事件去重、流式生成期间用户编辑合并、无权 Artifact 拒绝和大图片限制测试。
+
+Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Agent 生成的 Grafana 图表和普通图片均可在同一个 Grafana Workbench Canvas 中展示，并能在重新打开会话后恢复。
 
 验收标准：
 
@@ -374,6 +407,8 @@ Provider 数据归属与标识策略复核：
 - 页面卸载时会取消不再需要的请求和流。
 
 ## 11. 阶段 8：RAGFlow 与 Knowledge 最终垂直切片
+
+状态：**暂缓接入。等待 Dagu/Grafana 与核心前端缺口完成并经人工验收后再开始。**
 
 目标：在其他主链路稳定后，完成 `Grafana Plugin → Control Plane → RAGFlow` 的真实知识链路，并把 Knowledge MCP 加入 Agent。
 
@@ -506,16 +541,12 @@ rollback version
 
 ## 16. 近期执行顺序
 
-严格按以下顺序推进，避免并行铺开后没有可运行链路：
+当前完成 Dagu 与 Grafana MCP 基本链路后，按以下顺序继续，避免并行铺开后没有可运行链路：
 
-1. 完成阶段 0 的迁移基线固化和根目录基础 CI。
-2. 建立可独立构建、运行和观测的 Control Plane 最小骨架。
-3. 冻结 ActorContext、业务错误、Provider Ports、OpenAPI 和统一 SSE Event Envelope。
-4. 建立 Plugin Backend 薄代理和生成式 Resource Client，并完成无状态边界纠正。
-5. 完成 Dagu Playbook 与 `mcp.call` 垂直链路。
-6. 部署 Grafana 官方只读 MCP，再按审批边界增加最小写实例。
-7. 接入 Codex，随后实现最小 OpenCode Adapter 做可替换验证。
-8. 收口 Workbench、Playbook、Approvals、Alerts 和 Audit 的真实 Gateway。
-9. 最后部署 RAGFlow，完成 Knowledge Adapter、Knowledge MCP 和 Knowledge 前端。
-10. 完成包含知识检索的黄金 E2E 场景。
-11. 再进入告警沉淀、Playbook 生成和代码分析等产品功能。
+1. 保持当前基本 Playbook 执行能力稳定，补齐 readiness、鉴权、契约测试和可复现部署（本轮完成）。
+2. 由用户验收当前 Dagu/Grafana MCP 主链路；本轮不扩展 Playbook 前端。
+3. 后续优先补齐 Grafana 插件内的 Playbook 参数、retry、日志、Human Task、Approval 和 Artifact，消除对 Dagu UI 的产品依赖。
+4. 再接入 Codex；随后用最小 OpenCode Adapter 验证可替换性。
+5. 收口 Workbench、Approvals、Alerts 和 Audit 的真实 Gateway。
+6. 最后部署 RAGFlow，完成 Knowledge Adapter、Knowledge MCP 和 Knowledge 前端。
+7. 完成包含知识检索的黄金 E2E 场景，再进入告警沉淀、Playbook 生成和代码分析等产品功能。

@@ -49,6 +49,31 @@ func TestClientUsesCallerSuppliedRunIDAndRotatingToken(t *testing.T) {
 	}
 }
 
+func TestClientUsesRotatingBasicAuth(t *testing.T) {
+	t.Parallel()
+	password := "first"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		username, provided, ok := request.BasicAuth()
+		if !ok || username != "aegis" || provided != password {
+			t.Errorf("basic auth = %q %q %v", username, provided, ok)
+		}
+		_, _ = w.Write([]byte(`{"dags":[],"pagination":{"currentPage":1,"perPage":1,"totalPages":0}}`))
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL, server.Client(), WithBasicAuthSource(func() (string, string, error) {
+		return "aegis", password, nil
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, next := range []string{"first", "rotated"} {
+		password = next
+		if _, err := client.ListDAGs(context.Background(), 1, 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestClientEncodesArtifactPathAndProviderIdentifiers(t *testing.T) {
 	t.Parallel()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {

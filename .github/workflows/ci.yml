@@ -41,6 +41,18 @@ jobs:
       - name: Build
         run: go build ./...
 
+  dagu-contract:
+    name: Dagu mcp.call contract
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Run Dagu contract
+        run: make dagu-contract-test
+
   grafana-plugin:
     name: Grafana plugin frontend
     runs-on: ubuntu-latest

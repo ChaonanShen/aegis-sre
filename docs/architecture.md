@@ -40,7 +40,8 @@ flowchart LR
 
     KnowledgeMCP --> CP
     Dagu --> MCPCall["mcp.call Action"]
-    MCPCall --> GrafanaMCP
+    MCPCall --> MCPGateway["MCP Auth Gateway"]
+    MCPGateway --> GrafanaMCP
     MCPCall --> KnowledgeMCP
 ```
 
@@ -150,6 +151,8 @@ Dagu 内置 MCP 服务于 `Agent → Dagu`，让 Agent 读取、修改和执行�
 
 `mcp.call` Action 服务于 `Dagu → 外部 MCP`，让工作流中的节点调用允许的 Grafana 或 Knowledge 工具。它必须有 Server 白名单、Tool 白名单、超时、结果大小限制、TLS 配置和 Artifact 归档，并禁止调用 Dagu 自身的执行工具形成递归运行。
 
+Dagu REST API 必须启用独立服务凭据。Control Plane 从只读挂载的凭据文件读取并在每次请求时重新加载，避免凭据进入镜像、命令行或前端契约。
+
 ### 3.7 Grafana MCP
 
 至少部署两个逻辑实例：
@@ -160,6 +163,8 @@ Dagu 内置 MCP 服务于 `Agent → Dagu`，让 Agent 读取、修改和执行�
 | `grafana-write` | 独立凭据和极小工具白名单 | 获批 Agent、受控 Dagu Workflow |
 
 初期可使用固定 Service Account，但接口从第一天携带 Actor Context，避免把单组织假设写死。
+
+官方 Grafana MCP v1.0.0 不负责校验入站 MCP 调用方身份，因此 Aegis 在它前面部署一个必要的薄鉴权网关。网关只校验独立调用方 Bearer Token、清理可伪造的转发头并代理 `/mcp`，不实现或改写任何 Grafana 工具。Grafana MCP 使用另一个 Viewer Service Account Token 访问 Grafana；两个凭据必须分离并支持文件轮换。
 
 ## 4. 数据归属
 
@@ -233,10 +238,15 @@ RAGFlow 及其官方依赖
 Dagu Server / Scheduler / Worker
 Grafana MCP Read
 Grafana MCP Write（按需）
+Aegis MCP Auth Gateway
 Aegis mcp.call Runner
 ```
 
-所有 Provider 版本都必须固定，升级通过契约测试和端到端用例后才能合并。不要使用 `latest` 作为可发布环境的镜像标签。
+仓库根 `compose.yaml` 提供最小可复现链路。Grafana 和 Dagu 只绑定 loopback；Control Plane、Grafana MCP 和 MCP 鉴权网关不发布主机端口；MCP 网络为内部网络。一次性 Grafana Bootstrap 使用本地管理员凭据创建 Viewer Service Account，将 Token 写入共享卷后退出，它是部署初始化任务而不是新的产品服务。
+
+Control Plane 的 `/health/ready` 会实际探测已配置的 Dagu，而不是只检查环境变量；能力发现也只在探测成功时报告 Playbook 可用。未配置的可选 Provider 不阻止进程启动，已配置但不可达的依赖会使 readiness 失败。
+
+所有 Provider 版本都必须固定，升级通过契约测试和端到端用例后才能合并。不要使用 `latest` 作为可发布环境的镜像标签。生产环境仍需在入口补齐 TLS、Secret Manager 和 NetworkPolicy；本地 Compose 的 loopback 与内部网络不能替代这些生产控制。
 
 ## 8. 暂缓但必须预留的安全边界
 

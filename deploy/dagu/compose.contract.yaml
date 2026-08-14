@@ -1,0 +1,47 @@
+name: aegis-dagu-contract
+
+services:
+  mcp-contract:
+    build:
+      context: ../..
+      dockerfile: deploy/dagu/Dockerfile.contract
+    command: ["--address=:8090", "--token-file=/run/secrets/mcp-contract-token"]
+    volumes:
+      - ${CONTRACT_TOKEN_FILE:?set CONTRACT_TOKEN_FILE}:/run/secrets/mcp-contract-token:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8090/healthz"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  dagu:
+    build:
+      context: ../..
+      dockerfile: deploy/dagu/Dockerfile
+    command: ["dagu", "start-all"]
+    environment:
+      DAGU_AUTH_BASIC_PASSWORD_FILE: /run/secrets/dagu-password
+      DAGU_AUTH_BASIC_USERNAME: contract
+      DAGU_AUTH_MODE: basic
+      DAGU_COORDINATOR_ENABLED: "false"
+      DAGU_HOME: /var/lib/dagu
+      DAGU_HOST: 0.0.0.0
+      DAGU_PORT: 8080
+      MCP_CALL_CONFIG: /etc/aegis/mcp-servers.yaml
+    ports:
+      - "127.0.0.1:${CONTRACT_DAGU_PORT:-18082}:8080"
+    volumes:
+      - ${CONTRACT_PASSWORD_FILE:?set CONTRACT_PASSWORD_FILE}:/run/secrets/dagu-password:ro
+      - ${CONTRACT_TOKEN_FILE:?set CONTRACT_TOKEN_FILE}:/run/secrets/mcp_contract_token:ro
+      - ./mcp-contract-servers.yaml:/etc/aegis/mcp-servers.yaml:ro
+    depends_on:
+      mcp-contract:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "dagu", "version"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  dagu-data:

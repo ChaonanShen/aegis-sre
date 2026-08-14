@@ -1,4 +1,4 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate grafana-mcp-config-check grafana-mcp-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke local-secrets local-config-check local-up local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 OAPI_CODEGEN_VERSION := v2.8.0
 MAGE_VERSION := v1.17.2
@@ -37,6 +37,9 @@ dagu-validate:
 	cp deploy/dagu/base.yaml "$$dagu_tmp/base.yaml"; \
 	$(DAGU_BIN) validate --dagu-home "$$dagu_tmp" -c deploy/dagu/config.yaml deploy/dagu/dags/mcp-call-contract.yaml
 
+dagu-contract-test:
+	./scripts/test-dagu-contract.sh
+
 grafana-mcp-config-check:
 	GRAFANA_URL=http://grafana:3000 GRAFANA_READ_TOKEN_FILE=/run/secrets/read GRAFANA_WRITE_TOKEN_FILE=/run/secrets/write docker compose -f deploy/grafana-mcp/compose.yaml config --quiet
 
@@ -48,6 +51,18 @@ grafana-mcp-smoke:
 	go run ./cmd/mcp-call --config deploy/mcp/v1/servers.yaml --server grafana-read --tool query_prometheus --args-json "{\"datasourceUid\":\"$$GRAFANA_PROMETHEUS_UID\",\"expr\":\"up\",\"endTime\":\"now\",\"queryType\":\"instant\"}"
 	go run ./cmd/mcp-call --config deploy/mcp/v1/servers.yaml --server grafana-read --tool query_loki_logs --args-json "{\"datasourceUid\":\"$$GRAFANA_LOKI_UID\",\"logql\":\"{job=~\\\".+\\\"}\",\"limit\":1}"
 	go run ./cmd/mcp-call --config deploy/mcp/v1/servers.yaml --server grafana-read --tool alerting_manage_rules --args-json '{"operation":"list","limit":1}'
+
+local-secrets:
+	./scripts/init-local-secrets.sh
+
+local-config-check:
+	docker compose config --quiet
+
+local-up: local-secrets plugin-backend-build plugin-build
+	docker compose up --build --wait
+
+local-smoke:
+	./scripts/smoke-local-playbook.sh
 
 codex-schema-check:
 	@test "$$($(CODEX_BIN) --version)" = "codex-cli $(CODEX_VERSION)" || (echo "expected codex-cli $(CODEX_VERSION)" >&2; exit 1)

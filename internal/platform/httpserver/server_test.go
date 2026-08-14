@@ -42,7 +42,7 @@ func TestHealthEndpoints(t *testing.T) {
 	}
 }
 
-func TestReadyReportsConfiguredAndDisabledCapabilities(t *testing.T) {
+func TestReadyReportsConfiguredButDisconnectedCapabilities(t *testing.T) {
 	server := New(config.Config{Endpoints: map[config.Capability]string{
 		config.CapabilityAgent: "http://agent.internal",
 	}}, nil)
@@ -53,11 +53,31 @@ func TestReadyReportsConfiguredAndDisabledCapabilities(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Capabilities[string(config.CapabilityAgent)] != "configured" {
+	if response.Code != http.StatusServiceUnavailable || body.Status != "not_ready" {
+		t.Fatalf("status = %d, body = %+v", response.Code, body)
+	}
+	if body.Capabilities[string(config.CapabilityAgent)] != "degraded" {
 		t.Fatalf("agent status = %q", body.Capabilities[string(config.CapabilityAgent)])
 	}
-	if body.Capabilities[string(config.CapabilityKnowledge)] != "disabled" {
+	if body.Capabilities[string(config.CapabilityKnowledge)] != "unavailable" {
 		t.Fatalf("knowledge status = %q", body.Capabilities[string(config.CapabilityKnowledge)])
+	}
+}
+
+func TestReadyProbesConfiguredPlaybookProvider(t *testing.T) {
+	cfg := config.Config{Endpoints: map[config.Capability]string{config.CapabilityPlaybook: "http://dagu.internal"}}
+	server := New(cfg, nil, WithPlaybookProvider(&playbookHTTPFake{}))
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var body healthResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Capabilities[string(config.CapabilityPlaybook)] != "available" {
+		t.Fatalf("playbook status = %q", body.Capabilities[string(config.CapabilityPlaybook)])
 	}
 }
 

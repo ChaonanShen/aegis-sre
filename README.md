@@ -2,7 +2,7 @@
 
 Aegis SRE 是一个以 Grafana App Plugin 为入口的开源 SRE 工作台。项目本身只维护产品控制面与必要的集成层，Agent、知识检索、Playbook 编排和 Grafana 工具能力分别交给成熟组件。
 
-当前已完成实施计划的阶段 0–3 及其纠正阶段：仓库迁移基线、无状态 Control Plane 骨架、v1 公共契约，以及 Grafana Plugin Backend 到 Control Plane 的受信代理。阶段 4 的 Dagu 接入尚未开始。
+当前已完成仓库基线、无状态 Control Plane、v1 公共契约、Plugin Backend 受信代理，以及 Dagu Playbook 到只读 Grafana MCP 的基本执行链。Grafana 插件已能启动/取消 Run 并查看 Step 状态；参数、retry、日志、Human Task、Approval 和 Artifact 的完整前端闭环仍是明确缺口。Codex Provider 与 RAGFlow 按当前计划暂缓接入。
 
 ## 目标组件
 
@@ -36,17 +36,28 @@ aegis-sre/
 
 ## 本地验证与运行
 
-要求 Go 1.26.4 和 Node.js 22；当前阶段不需要自有数据库。
+要求 Go 1.26、Node.js 22、Docker Compose、`jq` 和 `openssl`；当前阶段不需要自有数据库。
 
 ```bash
 make verify
 go run ./cmd/control-plane
 ```
 
+完整本地链路可由根 Compose 启动：
+
+```bash
+make local-secrets
+make local-up
+make local-smoke
+```
+
+`local-secrets` 只在 git 忽略的 `deploy/local/secrets/` 生成开发凭据。启动过程会创建 Grafana Viewer Service Account；Grafana 默认只绑定 `127.0.0.1:3000`，Dagu 只绑定 `127.0.0.1:18081`，Control Plane、只读 Grafana MCP 和其鉴权网关不发布主机端口。可用 `GRAFANA_PORT`、`DAGU_PORT` 覆盖两个开发端口；运行冒烟时需传递相同的 `DAGU_PORT`。
+
 Plugin Backend 通过以下环境变量连接 Control Plane：
 
 - `AEGIS_CONTROL_PLANE_URL`：必填的 Control Plane HTTP origin。
 - `AEGIS_CONTROL_PLANE_TOKEN_FILE`：可选的只读 Bearer Token 文件路径；启用时，Control Plane 的 `AEGIS_PLUGIN_TOKEN_FILE` 应读取同一凭据。
+- `AEGIS_DAGU_BASIC_AUTH_USERNAME` 与 `AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE`：Control Plane 访问 Dagu 的服务凭据，必须成对配置，且不能与 Dagu Bearer Token 同时配置。
 
 ## 前端开发
 

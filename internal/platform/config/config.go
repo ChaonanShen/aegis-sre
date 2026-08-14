@@ -16,6 +16,8 @@ const (
 	EnvAgentURL        = "AEGIS_AGENT_URL"
 	EnvDaguURL         = "AEGIS_DAGU_URL"
 	EnvDaguTokenFile   = "AEGIS_DAGU_TOKEN_FILE"
+	EnvDaguBasicUser   = "AEGIS_DAGU_BASIC_AUTH_USERNAME"
+	EnvDaguBasicPass   = "AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE"
 	EnvRAGFlowURL      = "AEGIS_RAGFLOW_URL"
 	EnvGrafanaMCPURL   = "AEGIS_GRAFANA_MCP_URL"
 	EnvPluginTokenFile = "AEGIS_PLUGIN_TOKEN_FILE"
@@ -38,6 +40,8 @@ type Config struct {
 	Endpoints       map[Capability]string
 	PluginToken     string
 	DaguTokenFile   string
+	DaguBasicUser   string
+	DaguBasicPass   string
 }
 
 func Load(getenv func(string) string) (Config, error) {
@@ -99,6 +103,23 @@ func Load(getenv func(string) string) (Config, error) {
 			return Config{}, fmt.Errorf("%w: %s must point to a readable regular file", ErrInvalid, EnvDaguTokenFile)
 		}
 	}
+	daguBasicUser := strings.TrimSpace(getenv(EnvDaguBasicUser))
+	daguBasicPass := strings.TrimSpace(getenv(EnvDaguBasicPass))
+	if (daguBasicUser == "") != (daguBasicPass == "") {
+		return Config{}, fmt.Errorf("%w: %s and %s must be configured together", ErrInvalid, EnvDaguBasicUser, EnvDaguBasicPass)
+	}
+	if daguTokenFile != "" && daguBasicPass != "" {
+		return Config{}, fmt.Errorf("%w: Dagu bearer and basic authentication are mutually exclusive", ErrInvalid)
+	}
+	if daguBasicUser != "" {
+		if strings.ContainsAny(daguBasicUser, "\r\n\x00") {
+			return Config{}, fmt.Errorf("%w: %s is invalid", ErrInvalid, EnvDaguBasicUser)
+		}
+		info, err := os.Stat(daguBasicPass)
+		if err != nil || !info.Mode().IsRegular() {
+			return Config{}, fmt.Errorf("%w: %s must point to a readable regular file", ErrInvalid, EnvDaguBasicPass)
+		}
+	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile}, nil
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass}, nil
 }
