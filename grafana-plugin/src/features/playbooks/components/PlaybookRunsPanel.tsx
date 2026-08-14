@@ -8,6 +8,9 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [humanInput, setHumanInput] = useState('{}');
+  const [actionBusy, setActionBusy] = useState(false);
+  const [artifacts, setArtifacts] = useState<Awaited<ReturnType<NonNullable<PlaybookCrudGateway['listArtifacts']>>> | undefined>();
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(parameters.map((item) => [item.name, item.defaultValue])));
   const mounted = useRef(true);
 
@@ -36,6 +39,8 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
 
   const activeRun = useMemo(() => runs.find((run) => !terminal(run.status)), [runs]);
   const latestRun = runs[0];
+  const waitingInput = activeRun?.steps.find((step) => step.status === 'waiting_for_input');
+  const waitingApproval = activeRun?.steps.find((step) => step.status === 'waiting_for_approval');
   const activeRunId = activeRun?.id;
   useEffect(() => {
     if (!activeRunId) {
@@ -66,6 +71,37 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
       controller.abort();
     };
   }, [activeRunId, gateway]);
+
+  useEffect(() => {
+    if (!latestRun || !gateway.listArtifacts || !terminal(latestRun.status)) return;
+    const controller = new AbortController();
+    void gateway.listArtifacts(latestRun.id, controller.signal).then(setArtifacts, () => undefined);
+    return () => controller.abort();
+  }, [gateway, latestRun]);
+
+  const completeHumanTask = useCallback(async () => {
+    if (!activeRun || !waitingInput || !gateway.completeHumanTask || actionBusy) return;
+    let input: Record<string, unknown>;
+    try { input = JSON.parse(humanInput) as Record<string, unknown>; } catch { setError('Human Task 输入必须是合法 JSON。'); return; }
+    setActionBusy(true); setError('');
+    try {
+      await gateway.completeHumanTask(activeRun.id, waitingInput.id, input, `human-${crypto.randomUUID()}`);
+      const next = await gateway.getRun(activeRun.id);
+      if (mounted.current) setRuns((current) => upsertRun(current, next));
+    } catch (reason) { if (!isAbortError(reason)) setError(toError(reason).message); }
+    finally { if (mounted.current) setActionBusy(false); }
+  }, [actionBusy, activeRun, gateway, humanInput, waitingInput]);
+
+  const resolveApproval = useCallback(async (decision: 'approve' | 'reject' | 'rewind') => {
+    if (!activeRun || !waitingApproval || !gateway.resolveApproval || actionBusy) return;
+    setActionBusy(true); setError('');
+    try {
+      await gateway.resolveApproval(activeRun.id, waitingApproval.id, decision, {}, `approval-${crypto.randomUUID()}`);
+      const next = await gateway.getRun(activeRun.id);
+      if (mounted.current) setRuns((current) => upsertRun(current, next));
+    } catch (reason) { if (!isAbortError(reason)) setError(toError(reason).message); }
+    finally { if (mounted.current) setActionBusy(false); }
+  }, [actionBusy, activeRun, gateway, waitingApproval]);
 
   const start = useCallback(async () => {
     if (busy || activeRun) {
@@ -161,6 +197,23 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
         </div>
       )}
       {error && <div className="playbook-editor-error" role="alert">{error}</div>}
+      {waitingInput && (
+        <section aria-label="Human Task" className="playbook-run-interaction">
+          <h3>等待人工输入 · {waitingInput.name || waitingInput.id}</h3>
+          <textarea aria-label="Human Task JSON 输入" onChange={(event) => setHumanInput(event.currentTarget.value)} value={humanInput} />
+          <button className="playbook-button primary" disabled={actionBusy} onClick={() => void completeHumanTask()} type="button">提交输入</button>
+        </section>
+      )}
+      {waitingApproval && (
+        <section aria-label="Approval" className="playbook-run-interaction">
+          <h3>等待审批 · {waitingApproval.name || waitingApproval.id}</h3>
+          <div className="playbook-run-actions">
+            <button className="playbook-button primary" disabled={actionBusy} onClick={() => void resolveApproval('approve')} type="button">批准</button>
+            <button className="playbook-button secondary" disabled={actionBusy} onClick={() => void resolveApproval('reject')} type="button">拒绝</button>
+            <button className="playbook-button secondary" disabled={actionBusy} onClick={() => void resolveApproval('rewind')} type="button">回退</button>
+          </div>
+        </section>
+      )}
       {loading ? <div className="playbook-loading">正在加载运行记录…</div> : runs.length === 0 ? (
         <div className="playbook-empty compact">还没有运行记录。</div>
       ) : (
@@ -171,6 +224,14 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
               <small>{formatTime(run.startedAt)}</small>
               {run.steps.length > 0 && (
                 <ol>{run.steps.map((step) => <li key={step.id}><span>{step.name || step.id}</span><small>{statusLabel(step.status)}</small></li>)}</ol>
+              )}
+              {run.id === latestRun?.id && artifacts && artifacts.length > 0 && (
+                <div aria-label="Artifacts" className="playbook-artifacts">
+                  <strong>Artifacts</strong>
+                  {artifacts.map((artifact) => (
+                    <a href={gateway.artifactDownloadUrl?.(run.id, artifact.path)} key={artifact.path} rel="noreferrer" target="_blank">{artifact.name}</a>
+                  ))}
+                </div>
               )}
             </article>
           ))}
