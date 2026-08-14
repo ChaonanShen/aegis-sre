@@ -437,6 +437,45 @@ provider-neutral 契约。
 
 本阶段不得重新引入旧 dry-run gateway，也不得把 Dagu Provider 内部路径暴露到前端领域模型。
 
+### 9.1 运行日志展示（待后续具体实现）
+
+状态：**未开始。** 当前 Control Plane/OpenAPI 只提供 Run、Step 状态事件和 Artifact 资源，尚未提供稳定的 Run/Step 日志查询或增量订阅契约。前端不得读取 Dagu 原始日志接口、拼接 Provider URL，也不得把 Step 输出字段临时当作完整日志。
+
+实现前置：
+
+- [ ] 在 `internal/ports` 定义 Provider-neutral 日志接口，支持 `run_id`、可选 `step_id`、cursor/时间范围、分页和最大字节数；返回时间、级别、来源、文本、trace/request ID。
+- [ ] 在 Dagu adapter 实现该接口，固定版本和字段映射；服务端校验路径、租户和 Run 权限。
+- [ ] 更新 `api/openapi.yaml` 和生成代码，确定稳定日志资源及可选 SSE 增量事件，明确 cursor 失效、截断、终态和权限错误语义。
+- [ ] Control Plane 限制单次响应大小、行数和查询时间范围，禁止返回凭据、环境变量和 Provider 内部 URL。
+- [ ] 前端提供 Run/Step 筛选、级别和时间排序、加载更多、截断提示和受控复制；断线后用 cursor/Run 快照恢复并去重。
+- [ ] 日志不可用时显示明确错误或空态，不回退到 fixture、本地缓存或 Dagu UI 链接。
+
+测试与验收：
+
+- [ ] ports/adapter 契约测试覆盖分页、cursor、时间范围、大小限制、路径净化和错误映射。
+- [ ] HTTP 契约测试覆盖无权 Run、未知 Step、截断响应、过期 cursor 和跨租户访问拒绝。
+- [ ] 前端测试覆盖筛选、追加去重、断线恢复、加载失败和超大日志提示。
+- [ ] 真实 E2E 验证 Agent → Playbook → Dagu Run 的日志可追踪，并可关联 trace/request ID。
+
+### 9.2 Artifact 展示（待后续具体实现）
+
+状态：**部分完成。** 当前已接入 Artifact 列表和下载入口；文本预览、截断提示、媒体类型处理、权限错误和更完整的刷新恢复仍未完成。Artifact `path` 只能作为服务端不透明引用，不能进入领域模型或被前端拼接成 Provider 地址。
+
+后续实现项：
+
+- [ ] 使用已有 `previewArtifact` 实现文本预览，展示媒体类型、大小、更新时间和 `truncated` 状态；超限时明确提示并提供下载原文。
+- [ ] 对 PNG/JPEG/SVG、Audio、Embedded Resource 等类型采用受控预览或下载；未知媒体不得直接当 HTML 渲染，不信任 SVG 不执行脚本。
+- [ ] 列表、预览和下载增加 loading、空态、403/404、过期 Run 和网络中断状态；下载 URL 必须由 Control Plane 生成并校验权限。
+- [ ] 刷新页面后根据 Run 重新拉取 Artifact，处理列表变化、重复事件、删除/过期引用和下载重试。
+- [ ] 如需进入 Agent 消息或 Canvas，先定义 provider-neutral 视觉产物契约，不复用 Workbench 本地 Canvas 状态作为持久化事实。
+
+测试与验收：
+
+- [ ] gateway 契约测试覆盖列表、预览、下载 URL 编码、媒体类型和截断字段。
+- [ ] 前端测试覆盖文本预览、截断、非文本下载、无权访问、空列表和刷新恢复。
+- [ ] 安全测试确认路径穿越、外部 URL、脚本化 SVG 和超大响应均被拒绝或限制。
+- [ ] 真实 E2E 验证 `mcp.call` 产生的报告 Artifact 可在插件内定位、预览或下载，且不暴露 Dagu 文件系统路径。
+
 ## 11. 阶段 8：RAGFlow 与 Knowledge 最终垂直切片
 
 状态：**暂停。RAGFlow、Knowledge 前端、adapter 和测试代码保留，但默认配置不装配、不启动、不注册 Knowledge MCP；真实租户质量门禁和 Knowledge Agent 接入不属于当前 Agent + Playbook 链路。**
@@ -593,7 +632,7 @@ rollback version
 当前完成 Dagu 与 Grafana MCP 基本链路后，按以下顺序继续，避免并行铺开后没有可运行链路：
 
 1. 保持当前基本 Playbook 执行能力及 OpenCode + DeepSeek 会话闭环稳定，持续运行本地真实冒烟与契约验证（本轮完成）。
-2. 补齐 Grafana 插件内的 Playbook 参数、retry、日志、Human Task、Approval 和 Artifact，消除对 Dagu UI 的产品依赖。
+2. 后续阶段补齐 Grafana 插件内的 Run/Step 日志和 Artifact 预览/媒体展示；Human Task、Approval、Artifact 列表/下载已完成，继续消除对 Dagu UI 的产品依赖。
 3. 使用真实 RAGFlow 租户与至少 30 份运维文档执行 Knowledge 质量门禁；代码链路、OpenCode/Dagu MCP 和前端已完成，Runbook 页面保持空态。
 4. 重构 Codex App Server 与 Control Plane HTTP 的启动时序后注册 Knowledge MCP，再统一其他已验收 MCP，补齐审批、重启恢复与双 Provider 合同测试，随后完成多用户隔离设计。
 5. 会话稳定后补齐 Canvas 与视觉 Artifact，再收口 Workbench、Approvals、Alerts 和 Audit 的真实 Gateway。
