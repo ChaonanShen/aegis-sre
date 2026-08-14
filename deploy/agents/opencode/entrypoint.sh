@@ -18,6 +18,9 @@ read_secret() {
 
 export DEEPSEEK_API_KEY="$(read_secret DEEPSEEK_API_KEY /run/secrets/deepseek-api-key)"
 export GRAFANA_MCP_TOKEN="$(read_secret GRAFANA_MCP_TOKEN /run/secrets/grafana-mcp-caller-token)"
+if [ -n "${KNOWLEDGE_MCP_URL:-}" ]; then
+  export KNOWLEDGE_MCP_TOKEN="$(read_secret KNOWLEDGE_MCP_TOKEN /run/secrets/knowledge-mcp-token)"
+fi
 export OPENCODE_SERVER_PASSWORD="$(read_secret OPENCODE_SERVER_PASSWORD /run/secrets/opencode-server-password)"
 export OPENCODE_SERVER_USERNAME=opencode
 
@@ -29,6 +32,12 @@ const fs = require('fs');
 const [source, target] = process.argv.slice(2);
 const config = JSON.parse(fs.readFileSync(source, 'utf8'));
 config.provider.deepseek.options = { ...config.provider.deepseek.options, apiKey: process.env.DEEPSEEK_API_KEY };
+if (process.env.KNOWLEDGE_MCP_URL) {
+  config.mcp['knowledge-read'] = {
+    type: 'remote', url: process.env.KNOWLEDGE_MCP_URL, oauth: false, enabled: true, timeout: 30000,
+    headers: { Authorization: 'Bearer {env:KNOWLEDGE_MCP_TOKEN}' },
+  };
+}
 fs.writeFileSync(target, JSON.stringify(config), { mode: 0o600 });
 NODE
 export OPENCODE_CONFIG="$runtime_config"

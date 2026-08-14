@@ -28,8 +28,21 @@ generate grafana-admin-password
 generate opencode-server-password
 generate_raw agent-id-key
 
+if [ "${AEGIS_INIT_KNOWLEDGE_SECRETS:-0}" = "1" ]; then
+  generate_raw knowledge-id-key
+  generate knowledge-mcp-token
+  generate ragflow-mysql-password
+  generate ragflow-minio-password
+  generate ragflow-redis-password
+fi
+
 if [ ! -s "$secret_dir/deepseek-api-key" ]; then
   echo "Missing $secret_dir/deepseek-api-key; write the DeepSeek API key to that file before local-up." >&2
+  exit 1
+fi
+
+if [ "${AEGIS_INIT_KNOWLEDGE_SECRETS:-0}" = "1" ] && [ ! -s "$secret_dir/ragflow-api-key" ]; then
+  echo "Missing $secret_dir/ragflow-api-key; create an API key in the RAGFlow account used by Aegis before knowledge-up." >&2
   exit 1
 fi
 

@@ -1,0 +1,163 @@
+services:
+  control-plane:
+    environment:
+      AEGIS_KNOWLEDGE_EMBEDDING_MODEL: BAAI/bge-small-en-v1.5@Builtin
+      AEGIS_KNOWLEDGE_ID_KEY_FILE: /run/secrets/knowledge-id-key
+      AEGIS_KNOWLEDGE_MCP_FOLDER_UIDS: ${AEGIS_KNOWLEDGE_MCP_FOLDER_UIDS:-infra,payment}
+      AEGIS_KNOWLEDGE_MCP_ORG_ID: "1"
+      AEGIS_KNOWLEDGE_MCP_TENANT_ID: default
+      AEGIS_KNOWLEDGE_MCP_TOKEN_FILE: /run/secrets/knowledge-mcp-token
+      AEGIS_KNOWLEDGE_MCP_USER_ID: agent:knowledge
+      AEGIS_RAGFLOW_API_KEY_FILE: /run/secrets/ragflow-api-key
+      AEGIS_RAGFLOW_TIMEOUT: 30s
+      AEGIS_RAGFLOW_URL: http://ragflow:9380
+    volumes:
+      - ./deploy/local/secrets/knowledge-id-key:/run/secrets/knowledge-id-key:ro
+      - ./deploy/local/secrets/knowledge-mcp-token:/run/secrets/knowledge-mcp-token:ro
+      - ./deploy/local/secrets/ragflow-api-key:/run/secrets/ragflow-api-key:ro
+    depends_on:
+      ragflow:
+        condition: service_healthy
+
+  opencode:
+    environment:
+      KNOWLEDGE_MCP_URL: http://control-plane:8080/mcp/knowledge
+    volumes:
+      - ./deploy/local/secrets/knowledge-mcp-token:/run/secrets/knowledge-mcp-token:ro
+    depends_on:
+      control-plane:
+        condition: service_started
+
+  dagu:
+    volumes:
+      - ./deploy/local/mcp-servers.knowledge.yaml:/etc/aegis/mcp-servers.yaml:ro
+      - ./deploy/local/secrets/knowledge-mcp-token:/run/secrets/knowledge-mcp-token:ro
+
+  ragflow:
+    build:
+      context: .
+      dockerfile: deploy/ragflow/Dockerfile
+    command: ["--init-model-provider-tables"]
+    environment:
+      COMPOSE_PROFILES: elasticsearch,tei-cpu
+      DOC_ENGINE: elasticsearch
+      DOC_BULK_SIZE: "2"
+      EMBEDDING_BATCH_SIZE: "8"
+      ES_HOST: ragflow-elasticsearch
+      MAX_CONTENT_LENGTH: "10485760"
+      MINIO_HOST: ragflow-minio
+      MYSQL_DBNAME: rag_flow
+      MYSQL_HOST: ragflow-mysql
+      REDIS_HOST: ragflow-valkey
+      REGISTER_ENABLED: "0"
+      TEI_HOST: ragflow-tei
+      TEI_MODEL: BAAI/bge-small-en-v1.5
+      TZ: Asia/Shanghai
+    volumes:
+      - ragflow-logs:/ragflow/logs
+      - ./deploy/local/secrets/ragflow-minio-password:/run/secrets/ragflow-minio-password:ro
+      - ./deploy/local/secrets/ragflow-mysql-password:/run/secrets/ragflow-mysql-password:ro
+      - ./deploy/local/secrets/ragflow-redis-password:/run/secrets/ragflow-redis-password:ro
+    depends_on:
+      ragflow-elasticsearch: { condition: service_healthy }
+      ragflow-minio: { condition: service_healthy }
+      ragflow-mysql: { condition: service_healthy }
+      ragflow-tei: { condition: service_healthy }
+      ragflow-valkey: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9380/api/v1/system/healthz"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 60s
+    restart: unless-stopped
+    networks: [aegis-app, aegis-knowledge]
+
+  ragflow-mysql:
+    image: mysql:8.0.39@sha256:ccb8f749bb5e59f9f8f03bf7282c7ef27a93a1814a24f0a8a926fb4e19b7fb97
+    environment:
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/ragflow-mysql-password
+    command: ["--max_connections=1000", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--default-authentication-plugin=mysql_native_password", "--binlog_expire_logs_seconds=604800"]
+    volumes:
+      - ragflow-mysql-data:/var/lib/mysql
+      - ./deploy/ragflow/init.sql:/docker-entrypoint-initdb.d/001-ragflow.sql:ro
+      - ./deploy/local/secrets/ragflow-mysql-password:/run/secrets/ragflow-mysql-password:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$$(cat /run/secrets/ragflow-mysql-password)"]
+      interval: 10s
+      timeout: 10s
+      retries: 40
+    restart: unless-stopped
+    networks: [aegis-knowledge]
+
+  ragflow-elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.3@sha256:2892d2363c3c12c5ed54c64faf89e3a19d633d8dd0d190d0bffe03035ff099b3
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms2g -Xmx2g
+      cluster.routing.allocation.disk.watermark.low: 5gb
+      cluster.routing.allocation.disk.watermark.high: 3gb
+      cluster.routing.allocation.disk.watermark.flood_stage: 2gb
+    volumes:
+      - ragflow-es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9200/_cluster/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 60
+    restart: unless-stopped
+    networks: [aegis-knowledge]
+
+  ragflow-minio:
+    image: pgsty/minio:RELEASE.2026-03-25T00-00-00Z@sha256:a72bf37c235a83a73890d2a46c5b36801fed61c335175e0396070bf84a8bbb98
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["export MINIO_ROOT_USER=rag_flow; export MINIO_ROOT_PASSWORD=$$(cat /run/secrets/ragflow-minio-password); exec minio server --console-address :9001 /data"]
+    volumes:
+      - ragflow-minio-data:/data
+      - ./deploy/local/secrets/ragflow-minio-password:/run/secrets/ragflow-minio-password:ro
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 10s
+      timeout: 10s
+      retries: 40
+    restart: unless-stopped
+    networks: [aegis-knowledge]
+
+  ragflow-valkey:
+    image: valkey/valkey:8.1.3@sha256:fea8b3e67b15729d4bb70589eb03367bab9ad1ee89c876f54327fc7c6e618571
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["exec valkey-server --requirepass \"$$(cat /run/secrets/ragflow-redis-password)\" --maxmemory 128mb --maxmemory-policy allkeys-lru"]
+    volumes:
+      - ragflow-valkey-data:/data
+      - ./deploy/local/secrets/ragflow-redis-password:/run/secrets/ragflow-redis-password:ro
+    healthcheck:
+      test: ["CMD-SHELL", "valkey-cli -a $$(cat /run/secrets/ragflow-redis-password) ping | grep PONG"]
+      interval: 10s
+      timeout: 10s
+      retries: 40
+    restart: unless-stopped
+    networks: [aegis-knowledge]
+
+  ragflow-tei:
+    image: infiniflow/text-embeddings-inference:cpu-1.8@sha256:ad4a00f5af757f7f323bdeb9e873313ed71225cf57d94658cbc9c6c17dc67d85
+    command: ["--model-id", "/data/BAAI/bge-small-en-v1.5", "--auto-truncate"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:80/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 40
+      start_period: 30s
+    restart: unless-stopped
+    networks: [aegis-knowledge]
+
+networks:
+  aegis-knowledge:
+    internal: true
+
+volumes:
+  ragflow-es-data:
+  ragflow-logs:
+  ragflow-minio-data:
+  ragflow-mysql-data:
+  ragflow-valkey-data:
