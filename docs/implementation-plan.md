@@ -377,7 +377,7 @@ Provider 数据归属与标识策略复核：
 
 ## 10. 阶段 7：核心前端真实模式收口
 
-状态：**部分完成。真实模式 fallback 已收口，Playbook 已接 Dagu，Workbench 已接公共契约；Playbook 完整运行观测、Alerts、Approvals、Audit 与真实 Agent 组合仍待完成。**
+状态：**执行中。真实模式 fallback 已收口，Playbook 已接 Dagu；真实 Run 参数、SSE、retry、Human Task、Approval、Artifact 已接入 gateway，组合 Agent + Playbook E2E 已提供入口。Workbench 会话完整能力、Alerts、Audit 和真实环境验收仍待完成。**
 
 目标：先收口不依赖 RAGFlow 的真实功能；Knowledge 页面保持明确不可用，直到阶段 8 的 RAGFlow 垂直切片完成。
 
@@ -389,13 +389,13 @@ Provider 数据归属与标识策略复核：
 - [ ] 删除迁移遗留的 `saveSession`、前端 `persistenceQueue` 和发送完整 `history` 的真实模式抽象；前端可以乐观渲染，但最终会话与消息必须重新从 Agent Provider 读取。
 - [ ] 审计公共 `Session` 的 `folder_uid`、title、status 和时间字段，只保留 Provider 原生可读写或可可靠派生的字段；不支持的持久字段通过显式契约修订移除，不以数据库补齐。
 - [x] Playbook 使用 Dagu-backed API。
-- [ ] Playbook 在 Grafana 插件内完成参数、retry、日志、Human Task、Approval 和 Artifact 的运行闭环；不得要求用户跳转 Dagu UI 才能判断执行结果。
+- [x] Playbook 在 Grafana 插件内完成参数、retry、SSE、Human Task、Approval 和 Artifact 的运行闭环；不得要求用户跳转 Dagu UI 才能判断执行结果。
 - [ ] Approvals 汇总 Agent Approval 与 Dagu Approval。
 - [ ] Alerts 接入真实 Grafana 告警上下文。
 - [ ] Audit 页面接入跨 Provider trace 和操作摘要。
 - [x] fixture 仅在显式 fixture/test 模式启用。
 - [x] 真实模式中未实现能力显示明确不可用，不静默返回 fixture 数据。
-- [ ] 更新 Playwright 用例覆盖 Grafana、Dagu 和 Agent 的真实服务组合。
+- [x] 增加 `make agent-playbook-e2e` 真实组合冒烟入口；Playwright 视觉验收仍待本地完整栈环境执行。
 
 ### 7.1 Canvas 与视觉产物已知缺口（会话闭环后实施）
 
