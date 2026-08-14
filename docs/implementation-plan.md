@@ -420,6 +420,23 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 - SSE 断线后优先从 Provider 会话快照恢复最终状态；只有 Provider 支持时才重放精确增量，否则明确终止旧流。
 - 页面卸载时会取消不再需要的请求和流。
 
+## 延后阶段：Playbook 高级运行观测与人工交互 UI
+
+状态：**延期，不阻塞当前 Agent → Playbook 主链路。** 基础参数、启动、取消、retry、SSE
+状态同步已接入；Human Task、Approval、Artifact 和日志的后端接口/gateway 保留，但当前
+页面暂不提供完整交互入口。
+
+后续必须完成：
+
+- Human Task 的表单 schema、输入校验、提交幂等和等待状态恢复。
+- Approval 的 approve/reject/rewind、风险说明、输入项和权限反馈。
+- Artifact 列表、文本预览、截断提示、下载和非文本媒体处理。
+- Run/Step 日志、SSE 断线重连、大小限制和 Provider 路径净化。
+- 刷新页面后恢复待处理任务、审批和 Artifact 状态。
+- Playwright 真实 Grafana + Dagu + Agent 组合验收。
+
+本阶段不得重新引入旧 dry-run gateway，也不得把 Dagu Provider 内部路径暴露到前端领域模型。
+
 ## 11. 阶段 8：RAGFlow 与 Knowledge 最终垂直切片
 
 状态：**暂停。RAGFlow、Knowledge 前端、adapter 和测试代码保留，但默认配置不装配、不启动、不注册 Knowledge MCP；真实租户质量门禁和 Knowledge Agent 接入不属于当前 Agent + Playbook 链路。**
