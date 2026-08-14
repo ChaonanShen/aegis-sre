@@ -57,7 +57,7 @@ describe('Control Plane Workbench gateway', () => {
     const gateway = createResourceWorkbenchGateway({ backendSrv });
     const events = await collect(
       gateway.streamMessage(
-        { clientTurnId: 'client-turn-1', sessionId: session.id, input: 'CPU', mentions: ['service:api'], history: [] },
+        { clientTurnId: 'client-turn-1', sessionId: session.id, input: 'CPU', mentions: ['service:api'] },
         new AbortController().signal
       )
     );
@@ -114,7 +114,7 @@ describe('Control Plane Workbench gateway', () => {
     const gateway = createResourceWorkbenchGateway({ backendSrv });
     const events = await collect(
       gateway.streamMessage(
-        { clientTurnId: 'client-turn-1', sessionId: session.id, input: 'restart', mentions: [], history: [] },
+        { clientTurnId: 'client-turn-1', sessionId: session.id, input: 'restart', mentions: [] },
         new AbortController().signal
       )
     );
@@ -139,7 +139,7 @@ describe('Control Plane Workbench gateway', () => {
     const gateway = createResourceWorkbenchGateway({ backendSrv });
     const iterator = gateway
       .streamMessage(
-        { clientTurnId: 'client-turn-1', sessionId: session.id, input: 'CPU', mentions: [], history: [] },
+        { clientTurnId: 'client-turn-1', sessionId: session.id, input: 'CPU', mentions: [] },
         new AbortController().signal
       )
       [Symbol.asyncIterator]();
@@ -159,7 +159,7 @@ describe('Control Plane Workbench gateway', () => {
     const controller = new AbortController();
     const iterator = gateway
       .streamMessage(
-        { clientTurnId: 'client-turn-1', sessionId: session.id, input: 'CPU', mentions: [], history: [] },
+        { clientTurnId: 'client-turn-1', sessionId: session.id, input: 'CPU', mentions: [] },
         controller.signal
       )
       [Symbol.asyncIterator]();

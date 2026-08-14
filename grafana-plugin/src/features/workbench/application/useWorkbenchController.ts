@@ -29,6 +29,7 @@ interface WorkbenchControllerOptions {
 interface FailedCommand {
   input: SendMessageInput;
   assistantMessageId: string;
+  previousMessageCount: number;
 }
 
 const maxBusyRetries = 3;
@@ -391,10 +392,10 @@ export function useWorkbenchController({
         if (runID !== streamRunRef.current || controller.signal.aborted) {
           return false;
         }
-        const previousMessageIDs = new Set(command.input.history.map(({ id }) => id));
+        const previousMessageCount = command.previousMessageCount;
         const committed = persisted.messages.some(
-          ({ id, role, streamStatus }) =>
-            !previousMessageIDs.has(id) && role === 'assistant' && streamStatus === 'complete'
+          ({ role, streamStatus }, index) =>
+            index >= previousMessageCount && role === 'assistant' && streamStatus === 'complete'
         );
         if (committed) {
           publishOpened(persisted);
@@ -604,13 +605,13 @@ export function useWorkbenchController({
       await runCommand(
         {
           assistantMessageId,
+          previousMessageCount: opened.messages.length,
           input: {
             clientTurnId,
             sessionId: opened.session.id,
             input: value,
             ...(activeFolder ? { activeFolder } : {}),
             mentions: userMessage.mentions ?? [],
-            history: opened.messages,
           },
         },
         current

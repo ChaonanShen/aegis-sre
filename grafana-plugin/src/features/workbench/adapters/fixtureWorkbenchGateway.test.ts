@@ -49,7 +49,6 @@ describe('createFixtureWorkbenchGateway', () => {
           sessionId: 'unbound',
           input: '查询 p95',
           mentions: [],
-          history: [],
         },
         new AbortController().signal
       )
@@ -69,7 +68,6 @@ describe('createFixtureWorkbenchGateway', () => {
           input: '创建一个 p99 panel',
           activeFolder: fixtureFolders[1],
           mentions: [],
-          history: [],
         },
         controller.signal
       )
@@ -92,7 +90,6 @@ describe('createFixtureWorkbenchGateway', () => {
           input: '/switch-folder search',
           activeFolder: fixtureFolders[3],
           mentions: [],
-          history: [],
         },
         new AbortController().signal
       )
@@ -148,7 +145,6 @@ describe('createFixtureWorkbenchGateway', () => {
           input: 'p95 latency',
           activeFolder: fixtureFolders[3],
           mentions: [],
-          history: [],
         },
         controller.signal
       )

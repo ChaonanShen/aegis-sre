@@ -111,7 +111,6 @@ export interface SendMessageInput {
   /** 真实链路当前允许没有 Folder 上下文。 */
   activeFolder?: Folder;
   mentions: string[];
-  history: WorkbenchMessage[];
 }
 
 export class ResourceRequestError extends Error {

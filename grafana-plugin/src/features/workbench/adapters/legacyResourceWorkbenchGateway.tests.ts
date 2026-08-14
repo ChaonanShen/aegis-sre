@@ -49,7 +49,6 @@ describe('createResourceWorkbenchGateway', () => {
           input: '最近 30 分钟 CPU',
           activeFolder: { uid: 'infra', title: 'Infra', permission: 'View', serviceCount: 0 },
           mentions: [],
-          history: [],
         },
         new AbortController().signal
       )
@@ -208,7 +207,6 @@ describe('createResourceWorkbenchGateway', () => {
           sessionId: 'session-1',
           input: '更新面板',
           mentions: [],
-          history: [],
         },
         new AbortController().signal
       )
@@ -284,7 +282,6 @@ describe('createResourceWorkbenchGateway', () => {
           sessionId: 'session-1',
           input: 'CPU',
           mentions: [],
-          history: [],
         },
         new AbortController().signal
       )
@@ -312,7 +309,6 @@ describe('createResourceWorkbenchGateway', () => {
           sessionId: 'session-1',
           input: 'CPU',
           mentions: [],
-          history: [],
         },
         new AbortController().signal
       )
@@ -342,7 +338,6 @@ describe('createResourceWorkbenchGateway', () => {
           sessionId: 'session-1',
           input: 'CPU',
           mentions: [],
-          history: [],
         },
         controller.signal
       )
