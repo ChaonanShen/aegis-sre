@@ -284,8 +284,9 @@ function toSessionSummary(session: ContractSession, messages: WorkbenchMessage[]
   return {
     id: session.id,
     title: session.title,
-    folderUid: session.folder_uid ?? '',
-    folderTitle: session.folder_uid ?? '未绑定 Folder',
+    // Folder 只属于请求授权上下文，不能从 Provider 会话投影成持久归属。
+    folderUid: '',
+    folderTitle: '未绑定 Folder',
     status: session.status === 'archived' ? 'archived' : 'active',
     visibility: 'private',
     updatedAt: session.updated_at,

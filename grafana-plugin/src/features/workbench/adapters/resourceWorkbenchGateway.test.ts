@@ -9,7 +9,7 @@ describe('Control Plane Workbench gateway', () => {
     const gateway = createResourceWorkbenchGateway({ backendSrv });
 
     await expect(gateway.listSessions()).resolves.toEqual([
-      expect.objectContaining({ id: session.id, title: session.title, status: 'active' }),
+      expect.objectContaining({ id: session.id, title: session.title, status: 'active', folderUid: '' }),
     ]);
   });
 
@@ -175,6 +175,7 @@ const session = {
   id: 'ses_0123456789',
   title: 'CPU',
   status: 'active',
+  folder_uid: 'must-not-be-projected',
   created_at: '2026-08-13T01:00:00Z',
   updated_at: '2026-08-13T01:01:00Z',
 };
