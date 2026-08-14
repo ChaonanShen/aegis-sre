@@ -2,11 +2,14 @@ package playbookmcp
 
 import (
 	"context"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/1024XEngineer/aegis-sre/internal/domain"
+	"github.com/1024XEngineer/aegis-sre/internal/mcpcall"
 	"github.com/1024XEngineer/aegis-sre/internal/ports"
 	"github.com/1024XEngineer/aegis-sre/internal/ports/contracttest"
 )
@@ -67,5 +70,29 @@ func TestPlaybookMCPToolsUseAuthorizedFolderAndStableRunID(t *testing.T) {
 func TestNewHandlerRejectsIncompleteConfiguration(t *testing.T) {
 	if _, err := NewHandler(&fakeProvider{}, Config{}); err == nil {
 		t.Fatal("incomplete Playbook MCP config must be rejected")
+	}
+}
+
+func TestPlaybookMCPUsesStreamableHTTPContract(t *testing.T) {
+	tokenFile := filepath.Join(t.TempDir(), "token")
+	if err := os.WriteFile(tokenFile, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	actor := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user", FolderUID: "ops"}
+	playbookID := domain.ID("pbk_" + domain.PlaybookScopeKey(actor) + "_abcdefgh")
+	fake := &fakeProvider{listed: []ports.PlaybookResource{{Ref: ports.PlaybookRef{ID: playbookID}, Name: "diagnose", Enabled: true}}}
+	handler, err := NewHandler(fake, Config{TokenFile: tokenFile, TenantID: "tenant", OrgID: "org", UserID: "user", FolderUIDs: []string{"ops"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	output, err := mcpcall.Call(context.Background(), "playbooks", mcpcall.ServerConfig{URL: server.URL, BearerTokenFile: tokenFile, ConnectTimeout: time.Second, HandshakeTimeout: time.Second, CallTimeout: time.Second, TotalTimeout: 2 * time.Second, MaxTextBytes: 4096, MaxStructured: 4096, MaxBinaryBytes: 4096}, "playbook.list", map[string]any{"folder_uid": "ops"}, t.TempDir(), mcpcall.RequestMetadata{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, ok := output.Result.(map[string]any)
+	if !ok || result["has_more"] != false {
+		t.Fatalf("MCP result = %#v", output.Result)
 	}
 }
