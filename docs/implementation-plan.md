@@ -312,7 +312,7 @@ Provider 数据归属与标识策略复核：
 
 ## 9. 阶段 6：Codex 与 OpenCode Agent Provider
 
-状态：**执行中。协议基线、标识策略和部分底层客户端已存在；先完成不依赖 Knowledge 的 Agent 核心会话闭环，只注册已验收的 Grafana Read 与 Dagu MCP。Knowledge MCP 在阶段 8 完成真实授权验收后再加入。**
+状态：**执行中。OpenCode + DeepSeek 的本地核心会话闭环已完成真实冒烟，当前只注册已验收的 Grafana Read MCP；Dagu MCP 与 Codex/OpenCode 的统一启用清单、审批续流和双 Provider 合同验收仍待完成。Knowledge MCP 在阶段 8 完成真实授权验收后再加入。**
 
 目标：Codex 作为默认 Provider，同时用 OpenCode 证明抽象没有泄漏。Grafana 插件的 Workbench 是唯一会话入口，不增加 Codex 或 OpenCode 独立聊天页面。Session、Turn、消息、审批和历史全部由 Agent Provider 持久化；Aegis 只提供无状态的公共契约、授权收敛、进程监管和协议适配。
 
@@ -564,9 +564,9 @@ rollback version
 
 当前完成 Dagu 与 Grafana MCP 基本链路后，按以下顺序继续，避免并行铺开后没有可运行链路：
 
-1. 保持当前基本 Playbook 执行能力稳定，补齐 readiness、鉴权、契约测试和可复现部署（本轮完成）。
-2. 由用户验收当前 Dagu/Grafana MCP 主链路，再补齐 Grafana 插件内的 Playbook 参数、retry、日志、Human Task、Approval 和 Artifact，消除对 Dagu UI 的产品依赖。
+1. 保持当前基本 Playbook 执行能力及 OpenCode + DeepSeek 会话闭环稳定，持续运行本地真实冒烟与契约验证（本轮完成）。
+2. 补齐 Grafana 插件内的 Playbook 参数、retry、日志、Human Task、Approval 和 Artifact，消除对 Dagu UI 的产品依赖。
 3. 部署 RAGFlow，完成 Knowledge Adapter、Knowledge MCP 和 Knowledge 前端；Runbook 页面保持空态，不在本阶段实现。
-4. 再接入 Codex，优先完成统一会话闭环；随后用最小 OpenCode Adapter 验证可替换性。
+4. 为 Codex 与 OpenCode 统一启用已验收的 MCP，补齐审批、重启恢复与双 Provider 合同测试，随后完成多用户隔离设计。
 5. 会话稳定后补齐 Canvas 与视觉 Artifact，再收口 Workbench、Approvals、Alerts 和 Audit 的真实 Gateway。
 6. 完成包含知识检索的黄金 E2E 场景，再进入 Runbook 产品设计、告警沉淀、Playbook 生成和代码分析等功能。
