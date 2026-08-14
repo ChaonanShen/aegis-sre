@@ -869,6 +869,34 @@
   color: var(--text-muted);
 }
 
+.playbook-run-interaction {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--orange);
+  background: var(--bg-secondary);
+}
+
+.playbook-run-interaction h3 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.playbook-run-interaction textarea {
+  min-height: 90px;
+  resize: vertical;
+  font: 11px/1.5 var(--font-mono);
+}
+
+.playbook-artifacts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
 @media (max-width: 1180px) {
   .playbook-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));

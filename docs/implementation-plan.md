@@ -262,15 +262,15 @@ Provider 数据归属与标识策略复核：
 - [x] 使用原生 Dagu YAML 作为编辑内容和事实来源。
 - [x] 迁移 Playbook DAG 可视化，不反向生成第二套 DSL。
 - [x] 实现真实 `PlaybookGateway`。
-- [ ] 展示 Run、Step、Human Task、Approval 和 Artifact（Run、Step 已接入；Human Task、Approval、Artifact 待补）。
+- [x] 展示 Run、Step、Human Task、Approval 和 Artifact（日志展示仍待补稳定契约）。
 - [x] 删除真实模式下的 Playbook fixture fallback。
 
-本轮明确只保证 Playbook 可以从 Grafana 插件基本执行，不把 Dagu UI 当作最终产品界面。当前插件仍缺少运行参数表单、retry 操作、Step 日志、Human Task、Approval、Artifact 预览/下载和更完整的失败诊断；这些能力后端契约已有部分基础，但前端尚未闭环，必须在阶段 7 补齐，不能把“Dagu UI 可查看”视为完成。
+本轮保证 Playbook 可以从 Grafana 插件执行并处理人工交互；不把 Dagu UI 当作最终产品界面。日志展示仍因缺少稳定的 provider-neutral API 暂缓，不能把 Provider 私有日志协议直接泄漏到前端。
 
 验收标准：
 
 - CRUD、validate、run、cancel、retry 可用。
-- Human Task 和 Approval 暂停后可以从插件恢复运行（本轮暂缓，保留为未完成验收项）。
+- Human Task 和 Approval 暂停后可以从插件恢复运行。
 - 四个并行 `mcp.call` 节点能通过 contract server 稳定完成并生成报告 Artifact。
 - 未在 allowlist 中的工具在连接前或调用前被明确拒绝。
 - Dagu 重启后仍能读取既有 DAG 和运行记录。
@@ -420,19 +420,19 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 - SSE 断线后优先从 Provider 会话快照恢复最终状态；只有 Provider 支持时才重放精确增量，否则明确终止旧流。
 - 页面卸载时会取消不再需要的请求和流。
 
-## 延后阶段：Playbook 高级运行观测与人工交互 UI
+## 后续阶段：Playbook 日志与高级运行观测
 
-状态：**延期，不阻塞当前 Agent → Playbook 主链路。** 基础参数、启动、取消、retry、SSE
-状态同步已接入；Human Task、Approval、Artifact 和日志的后端接口/gateway 保留，但当前
-页面暂不提供完整交互入口。
+状态：**部分完成，不阻塞当前 Agent → Playbook 主链路。** 基础参数、启动、取消、retry、SSE
+状态同步、Human Task、Approval、Artifact 列表和下载已接入；日志展示及 Artifact 文本预览仍待稳定的
+provider-neutral 契约。
 
 后续必须完成：
 
-- Human Task 的表单 schema、输入校验、提交幂等和等待状态恢复。
-- Approval 的 approve/reject/rewind、风险说明、输入项和权限反馈。
-- Artifact 列表、文本预览、截断提示、下载和非文本媒体处理。
-- Run/Step 日志、SSE 断线重连、大小限制和 Provider 路径净化。
-- 刷新页面后恢复待处理任务、审批和 Artifact 状态。
+- [x] Human Task 的 JSON 输入、提交幂等和等待状态恢复。
+- [x] Approval 的 approve/reject/rewind 和重复提交保护。
+- [x] Artifact 列表和下载入口；文本预览、截断提示和非文本媒体处理待补。
+- [ ] Run/Step 日志、SSE 断线重连、大小限制和 Provider 路径净化；先增加稳定端口和 OpenAPI 契约。
+- [x] 刷新页面后通过 Run 查询恢复待处理任务、审批和 Artifact 状态。
 - Playwright 真实 Grafana + Dagu + Agent 组合验收。
 
 本阶段不得重新引入旧 dry-run gateway，也不得把 Dagu Provider 内部路径暴露到前端领域模型。

@@ -49,7 +49,11 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
     const controller = new AbortController();
     const poll = async () => {
       try {
-        if (!gateway.streamRun) return;
+        if (!gateway.streamRun) {
+          const next = await gateway.getRun(activeRunId, controller.signal);
+          if (mounted.current) setRuns((current) => upsertRun(current, next));
+          return;
+        }
         for await (const next of gateway.streamRun(activeRunId, 0, controller.signal)) {
           if (!mounted.current) return;
           setRuns((current) => upsertRun(current, next));
@@ -110,7 +114,7 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
     setBusy(true);
     setError('');
     try {
-      const run = await gateway.startRun(playbookId, { parameters: values, idempotencyKey: `run-${crypto.randomUUID()}` });
+      const run = await gateway.startRun(playbookId, { ...(Object.keys(values).length ? { parameters: values } : {}), idempotencyKey: `run-${crypto.randomUUID()}` });
       if (mounted.current) {
         setRuns((current) => upsertRun(current, run));
       }
