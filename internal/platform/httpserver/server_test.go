@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
+	"github.com/1024XEngineer/aegis-sre/internal/ports/contracttest"
 )
 
 func TestHealthEndpoints(t *testing.T) {
@@ -78,6 +79,23 @@ func TestReadyProbesConfiguredPlaybookProvider(t *testing.T) {
 	}
 	if body.Capabilities[string(config.CapabilityPlaybook)] != "available" {
 		t.Fatalf("playbook status = %q", body.Capabilities[string(config.CapabilityPlaybook)])
+	}
+}
+
+func TestReadyProbesConnectedKnowledgeProvider(t *testing.T) {
+	cfg := config.Config{Endpoints: map[config.Capability]string{config.CapabilityKnowledge: "http://ragflow.internal"}}
+	server := New(cfg, nil, WithKnowledgeProvider(&contracttest.KnowledgeProvider{}, nil))
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/health/ready", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var body healthResponse
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Capabilities[string(config.CapabilityKnowledge)] != "available" {
+		t.Fatalf("knowledge status = %q", body.Capabilities[string(config.CapabilityKnowledge)])
 	}
 }
 

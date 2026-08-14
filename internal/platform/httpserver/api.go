@@ -49,6 +49,7 @@ func apiHandler(cfg config.Config, deps dependencies) http.Handler {
 	})
 	registerAgentHandlers(mux, deps.agents)
 	registerPlaybookHandlers(mux, deps.playbooks)
+	registerKnowledgeHandlers(mux, deps.knowledge, deps.knowledgeIDs)
 	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, request *http.Request) {
 		writeAPIProblem(w, request, http.StatusServiceUnavailable, "capability_unavailable", "capability is not configured", false)
 	})
@@ -99,6 +100,9 @@ func dependencyStatuses(ctx context.Context, cfg config.Config, deps dependencie
 	}
 	if deps.playbooks != nil {
 		statuses[config.CapabilityPlaybook] = probeDependency(ctx, deps.playbookHealth)
+	}
+	if deps.knowledge != nil {
+		statuses[config.CapabilityKnowledge] = probeDependency(ctx, deps.knowledgeHealth)
 	}
 	return statuses
 }

@@ -96,6 +96,11 @@ type KnowledgeDocumentDownload struct {
 	Content   io.ReadCloser
 }
 
+type KnowledgeIDGenerator interface {
+	CollectionID(domain.ActorContext, string) (domain.ID, error)
+	DocumentID(domain.ID, string) (domain.ID, error)
+}
+
 type KnowledgeProvider interface {
 	Check(context.Context) error
 	ListCollections(context.Context, domain.ActorContext, string, domain.PageRequest) (domain.Page[KnowledgeCollection], error)

@@ -15,7 +15,9 @@ import (
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/agentscope"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/codex"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/dagu"
+	"github.com/1024XEngineer/aegis-sre/internal/adapters/knowledgeid"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/opencode"
+	"github.com/1024XEngineer/aegis-sre/internal/adapters/ragflow"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/httpserver"
 	"github.com/1024XEngineer/aegis-sre/internal/ports"
@@ -110,6 +112,34 @@ func run(logger *slog.Logger) error {
 			return err
 		}
 		serverOptions = append(serverOptions, httpserver.WithPlaybookProvider(provider))
+	}
+	if endpoint := cfg.Endpoints[config.CapabilityKnowledge]; endpoint != "" {
+		keyContent, err := os.ReadFile(cfg.KnowledgeIDKeyFile)
+		if err != nil {
+			return errors.New("read knowledge ID key")
+		}
+		key, err := knowledgeid.DecodeKey(keyContent)
+		if err != nil {
+			return err
+		}
+		ids, err := knowledgeid.New(key)
+		if err != nil {
+			return err
+		}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.ResponseHeaderTimeout = cfg.RAGFlowTimeout
+		client, err := ragflow.NewClient(endpoint, func() (string, error) {
+			content, readErr := os.ReadFile(cfg.RAGFlowAPIKeyFile)
+			return strings.TrimSpace(string(content)), readErr
+		}, ragflow.ClientOptions{HTTPClient: &http.Client{Transport: transport, Timeout: cfg.RAGFlowTimeout}, ReadAttempts: 2})
+		if err != nil {
+			return err
+		}
+		provider, err := ragflow.NewProvider(client, ids, cfg.KnowledgeEmbedding)
+		if err != nil {
+			return err
+		}
+		serverOptions = append(serverOptions, httpserver.WithKnowledgeProvider(provider, ids))
 	}
 	server := httpserver.New(cfg, logger, serverOptions...)
 

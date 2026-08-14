@@ -25,10 +25,13 @@ type healthResponse struct {
 }
 
 type dependencies struct {
-	agents         ports.AgentProvider
-	agentHealth    func(context.Context) error
-	playbooks      ports.PlaybookProvider
-	playbookHealth func(context.Context) error
+	agents          ports.AgentProvider
+	agentHealth     func(context.Context) error
+	playbooks       ports.PlaybookProvider
+	playbookHealth  func(context.Context) error
+	knowledge       ports.KnowledgeProvider
+	knowledgeIDs    ports.KnowledgeIDGenerator
+	knowledgeHealth func(context.Context) error
 }
 
 func WithAgentProvider(provider ports.AgentProvider) Option {
@@ -47,6 +50,16 @@ func WithPlaybookProvider(provider ports.PlaybookProvider) Option {
 		deps.playbooks = provider
 		if checker, ok := provider.(interface{ Check(context.Context) error }); ok {
 			deps.playbookHealth = checker.Check
+		}
+	}
+}
+
+func WithKnowledgeProvider(provider ports.KnowledgeProvider, ids ports.KnowledgeIDGenerator) Option {
+	return func(deps *dependencies) {
+		deps.knowledge = provider
+		deps.knowledgeIDs = ids
+		if provider != nil {
+			deps.knowledgeHealth = provider.Check
 		}
 	}
 }
@@ -95,6 +108,8 @@ func dependencyConfigured(name config.Capability, cfg config.Config, deps depend
 		return deps.agents != nil || cfg.Endpoints[name] != ""
 	case config.CapabilityPlaybook:
 		return deps.playbooks != nil || cfg.Endpoints[name] != ""
+	case config.CapabilityKnowledge:
+		return deps.knowledge != nil || cfg.Endpoints[name] != ""
 	default:
 		return cfg.Endpoints[name] != ""
 	}
