@@ -30,6 +30,10 @@ const (
 	EnvDaguBasicUser        = "AEGIS_DAGU_BASIC_AUTH_USERNAME"
 	EnvDaguBasicPass        = "AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE"
 	EnvRAGFlowURL           = "AEGIS_RAGFLOW_URL"
+	EnvRAGFlowAPIKeyFile    = "AEGIS_RAGFLOW_API_KEY_FILE"
+	EnvKnowledgeIDKeyFile   = "AEGIS_KNOWLEDGE_ID_KEY_FILE"
+	EnvKnowledgeEmbedding   = "AEGIS_KNOWLEDGE_EMBEDDING_MODEL"
+	EnvRAGFlowTimeout       = "AEGIS_RAGFLOW_TIMEOUT"
 	EnvGrafanaMCPURL        = "AEGIS_GRAFANA_MCP_URL"
 	EnvPluginTokenFile      = "AEGIS_PLUGIN_TOKEN_FILE"
 )
@@ -63,6 +67,10 @@ type Config struct {
 	CodexInitTimeout     time.Duration
 	OpenCodeUsername     string
 	OpenCodePasswordFile string
+	RAGFlowAPIKeyFile    string
+	KnowledgeIDKeyFile   string
+	KnowledgeEmbedding   string
+	RAGFlowTimeout       time.Duration
 }
 
 func Load(getenv func(string) string) (Config, error) {
@@ -205,7 +213,35 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("%w: %s is required when %s is set", ErrInvalid, EnvAgentProvider, EnvAgentURL)
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile}, nil
+	ragFlowAPIKeyFile := strings.TrimSpace(getenv(EnvRAGFlowAPIKeyFile))
+	knowledgeIDKeyFile := strings.TrimSpace(getenv(EnvKnowledgeIDKeyFile))
+	knowledgeEmbedding := strings.TrimSpace(getenv(EnvKnowledgeEmbedding))
+	ragFlowTimeout := 30 * time.Second
+	if raw := strings.TrimSpace(getenv(EnvRAGFlowTimeout)); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed <= 0 {
+			return Config{}, fmt.Errorf("%w: %s must be a positive duration", ErrInvalid, EnvRAGFlowTimeout)
+		}
+		ragFlowTimeout = parsed
+	}
+	if endpoints[CapabilityKnowledge] != "" {
+		if err := requireRegularFile(ragFlowAPIKeyFile, EnvRAGFlowAPIKeyFile); err != nil {
+			return Config{}, err
+		}
+		if err := requireRegularFile(knowledgeIDKeyFile, EnvKnowledgeIDKeyFile); err != nil {
+			return Config{}, err
+		}
+		if knowledgeEmbedding == "" || len(knowledgeEmbedding) > 255 || !strings.Contains(knowledgeEmbedding, "@") || strings.ContainsAny(knowledgeEmbedding, "\r\n\x00") {
+			return Config{}, fmt.Errorf("%w: %s must be a model_name@model_factory value", ErrInvalid, EnvKnowledgeEmbedding)
+		}
+		if pluginToken == "" {
+			return Config{}, fmt.Errorf("%w: %s is required when Knowledge is configured", ErrInvalid, EnvPluginTokenFile)
+		}
+	} else if ragFlowAPIKeyFile != "" || knowledgeIDKeyFile != "" || knowledgeEmbedding != "" {
+		return Config{}, fmt.Errorf("%w: %s is required when Knowledge credentials are configured", ErrInvalid, EnvRAGFlowURL)
+	}
+
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, RAGFlowAPIKeyFile: ragFlowAPIKeyFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, RAGFlowTimeout: ragFlowTimeout}, nil
 }
 
 func validAgentConfigValue(value string) bool {

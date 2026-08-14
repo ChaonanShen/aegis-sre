@@ -141,6 +141,56 @@ func TestLoadAcceptsAuthenticatedOpenCodeProvider(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsCompleteKnowledgeConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	apiKey := filepath.Join(directory, "ragflow-api-key")
+	idKey := filepath.Join(directory, "knowledge-id-key")
+	pluginToken := filepath.Join(directory, "plugin-token")
+	for path, value := range map[string]string{apiKey: "ragflow-secret", idKey: "01234567890123456789012345678901", pluginToken: "plugin-secret"} {
+		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	values := map[string]string{
+		EnvRAGFlowURL: "https://ragflow.internal", EnvRAGFlowAPIKeyFile: apiKey, EnvKnowledgeIDKeyFile: idKey,
+		EnvKnowledgeEmbedding: "Qwen/Qwen3-Embedding-0.6B@OpenAI-API-Compatible", EnvRAGFlowTimeout: "45s", EnvPluginTokenFile: pluginToken,
+	}
+	cfg, err := Load(func(key string) string { return values[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Endpoints[CapabilityKnowledge] != values[EnvRAGFlowURL] || cfg.RAGFlowAPIKeyFile != apiKey || cfg.KnowledgeIDKeyFile != idKey || cfg.RAGFlowTimeout != 45*time.Second || cfg.PluginToken != "plugin-secret" {
+		t.Fatalf("config = %+v", cfg)
+	}
+}
+
+func TestLoadRejectsIncompleteKnowledgeConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	apiKey := filepath.Join(directory, "ragflow-api-key")
+	idKey := filepath.Join(directory, "knowledge-id-key")
+	pluginToken := filepath.Join(directory, "plugin-token")
+	for path, value := range map[string]string{apiKey: "ragflow-secret", idKey: "01234567890123456789012345678901", pluginToken: "plugin-secret"} {
+		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := map[string]string{EnvRAGFlowURL: "https://ragflow.internal", EnvRAGFlowAPIKeyFile: apiKey, EnvKnowledgeIDKeyFile: idKey, EnvKnowledgeEmbedding: "model@factory", EnvPluginTokenFile: pluginToken}
+	tests := map[string]map[string]string{
+		"missing API key":     mergeAgentConfig(base, map[string]string{EnvRAGFlowAPIKeyFile: ""}),
+		"missing ID key":      mergeAgentConfig(base, map[string]string{EnvKnowledgeIDKeyFile: ""}),
+		"invalid embedding":   mergeAgentConfig(base, map[string]string{EnvKnowledgeEmbedding: "model-without-factory"}),
+		"missing proxy token": mergeAgentConfig(base, map[string]string{EnvPluginTokenFile: ""}),
+		"credentials no URL":  {EnvRAGFlowAPIKeyFile: apiKey},
+	}
+	for name, values := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(func(key string) string { return values[key] }); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+}
+
 func mergeAgentConfig(base, override map[string]string) map[string]string {
 	result := make(map[string]string, len(base)+len(override))
 	for key, value := range base {

@@ -24,6 +24,17 @@ func New(key []byte) (*Codec, error) {
 	return &Codec{key: append([]byte(nil), key...)}, nil
 }
 
+func DecodeKey(value []byte) ([]byte, error) {
+	trimmed := strings.TrimSpace(string(value))
+	if decoded, err := base64.RawURLEncoding.DecodeString(trimmed); err == nil && len(decoded) == 32 {
+		return decoded, nil
+	}
+	if len(value) == 32 {
+		return append([]byte(nil), value...), nil
+	}
+	return nil, errors.New("knowledge ID key must be 32 raw bytes or base64url without padding")
+}
+
 // CollectionID 把可信 Actor、Folder 和幂等键绑定到公开 ID；任一授权范围变化都会产生不同 ID。
 func (codec *Codec) CollectionID(actor domain.ActorContext, idempotencyKey string) (domain.ID, error) {
 	if err := actor.Validate(); err != nil {

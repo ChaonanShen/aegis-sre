@@ -1,6 +1,7 @@
 package knowledgeid
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 
@@ -94,5 +95,18 @@ func TestChunkIDIsStableAndDoesNotExposeProviderID(t *testing.T) {
 	second, _ := codec.ChunkID(documentID, "ragflow-internal-chunk")
 	if first != second || !strings.HasPrefix(first, "chk_") || strings.Contains(first, "ragflow") {
 		t.Fatalf("unexpected chunk ID %q / %q", first, second)
+	}
+}
+
+func TestDecodeKeyAcceptsRawAndBase64URL(t *testing.T) {
+	raw := []byte("01234567890123456789012345678901")
+	for _, encoded := range [][]byte{raw, []byte(base64.RawURLEncoding.EncodeToString(raw) + "\n")} {
+		decoded, err := DecodeKey(encoded)
+		if err != nil || string(decoded) != string(raw) {
+			t.Fatalf("decoded=%q error=%v", decoded, err)
+		}
+	}
+	if _, err := DecodeKey([]byte("short")); err == nil {
+		t.Fatal("short key must be rejected")
 	}
 }
