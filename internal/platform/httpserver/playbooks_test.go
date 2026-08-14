@@ -93,6 +93,18 @@ func (fake *playbookHTTPFake) StreamRun(_ context.Context, _ domain.ActorContext
 	return &contracttest.EventStream{Events: []domain.Event{{ID: "evt_abcdefgh", Type: domain.EventRunUpdated, RunID: ref.ID, Sequence: after + 1, OccurredAt: time.Date(2026, 8, 13, 1, 0, 0, 0, time.UTC), Payload: json.RawMessage(`{"status":"running"}`)}}}, fake.err
 }
 
+func (fake *playbookHTTPFake) ListArtifacts(_ context.Context, _ domain.ActorContext, _ ports.PlaybookRunRef) ([]ports.ArtifactRef, error) {
+	return []ports.ArtifactRef{{Path: "reports/result.txt", Name: "result.txt", MediaType: "text/plain", Size: 12}}, fake.err
+}
+
+func (fake *playbookHTTPFake) PreviewArtifact(_ context.Context, _ domain.ActorContext, _ ports.PlaybookRunRef, _ string) (ports.ArtifactPreview, error) {
+	return ports.ArtifactPreview{
+		ArtifactRef: ports.ArtifactRef{Path: "reports/result.txt", Name: "result.txt", MediaType: "text/plain", Size: 12},
+		Text:        "result text",
+		Truncated:   false,
+	}, fake.err
+}
+
 func TestCreatePlaybookUsesStablePublicIDAndNativeYAML(t *testing.T) {
 	t.Parallel()
 	fake := &playbookHTTPFake{}
@@ -181,6 +193,24 @@ func TestRunEventStreamResumesAfterSequence(t *testing.T) {
 	handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh/events?after_sequence=7", ""))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "id: 8") || !strings.Contains(response.Body.String(), `"run_id":"run_abcdefgh"`) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestPlaybookArtifactsUsePublicContractFields(t *testing.T) {
+	t.Parallel()
+	fake := &playbookHTTPFake{}
+	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
+
+	listResponse := httptest.NewRecorder()
+	handler.ServeHTTP(listResponse, actorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh/artifacts", ""))
+	if listResponse.Code != http.StatusOK || !strings.Contains(listResponse.Body.String(), `"path":"reports/result.txt"`) || strings.Contains(listResponse.Body.String(), `"Path"`) {
+		t.Fatalf("list status = %d, body = %s", listResponse.Code, listResponse.Body.String())
+	}
+
+	previewResponse := httptest.NewRecorder()
+	handler.ServeHTTP(previewResponse, actorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh/artifacts/preview?path=reports%2Fresult.txt", ""))
+	if previewResponse.Code != http.StatusOK || !strings.Contains(previewResponse.Body.String(), `"text":"result text"`) || strings.Contains(previewResponse.Body.String(), `"Text"`) {
+		t.Fatalf("preview status = %d, body = %s", previewResponse.Code, previewResponse.Body.String())
 	}
 }
 

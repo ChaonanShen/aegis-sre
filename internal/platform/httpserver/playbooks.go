@@ -303,7 +303,11 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if handleProviderError(w, request, err) {
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"items": items})
+		projected := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			projected = append(projected, artifactJSON(item))
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"items": projected})
 	})
 	mux.HandleFunc("GET /api/v1/runs/{run_id}/artifacts/preview", func(w http.ResponseWriter, request *http.Request) {
 		actor, state, ok := scopedRunState(w, request, provider, false)
@@ -314,7 +318,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if handleProviderError(w, request, err) {
 			return
 		}
-		writeJSON(w, http.StatusOK, preview)
+		writeJSON(w, http.StatusOK, artifactPreviewJSON(preview))
 	})
 	mux.HandleFunc("GET /api/v1/runs/{run_id}/artifacts/download", func(w http.ResponseWriter, request *http.Request) {
 		actor, state, ok := scopedRunState(w, request, provider, false)
@@ -518,6 +522,22 @@ func runJSON(state ports.PlaybookRunState) map[string]any {
 		value["ended_at"] = state.FinishedAt
 		value["updated_at"] = state.FinishedAt
 	}
+	return value
+}
+
+func artifactJSON(artifact ports.ArtifactRef) map[string]any {
+	return map[string]any{
+		"name":       artifact.Name,
+		"path":       artifact.Path,
+		"media_type": artifact.MediaType,
+		"size":       artifact.Size,
+	}
+}
+
+func artifactPreviewJSON(preview ports.ArtifactPreview) map[string]any {
+	value := artifactJSON(preview.ArtifactRef)
+	value["text"] = preview.Text
+	value["truncated"] = preview.Truncated
 	return value
 }
 
