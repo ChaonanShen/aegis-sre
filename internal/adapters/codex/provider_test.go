@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/agentid"
 	"github.com/1024XEngineer/aegis-sre/internal/domain"
@@ -23,15 +26,21 @@ type rpcCall struct {
 }
 
 type rpcFake struct {
-	mu        sync.Mutex
-	responses map[string][]json.RawMessage
-	errors    map[string]error
-	calls     []rpcCall
-	done      chan struct{}
+	mu             sync.Mutex
+	responses      map[string][]json.RawMessage
+	errors         map[string]error
+	calls          []rpcCall
+	done           chan struct{}
+	notifications  chan Notification
+	requests       chan Request
+	replies        []map[string]any
+	replyErrors    []wireError
+	beforeResponse map[string]func()
+	stopOnce       sync.Once
 }
 
 func newRPCFake() *rpcFake {
-	return &rpcFake{responses: map[string][]json.RawMessage{}, errors: map[string]error{}, done: make(chan struct{})}
+	return &rpcFake{responses: map[string][]json.RawMessage{}, errors: map[string]error{}, done: make(chan struct{}), notifications: make(chan Notification, 32), requests: make(chan Request, 8), beforeResponse: map[string]func(){}}
 }
 
 func (fake *rpcFake) Call(_ context.Context, method string, params, target any) error {
@@ -44,6 +53,9 @@ func (fake *rpcFake) Call(_ context.Context, method string, params, target any) 
 	if err := fake.errors[method]; err != nil {
 		return err
 	}
+	if callback := fake.beforeResponse[method]; callback != nil {
+		callback()
+	}
 	queue := fake.responses[method]
 	if len(queue) == 0 {
 		return nil
@@ -52,7 +64,25 @@ func (fake *rpcFake) Call(_ context.Context, method string, params, target any) 
 	return json.Unmarshal(queue[0], target)
 }
 
-func (fake *rpcFake) Done() <-chan struct{} { return fake.done }
+func (fake *rpcFake) Done() <-chan struct{}              { return fake.done }
+func (fake *rpcFake) Notifications() <-chan Notification { return fake.notifications }
+func (fake *rpcFake) Requests() <-chan Request           { return fake.requests }
+func (fake *rpcFake) Reply(_ Request, result any) error {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	encoded, _ := json.Marshal(result)
+	var value map[string]any
+	_ = json.Unmarshal(encoded, &value)
+	fake.replies = append(fake.replies, value)
+	return fake.errors["reply"]
+}
+func (fake *rpcFake) ReplyError(_ Request, code int, message string) error {
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	fake.replyErrors = append(fake.replyErrors, wireError{Code: code, Message: message})
+	return nil
+}
+func (fake *rpcFake) stop() { fake.stopOnce.Do(func() { close(fake.done) }) }
 
 func (fake *rpcFake) enqueue(method, response string) {
 	fake.responses[method] = append(fake.responses[method], json.RawMessage(response))
@@ -68,6 +98,7 @@ func newCodexProvider(t *testing.T, fake *rpcFake) (*Provider, *agentid.Codec) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(fake.stop)
 	return provider, codec
 }
 
@@ -206,8 +237,91 @@ func TestProviderHealthTracksTransportLifetime(t *testing.T) {
 	if err := provider.Check(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	close(fake.done)
+	fake.stop()
 	if err := provider.Check(context.Background()); err == nil {
 		t.Fatal("closed transport reported healthy")
+	}
+}
+
+func TestProviderStartsTurnWithoutDroppingEarlyNotificationsAndCancelsExplicitly(t *testing.T) {
+	t.Parallel()
+	fake := newRPCFake()
+	fake.enqueue("thread/resume", `{"thread":`+codexThreadJSON("Turn", "idle", `[]`)+`}`)
+	fake.enqueue("turn/start", `{"turn":{"id":"`+turnUUID+`","status":"inProgress","items":[]}}`)
+	fake.enqueue("turn/interrupt", `{}`)
+	fake.beforeResponse["turn/start"] = func() {
+		fake.notifications <- Notification{Method: "item/agentMessage/delta", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turnId":"` + turnUUID + `","itemId":"agent-item","delta":"hello"}`)}
+	}
+	provider, codec := newCodexProvider(t, fake)
+	sessionID, _ := codec.EncodeUUID(threadUUID)
+	turn, stream, err := provider.StartTurn(context.Background(), domain.ActorContext{}, ports.AgentSessionRef{ID: sessionID}, ports.StartTurnInput{Message: "hello", OperationID: "not-native-idempotency"})
+	if err != nil || stream == nil || !turn.ID.Valid() {
+		t.Fatalf("turn = %#v, stream = %T, err = %v", turn, stream, err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	event, err := stream.Next(ctx)
+	if err != nil || event.Type != domain.EventMessageDelta || event.Sequence != 1 || string(event.Payload) != `{"delta":"hello"}` || event.SessionID != sessionID || event.TurnID != turn.ID {
+		t.Fatalf("event = %#v, err = %v", event, err)
+	}
+	fake.notifications <- Notification{Method: "turn/completed", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turn":{"id":"` + turnUUID + `","status":"completed","items":[]}}`)}
+	terminal, err := stream.Next(ctx)
+	if err != nil || terminal.Type != domain.EventTurnCompleted || terminal.Sequence != 2 || !strings.Contains(string(terminal.Payload), `"succeeded"`) {
+		t.Fatalf("terminal = %#v, err = %v", terminal, err)
+	}
+	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("terminal stream error = %v", err)
+	}
+	if err := provider.CancelTurn(context.Background(), domain.ActorContext{}, ports.AgentSessionRef{ID: sessionID}, turn); err != nil {
+		t.Fatal(err)
+	}
+	last := fake.calls[len(fake.calls)-1]
+	if last.method != "turn/interrupt" || last.params["threadId"] != threadUUID || last.params["turnId"] != turnUUID {
+		t.Fatalf("interrupt call = %#v", last)
+	}
+}
+
+func TestProviderPausesForApprovalAndRegistersContinuationBeforeReply(t *testing.T) {
+	t.Parallel()
+	fake := newRPCFake()
+	fake.enqueue("thread/resume", `{"thread":`+codexThreadJSON("Approval", "idle", `[]`)+`}`)
+	fake.enqueue("turn/start", `{"turn":{"id":"`+turnUUID+`","status":"inProgress","items":[]}}`)
+	provider, codec := newCodexProvider(t, fake)
+	sessionID, _ := codec.EncodeUUID(threadUUID)
+	_, initial, err := provider.StartTurn(context.Background(), domain.ActorContext{}, ports.AgentSessionRef{ID: sessionID}, ports.StartTurnInput{Message: "deploy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.requests <- Request{ID: json.RawMessage(`"approval-rpc-1"`), Method: "item/commandExecution/requestApproval", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turnId":"` + turnUUID + `","itemId":"command-item","command":"kubectl rollout restart","reason":"requires write"}`)}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	requested, err := initial.Next(ctx)
+	if err != nil || requested.Type != domain.EventApprovalRequested {
+		t.Fatalf("requested = %#v, err = %v", requested, err)
+	}
+	var payload struct {
+		ApprovalID domain.ID `json:"approval_id"`
+	}
+	if json.Unmarshal(requested.Payload, &payload) != nil || !payload.ApprovalID.Valid() {
+		t.Fatalf("payload = %s", requested.Payload)
+	}
+	if _, err := initial.Next(ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("approval must pause initial stream: %v", err)
+	}
+	continuation, err := provider.ResolveApproval(context.Background(), domain.ActorContext{}, ports.AgentSessionRef{ID: sessionID}, ports.ApprovalDecision{ApprovalID: payload.ApprovalID, Decision: ports.ApprovalApproved, Reason: "approved by operator"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolved, err := continuation.Next(ctx)
+	if err != nil || resolved.Type != domain.EventApprovalResolved || !strings.Contains(string(resolved.Payload), `"approved"`) {
+		t.Fatalf("resolved = %#v, err = %v", resolved, err)
+	}
+	if len(fake.replies) != 1 || fake.replies[0]["decision"] != "accept" {
+		t.Fatalf("replies = %#v", fake.replies)
+	}
+	fake.notifications <- Notification{Method: "turn/completed", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turn":{"id":"` + turnUUID + `","status":"interrupted","items":[]}}`)}
+	terminal, err := continuation.Next(ctx)
+	if err != nil || terminal.Type != domain.EventTurnCompleted || terminal.Sequence != 2 || !strings.Contains(string(terminal.Payload), `"interrupted"`) {
+		t.Fatalf("terminal = %#v, err = %v", terminal, err)
 	}
 }

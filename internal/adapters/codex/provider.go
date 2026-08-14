@@ -15,6 +15,10 @@ import (
 
 type rpcTransport interface {
 	Call(context.Context, string, any, any) error
+	Notifications() <-chan Notification
+	Requests() <-chan Request
+	Reply(Request, any) error
+	ReplyError(Request, int, string) error
 	Done() <-chan struct{}
 }
 
@@ -22,6 +26,7 @@ type Provider struct {
 	transport rpcTransport
 	codec     *agentid.Codec
 	cwd       string
+	hub       *eventHub
 }
 
 func NewProvider(transport rpcTransport, codec *agentid.Codec, cwd string) (*Provider, error) {
@@ -31,7 +36,10 @@ func NewProvider(transport rpcTransport, codec *agentid.Codec, cwd string) (*Pro
 	if cwd == "" || !filepath.IsAbs(cwd) {
 		return nil, errors.New("Codex working directory must be absolute")
 	}
-	return &Provider{transport: transport, codec: codec, cwd: cwd}, nil
+	provider := &Provider{transport: transport, codec: codec, cwd: cwd}
+	provider.hub = newEventHub(provider)
+	go provider.hub.run()
+	return provider, nil
 }
 
 func (provider *Provider) Check(context.Context) error {
@@ -165,16 +173,56 @@ func (provider *Provider) DeleteSession(ctx context.Context, _ domain.ActorConte
 	return nil
 }
 
-func (provider *Provider) StartTurn(context.Context, domain.ActorContext, ports.AgentSessionRef, ports.StartTurnInput) (ports.AgentTurnRef, ports.EventStream, error) {
-	return ports.AgentTurnRef{}, nil, capabilityUnavailable("Codex turn streaming is not connected")
+func (provider *Provider) StartTurn(ctx context.Context, _ domain.ActorContext, ref ports.AgentSessionRef, input ports.StartTurnInput) (ports.AgentTurnRef, ports.EventStream, error) {
+	threadID, err := provider.decodeSessionRef(ref)
+	if err != nil {
+		return ports.AgentTurnRef{}, nil, invalidAgentArgument(err)
+	}
+	var resumed struct {
+		Thread codexThread `json:"thread"`
+	}
+	if err := provider.transport.Call(ctx, "thread/resume", map[string]any{"threadId": threadID, "cwd": provider.cwd}, &resumed); err != nil {
+		return ports.AgentTurnRef{}, nil, providerMutationError(err)
+	}
+	var response struct {
+		Turn codexTurn `json:"turn"`
+	}
+	params := map[string]any{"threadId": threadID, "input": []map[string]any{{"type": "text", "text": input.Message}}}
+	if err := provider.transport.Call(ctx, "turn/start", params, &response); err != nil {
+		return ports.AgentTurnRef{}, nil, providerMutationError(err)
+	}
+	turnID, err := provider.codec.EncodeTurnUUID(response.Turn.ID)
+	if err != nil {
+		return ports.AgentTurnRef{}, nil, providerResultError(err)
+	}
+	stream, err := provider.hub.register(threadID, response.Turn.ID)
+	if err != nil {
+		return ports.AgentTurnRef{}, nil, err
+	}
+	return ports.AgentTurnRef{ID: turnID}, stream, nil
 }
 
-func (provider *Provider) CancelTurn(context.Context, domain.ActorContext, ports.AgentSessionRef, ports.AgentTurnRef) error {
-	return capabilityUnavailable("Codex turn cancellation is not connected")
+func (provider *Provider) CancelTurn(ctx context.Context, _ domain.ActorContext, session ports.AgentSessionRef, turn ports.AgentTurnRef) error {
+	threadID, err := provider.decodeSessionRef(session)
+	if err != nil {
+		return invalidAgentArgument(err)
+	}
+	turnID, err := provider.codec.DecodeTurnUUID(turn.ID)
+	if err != nil {
+		return invalidAgentArgument(err)
+	}
+	if err := provider.transport.Call(ctx, "turn/interrupt", map[string]any{"threadId": threadID, "turnId": turnID}, &struct{}{}); err != nil {
+		return providerMutationError(err)
+	}
+	return nil
 }
 
-func (provider *Provider) ResolveApproval(context.Context, domain.ActorContext, ports.AgentSessionRef, ports.ApprovalDecision) (ports.EventStream, error) {
-	return nil, capabilityUnavailable("Codex approvals are not connected")
+func (provider *Provider) ResolveApproval(_ context.Context, _ domain.ActorContext, session ports.AgentSessionRef, decision ports.ApprovalDecision) (ports.EventStream, error) {
+	threadID, err := provider.decodeSessionRef(session)
+	if err != nil {
+		return nil, invalidAgentArgument(err)
+	}
+	return provider.hub.resolveApproval(threadID, decision)
 }
 
 type codexThreadPage struct {
