@@ -318,16 +318,16 @@ Provider 数据归属与标识策略复核：
 
 ### 6.0 单一会话入口与实现顺序
 
-- [ ] 前端只使用 Aegis `Session / Turn / Event` 公共契约，不直接连接 Codex App Server、OpenCode Server 或解释其私有事件；公共契约是防腐层和 Provider 数据投影，不是 Aegis 持久化模型。
-- [ ] 首个版本使用部署级 `AGENT_PROVIDER=codex|opencode`，同一 Control Plane 实例只装配一个 Agent Provider；不引入逐 Session Provider 选择和映射表。
-- [ ] Codex 使用由 Control Plane 监管的长期运行 App Server，通过 `stdio + JSONL` 双向 JSON-RPC 管理 Thread、Turn、审批和流事件；进程监管只负责生命周期和重连，不得为每条消息临时执行 CLI 命令，也不得接管会话存储。
-- [ ] OpenCode 使用长期运行的 Server HTTP API 与 SSE；SDK 只作为可选生成客户端，不为使用 SDK 额外引入 Node 中间服务。
-- [ ] Aegis 公共 Session ID 保持 Provider-neutral；Codex Thread ID、OpenCode Session ID 和 Provider 类型只存在于 adapter 内部。
-- [ ] 切换部署级 Provider 时使用新的会话空间，不承诺把同一底层会话在 Codex 与 OpenCode 之间无损迁移；以后如需同实例并存，必须先提交无状态路由 ADR。
+- [x] 前端只使用 Aegis `Session / Turn / Event` 公共契约，不直接连接 Codex App Server、OpenCode Server 或解释其私有事件；公共契约是防腐层和 Provider 数据投影，不是 Aegis 持久化模型。
+- [x] 首个版本使用部署级 `AGENT_PROVIDER=codex|opencode`，同一 Control Plane 实例只装配一个 Agent Provider；不引入逐 Session Provider 选择和映射表。
+- [x] Codex 使用由 Control Plane 监管的长期运行 App Server，通过 `stdio + JSONL` 双向 JSON-RPC 管理 Thread、Turn、审批和流事件；进程监管只负责生命周期和重连，不得为每条消息临时执行 CLI 命令，也不得接管会话存储。
+- [x] OpenCode 使用长期运行的 Server HTTP API 与 SSE；SDK 只作为可选生成客户端，不为使用 SDK 额外引入 Node 中间服务。
+- [x] Aegis 公共 Session ID 保持 Provider-neutral；Codex Thread ID、OpenCode Session ID 和 Provider 类型只存在于 adapter 内部。
+- [x] 切换部署级 Provider 时使用新的会话空间，不承诺把同一底层会话在 Codex 与 OpenCode 之间无损迁移；以后如需同实例并存，必须先提交无状态路由 ADR。
 - [ ] Session list/read/resume/rename/archive/delete 直接调用 Provider 原生 API；不得增加 `SessionRepository`、消息表、事件表、Checkpoint、Provider 映射表或前端整会话保存接口。
-- [ ] 前端发送 Turn 时只提交本次输入、受信上下文和操作 ID，不回传完整消息历史；历史从 Provider 的 Thread/Session 读取。
-- [ ] 在多用户模式启用前，验证按 Tenant、Org、User 或明确产品范围隔离 Provider 会话命名空间；不得依赖 Aegis 影子表过滤共享 App Server 中的会话。
-- [ ] `FolderUID` 默认只作为请求时授权上下文；若 Codex/OpenCode 不能原生保存并查询会话 Folder，阶段 6 接入前从 Session 持久语义中移除，不为该字段建立映射。
+- [x] 前端发送 Turn 时只提交本次输入、受信上下文和操作 ID，不回传完整消息历史；历史从 Provider 的 Thread/Session 读取。
+- [x] 在多用户模式启用前，验证按 Tenant、Org、User 或明确产品范围隔离 Provider 会话命名空间；首版已按 ADR 0003 fail-closed 到唯一受信 Actor，多用户仍保持禁用。
+- [x] `FolderUID` 默认只作为请求时授权上下文；公共字段已标记 deprecated，Codex/OpenCode 均不持久化该值，也未建立映射。
 
 首版按 ADR 0003 绑定唯一受信 Tenant、Org 和 User；不匹配的 Actor 必须 fail-closed。该模式只用于
 形成可验收的单 Actor Provider 会话空间，不代表多用户 private Session 已经完成。Provider 原生
@@ -338,25 +338,25 @@ Provider 数据归属与标识策略复核：
 ### 6.1 Codex Adapter
 
 - [x] 固定 Codex CLI/App Server 版本，并提交版本化 JSON Schema。
-- [ ] 由 Control Plane 管理持久 `stdio + JSONL` 子进程（JSONL 客户端已完成，进程监管待装配）。
+- [x] 由 Control Plane 管理持久 `stdio + JSONL` 子进程。
 - [x] 完成 initialize/initialized 握手。
-- [ ] 直接适配 `thread/start/list/read/resume/name/set/archive/unarchive/delete`；列表、详情、消息历史和归档状态均从 Codex 持久化数据读取。
-- [ ] 实现 turn start/interrupt。
-- [ ] 映射 message delta、MCP call、完成和失败事件。
-- [ ] 处理命令、文件变更和 MCP 工具审批请求。
+- [x] 直接适配 `thread/start/list/read/resume/name/set/archive/unarchive/delete`；列表、详情、消息历史和归档状态均从 Codex 持久化数据读取。
+- [x] 实现 turn start/interrupt。
+- [x] 映射 message delta、MCP call、命令、文件变更、完成和失败事件。
+- [x] 处理命令和文件变更审批请求；未识别的 App Server 请求 fail-closed。
 - [ ] 启动时校验当前声明启用的 Grafana 和 Dagu MCP；Knowledge 未接入前不得注册虚假工具。
 - [x] 验证 Codex Thread 的公共标识策略，不保存 Session/Thread 映射表。
 - [x] 使用生成的版本化 JSON Schema 做协议兼容测试。
-- [ ] 为 App Server 数据目录配置持久卷和备份恢复；不得把其 JSONL、状态数据库或 Thread 摘要复制到 Control Plane。
-- [ ] 明确 Codex `thread/start` 和 `turn/start` 不提供客户端幂等键时的限制：响应不确定后禁止自动重提；已有 Session 通过 `thread/read` 对账，创建结果无法可靠定位时向用户明确报告未知结果。
+- [x] Control Plane 镜像内置固定版 Codex，并将 `CODEX_HOME` 声明为独立持久卷；生产备份恢复演练仍待真实环境验收。
+- [x] 明确 Codex `thread/start` 和 `turn/start` 不提供客户端幂等键时的限制：响应不确定后返回不可重试的 `provider_result_unknown`，不自动重提。
 
 ### 6.2 OpenCode Adapter
 
 - [x] 固定 OpenCode 版本。
 - [x] 实现带可轮换 Basic Auth、响应上限和错误净化的 HTTP client。
 - [x] 实现底层 session create/read/delete/abort 和 caller-supplied ID。
-- [ ] 实现 async prompt 和 SSE event 订阅。
-- [ ] 映射 message part、tool call、permission 和完成事件。
+- [x] 实现 async prompt 和 durable SSE event 订阅。
+- [ ] 映射 message part、tool call、permission 和完成事件（message/tool/完成已接通；固定版 durable SSE 不包含 permission 事件，审批续流待解决）。
 - [ ] 配置与 Codex 一致的已启用 MCP；Knowledge 在 RAGFlow 阶段完成后再加入。
 - [ ] Session list/read/update/delete 和消息历史直接使用 OpenCode 原生 API，并为 OpenCode 数据目录配置官方持久化与备份恢复；Control Plane 不保存副本。
 

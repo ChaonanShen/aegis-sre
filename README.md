@@ -2,7 +2,7 @@
 
 Aegis SRE 是一个以 Grafana App Plugin 为入口的开源 SRE 工作台。项目本身只维护产品控制面与必要的集成层，Agent、知识检索、Playbook 编排和 Grafana 工具能力分别交给成熟组件。
 
-当前已完成仓库基线、无状态 Control Plane、v1 公共契约、Plugin Backend 受信代理，以及 Dagu Playbook 到只读 Grafana MCP 的基本执行链。Grafana 插件已能启动/取消 Run 并查看 Step 状态；参数、retry、日志、Human Task、Approval 和 Artifact 的完整前端闭环仍是明确缺口。Codex Provider 与 RAGFlow 按当前计划暂缓接入。
+当前已完成仓库基线、无状态 Control Plane、v1 公共契约、Plugin Backend 受信代理，以及 Dagu Playbook 到只读 Grafana MCP 的基本执行链。阶段 6 的 Agent 核心链路已经接入 Codex App Server 与 OpenCode Server：支持 Provider 原生会话、流式 Turn、显式取消、单 Actor 隔离和 Provider-neutral ID；Codex 已支持命令与文件变更审批。OpenCode 审批续流、统一 MCP 启动校验和真实 Provider 重启恢复验收仍是明确缺口，不能视为阶段 6 已完成。RAGFlow 继续留在阶段 8。
 
 ## 目标组件
 
