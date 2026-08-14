@@ -312,7 +312,7 @@ Provider 数据归属与标识策略复核：
 
 ## 9. 阶段 6：Codex 与 OpenCode Agent Provider
 
-状态：**执行中。默认链路已冻结为 Grafana Read + Aegis Playbook MCP；Knowledge/RAGFlow 代码保留但默认 disabled。OpenCode + DeepSeek 的本地核心会话闭环已完成真实冒烟；Playbook MCP facade、配置和真实 Run retry 已接入，Agent 组合 E2E、SSE/Human Task/Artifact 以及双 Provider 合同验收仍待完成。**
+状态：**执行中。默认链路已冻结为 Grafana Read + Aegis Playbook MCP；Knowledge/RAGFlow 代码保留但默认 disabled。OpenCode + DeepSeek 的本地核心会话闭环已完成真实冒烟；Playbook MCP facade、真实 Run 控制和组合冒烟入口已接入。OpenCode unarchive/approval 按 ADR 0006 明确不接入，Workbench 旧 Session 持久化抽象清理和双 Provider 合同验收仍待完成。**
 
 目标：Codex 作为默认 Provider，同时用 OpenCode 证明抽象没有泄漏。Grafana 插件的 Workbench 是唯一会话入口，不增加 Codex 或 OpenCode 独立聊天页面。Session、Turn、消息、审批和历史全部由 Agent Provider 持久化；Aegis 只提供无状态的公共契约、授权收敛、进程监管和协议适配。
 
