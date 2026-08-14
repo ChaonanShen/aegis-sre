@@ -2,6 +2,7 @@ import { BackendSrv, BackendSrvRequest, getBackendSrv } from '@grafana/runtime';
 import { Observable } from 'rxjs';
 import type { components } from '../../../api/generated/controlPlane';
 import { ResourceClient, ResourceClientError } from '../../../adapters/resourcesdk/resourceClient';
+import { PLUGIN_RESOURCE_BASE_URL } from '../../../constants';
 import { PlaybookArtifact, PlaybookArtifactPreview, PlaybookApprovalDecision, PlaybookDocument, PlaybookRunRecord, PlaybookSummary } from '../crudModel';
 import { PlaybookCrudGateway } from '../ports/PlaybookCrudGateway';
 
@@ -281,7 +282,7 @@ function runPath(id: string) {
 
 async function* streamRun(backend: BackendSrv, runId: string, afterSequence: number, signal?: AbortSignal): AsyncGenerator<PlaybookRunRecord> {
   const request: BackendSrvRequest = {
-    url: `/api/v1/runs/${encodeURIComponent(runId)}/events?after_sequence=${afterSequence}`,
+    url: `${PLUGIN_RESOURCE_BASE_URL}/api/v1/runs/${encodeURIComponent(runId)}/events?after_sequence=${afterSequence}`,
     method: 'GET', abortSignal: signal, showErrorAlert: false, validatePath: true,
   };
   const decoder = new SSEDecoder();
