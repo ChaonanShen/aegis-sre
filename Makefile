@@ -1,4 +1,4 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke local-secrets local-config-check local-up local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke local-secrets local-config-check local-up local-agent-smoke local-playbook-smoke local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 OAPI_CODEGEN_VERSION := v2.8.0
 MAGE_VERSION := v1.17.2
@@ -63,6 +63,15 @@ local-up: local-secrets plugin-backend-build plugin-build
 
 local-smoke:
 	./scripts/smoke-local-playbook.sh
+	./scripts/smoke-local-playbook-api.mjs
+	./scripts/smoke-local-agent.mjs
+
+local-agent-smoke:
+	./scripts/smoke-local-agent.mjs
+
+local-playbook-smoke:
+	./scripts/smoke-local-playbook.sh
+	./scripts/smoke-local-playbook-api.mjs
 
 codex-schema-check:
 	@test "$$($(CODEX_BIN) --version)" = "codex-cli $(CODEX_VERSION)" || (echo "expected codex-cli $(CODEX_VERSION)" >&2; exit 1)

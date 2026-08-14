@@ -53,6 +53,8 @@ make local-smoke
 
 `local-secrets` 只在 git 忽略的 `deploy/local/secrets/` 生成开发凭据。运行前需要把 DeepSeek API Key 写入 `deploy/local/secrets/deepseek-api-key`；脚本不会生成或提交 Provider 凭据。启动过程会创建 Grafana Viewer Service Account；Grafana 默认只绑定 `127.0.0.1:3000`，Dagu 只绑定 `127.0.0.1:18081`，Control Plane、OpenCode、只读 Grafana MCP 和其鉴权网关不发布主机端口。可用 `GRAFANA_PORT`、`DAGU_PORT` 覆盖两个开发端口；运行冒烟时需传递相同的 `DAGU_PORT`。
 
+`local-smoke` 同时验证 Dagu 到 Grafana MCP 的底层路径、Grafana Plugin 经 Control Plane 管理和运行原生 Dagu Playbook 的产品路径，以及 OpenCode 到 DeepSeek 的真实文本会话；任一路径不可用都会明确失败。
+
 Plugin Backend 通过以下环境变量连接 Control Plane：
 
 - `AEGIS_CONTROL_PLANE_URL`：必填的 Control Plane HTTP origin。
