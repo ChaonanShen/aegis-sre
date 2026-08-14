@@ -20,6 +20,7 @@ import (
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/ragflow"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/httpserver"
+	"github.com/1024XEngineer/aegis-sre/internal/platform/knowledgemcp"
 	"github.com/1024XEngineer/aegis-sre/internal/ports"
 )
 
@@ -140,6 +141,16 @@ func run(logger *slog.Logger) error {
 			return err
 		}
 		serverOptions = append(serverOptions, httpserver.WithKnowledgeProvider(provider, ids))
+		if cfg.KnowledgeMCPTokenFile != "" {
+			handler, err := knowledgemcp.NewHandler(provider, knowledgemcp.Config{
+				TokenFile: cfg.KnowledgeMCPTokenFile, TenantID: cfg.KnowledgeMCPTenantID, OrgID: cfg.KnowledgeMCPOrgID,
+				UserID: cfg.KnowledgeMCPUserID, FolderUIDs: cfg.KnowledgeMCPFolders,
+			})
+			if err != nil {
+				return err
+			}
+			serverOptions = append(serverOptions, httpserver.WithKnowledgeMCP(handler))
+		}
 	}
 	server := httpserver.New(cfg, logger, serverOptions...)
 

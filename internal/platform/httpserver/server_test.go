@@ -109,3 +109,21 @@ func TestRequestIDsRejectHeaderControl(t *testing.T) {
 		t.Fatal("unsafe request ID was trusted")
 	}
 }
+
+func TestKnowledgeMCPIsOnlyExposedWhenConfigured(t *testing.T) {
+	called := false
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { called = true; w.WriteHeader(http.StatusNoContent) })
+	server := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithKnowledgeMCP(handler))
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/mcp/knowledge", nil))
+	if response.Code != http.StatusNoContent || !called {
+		t.Fatalf("status = %d, called = %v", response.Code, called)
+	}
+
+	withoutMCP := New(config.Config{Endpoints: map[config.Capability]string{}}, nil)
+	response = httptest.NewRecorder()
+	withoutMCP.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/mcp/knowledge", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("unconfigured status = %d", response.Code)
+	}
+}
