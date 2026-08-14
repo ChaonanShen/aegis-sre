@@ -137,21 +137,6 @@ export function createFixtureWorkbenchGateway(options: FixtureWorkbenchGatewayOp
       return streamFixtureResolution(input, signal, streamDelayMs);
     },
 
-    async saveSession(opened: OpenedSession, signal?: AbortSignal) {
-      await delay(0, signal);
-      const sessions = readSessions();
-      const next = clone(opened);
-      next.session.messageCount = next.messages.length;
-      next.session.updatedAt = now().toISOString();
-      const index = sessions.findIndex(({ session }) => session.id === opened.session.id);
-      if (index < 0) {
-        sessions.unshift(next);
-      } else {
-        sessions[index] = next;
-      }
-      writeSessions(sessions);
-    },
-
     async updateCanvas(sessionId: string, canvas: CanvasPreview, signal?: AbortSignal) {
       await delay(0, signal);
       const sessions = readSessions();

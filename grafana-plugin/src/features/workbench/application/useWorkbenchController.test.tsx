@@ -478,7 +478,7 @@ describe('useWorkbenchController', () => {
       .fn<Promise<OpenedSession>, [string, AbortSignal?]>()
       .mockResolvedValueOnce(openedSession('s-001'))
       .mockResolvedValue(committedSession('s-001', clientTurnId));
-    const gateway: WorkbenchGateway = { ...baseGateway, openSession, streamMessage, saveSession: jest.fn() };
+    const gateway: WorkbenchGateway = { ...baseGateway, openSession, streamMessage };
     const { result } = renderHook(() =>
       useWorkbenchController({ gateway, sessionId: 's-001', onNavigate: jest.fn(), onFolderChange: jest.fn() })
     );
@@ -762,7 +762,6 @@ describe('useWorkbenchController', () => {
       openSession,
       streamMessage,
       resolveInterrupt,
-      saveSession: jest.fn().mockResolvedValue(undefined),
     };
     const { result } = renderHook(() =>
       useWorkbenchController({
@@ -831,7 +830,7 @@ describe('useWorkbenchController', () => {
       yield { type: 'message_end', payload: {} };
       yield { type: 'done', payload: { turnId: 'turn-1', replayed: false } };
     });
-    const gateway: WorkbenchGateway = { ...baseGateway, openSession, streamMessage, saveSession: jest.fn() };
+    const gateway: WorkbenchGateway = { ...baseGateway, openSession, streamMessage };
     const { result } = renderHook(() =>
       useWorkbenchController({
         gateway,
@@ -945,7 +944,7 @@ describe('useWorkbenchController', () => {
     const openSession = jest.fn(async () =>
       streamCalls >= 5 ? committedSession('s-001', '123e4567-e89b-42d3-a456-426614174000') : openedSession('s-001')
     );
-    const gateway: WorkbenchGateway = { ...baseGateway, openSession, streamMessage, saveSession: jest.fn() };
+    const gateway: WorkbenchGateway = { ...baseGateway, openSession, streamMessage };
     const { result } = renderHook(() =>
       useWorkbenchController({
         gateway,
@@ -1038,7 +1037,6 @@ describe('useWorkbenchController', () => {
       openSession,
       streamMessage,
       cancelTurn,
-      saveSession: jest.fn(),
     };
     const { result } = renderHook(() =>
       useWorkbenchController({

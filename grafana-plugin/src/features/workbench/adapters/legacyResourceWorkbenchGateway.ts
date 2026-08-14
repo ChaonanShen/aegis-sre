@@ -127,10 +127,6 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
       return streamResume(backendSrv(), input, signal);
     },
 
-    async saveSession(_session: OpenedSession, signal?: AbortSignal) {
-      // AI Core 以完整 Turn 为提交边界，前端流状态不反向覆盖服务端聚合。
-      throwIfAborted(signal);
-    },
 
     async updateCanvas(_sessionId: string, canvas: CanvasPreview, signal?: AbortSignal) {
       // 当前真实边界尚未接入 Canvas 更新，布局仅保留在本页视图状态中。
