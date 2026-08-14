@@ -1039,7 +1039,7 @@ components:
     Document:
       type: object
       additionalProperties: false
-      required: [id, knowledge_base_id, name, media_type, service, tags, status, size, created_at, updated_at]
+      required: [id, knowledge_base_id, name, media_type, service, tags, status, size]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
@@ -1138,7 +1138,7 @@ components:
     KnowledgeChunk:
       type: object
       additionalProperties: false
-      required: [id, document_id, text, position, page_number, created_at]
+      required: [id, document_id, text, position, page_number]
       properties:
         id:
           type: string

@@ -473,7 +473,7 @@ type CreateSessionRequest struct {
 
 // Document defines model for Document.
 type Document struct {
-	CreatedAt time.Time `json:"created_at"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 
 	// FailureReason Sanitized parsing failure suitable for display.
 	FailureReason   *string        `json:"failure_reason,omitempty"`
@@ -485,7 +485,7 @@ type Document struct {
 	Size            int64          `json:"size"`
 	Status          DocumentStatus `json:"status"`
 	Tags            []string       `json:"tags"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	UpdatedAt       *time.Time     `json:"updated_at,omitempty"`
 }
 
 // DocumentStatus defines model for Document.Status.
@@ -527,7 +527,7 @@ type KnowledgeBasePage struct {
 
 // KnowledgeChunk defines model for KnowledgeChunk.
 type KnowledgeChunk struct {
-	CreatedAt  time.Time  `json:"created_at"`
+	CreatedAt  *time.Time `json:"created_at,omitempty"`
 	DocumentId BusinessID `json:"document_id"`
 	Id         string     `json:"id"`
 	PageNumber int        `json:"page_number"`

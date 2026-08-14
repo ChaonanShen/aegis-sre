@@ -684,9 +684,9 @@ export interface components {
             /** Format: int64 */
             size: number;
             /** Format: date-time */
-            created_at: string;
+            created_at?: string;
             /** Format: date-time */
-            updated_at: string;
+            updated_at?: string;
         };
         CreateDocumentRequest: {
             name: string;
@@ -716,7 +716,7 @@ export interface components {
             position: string;
             page_number: number;
             /** Format: date-time */
-            created_at: string;
+            created_at?: string;
         };
         KnowledgeChunkPage: components["schemas"]["PageMetadata"] & {
             items: components["schemas"]["KnowledgeChunk"][];
