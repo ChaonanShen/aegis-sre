@@ -44,6 +44,26 @@ func TestCodecRejectsTamperingAndWrongKey(t *testing.T) {
 	}
 }
 
+func TestCodecSeparatesSessionAndTurnNamespaces(t *testing.T) {
+	t.Parallel()
+	codec, _ := New([]byte("0123456789abcdef0123456789abcdef"))
+	uuid := "01989f4a-3b2c-7def-8123-0123456789ab"
+	turnID, err := codec.EncodeTurnUUID(uuid)
+	if err != nil || !strings.HasPrefix(string(turnID), "turn_") {
+		t.Fatalf("turn ID = %q, err = %v", turnID, err)
+	}
+	if decoded, err := codec.DecodeTurnUUID(turnID); err != nil || decoded != uuid {
+		t.Fatalf("decoded = %q, err = %v", decoded, err)
+	}
+	if _, err := codec.DecodeUUID(turnID); err == nil {
+		t.Fatal("turn ID must not decode as a session ID")
+	}
+	sessionID, _ := codec.EncodeUUID(uuid)
+	if _, err := codec.DecodeTurnUUID(sessionID); err == nil {
+		t.Fatal("session ID must not decode as a turn ID")
+	}
+}
+
 func TestDecodeKeyAcceptsOnlyExactKeyMaterial(t *testing.T) {
 	t.Parallel()
 	if key, err := DecodeKey([]byte("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY")); err != nil || len(key) != 32 {
