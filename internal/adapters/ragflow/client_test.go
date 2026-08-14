@@ -122,3 +122,31 @@ func TestMalformedSuccessResponseIsControlled(t *testing.T) {
 		t.Fatalf("error = %#v", err)
 	}
 }
+
+func TestUpdateDatasetOnlyUsesFieldsSupportedByPinnedAPI(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		payload, _ := io.ReadAll(request.Body)
+		if string(payload) != `{"description":"metadata"}` {
+			t.Errorf("payload = %s", payload)
+		}
+		_, _ = io.WriteString(w, `{"code":0}`)
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, func() (string, error) { return "token", nil }, ClientOptions{})
+	if err := client.UpdateDataset(context.Background(), "dataset", "metadata"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDownloadTreatsHTTP200BusinessErrorAsFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"code":102,"message":"secret dataset detail"}`)
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, func() (string, error) { return "token", nil }, ClientOptions{})
+	response, err := client.DownloadDocument(context.Background(), "dataset", "document")
+	if response != nil || err == nil || strings.Contains(err.Error(), "secret") {
+		t.Fatalf("response=%#v error=%v", response, err)
+	}
+}

@@ -95,11 +95,8 @@ func (client *Client) CreateDataset(ctx context.Context, name, description, embe
 	return data, nil
 }
 
-func (client *Client) UpdateDataset(ctx context.Context, id, description, status string) error {
+func (client *Client) UpdateDataset(ctx context.Context, id, description string) error {
 	body := map[string]any{"description": description}
-	if status != "" {
-		body["status"] = status
-	}
 	return client.doJSON(ctx, http.MethodPut, "/api/v1/datasets/"+url.PathEscape(id), body, nil, true)
 }
 
@@ -201,7 +198,25 @@ func (client *Client) Retrieve(ctx context.Context, datasetIDs []string, questio
 
 func (client *Client) DownloadDocument(ctx context.Context, datasetID, documentID string) (*http.Response, error) {
 	path := "/api/v1/datasets/" + url.PathEscape(datasetID) + "/documents/" + url.PathEscape(documentID)
-	return client.doRaw(ctx, http.MethodGet, path)
+	response, err := client.doRaw(ctx, http.MethodGet, path)
+	if err != nil {
+		return nil, err
+	}
+	if strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "application/json") {
+		payload, readErr := io.ReadAll(io.LimitReader(response.Body, maxResponseBytes+1))
+		_ = response.Body.Close()
+		if readErr != nil || len(payload) > maxResponseBytes {
+			return nil, &ProviderError{cause: errors.New("invalid provider download response")}
+		}
+		var envelope struct {
+			Code int `json:"code"`
+		}
+		if json.Unmarshal(payload, &envelope) != nil || envelope.Code != 0 {
+			return nil, &ProviderError{Code: envelope.Code}
+		}
+		return nil, &ProviderError{cause: errors.New("unexpected provider download envelope")}
+	}
+	return response, nil
 }
 
 func (client *Client) doDataJSON(ctx context.Context, method, path string, body, target any, mutation bool) error {

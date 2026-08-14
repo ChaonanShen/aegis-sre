@@ -48,6 +48,17 @@ func (codec *Codec) DocumentID(collectionID domain.ID, idempotencyKey string) (d
 	return codec.derive("doc_", "aegis-knowledge-document-v1", string(collectionID), idempotencyKey)
 }
 
+func (codec *Codec) ChunkID(documentID domain.ID, providerChunkID string) (string, error) {
+	if !documentID.Valid() || !strings.HasPrefix(string(documentID), "doc_") {
+		return "", errors.New("valid document ID is required")
+	}
+	if strings.TrimSpace(providerChunkID) == "" {
+		return "", errors.New("provider chunk ID is required")
+	}
+	id, err := codec.derive("chk_", "aegis-knowledge-chunk-v1", string(documentID), providerChunkID)
+	return string(id), err
+}
+
 // ScopeFingerprint 可写入 Provider metadata 用于逐请求授权复核，且不泄漏 Actor 原始值。
 func (codec *Codec) ScopeFingerprint(actor domain.ActorContext) (string, error) {
 	if err := actor.Validate(); err != nil {

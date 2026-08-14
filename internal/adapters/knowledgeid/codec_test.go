@@ -83,3 +83,16 @@ func TestScopeFingerprintDoesNotExposeActorValues(t *testing.T) {
 		}
 	}
 }
+
+func TestChunkIDIsStableAndDoesNotExposeProviderID(t *testing.T) {
+	codec, _ := New([]byte("01234567890123456789012345678901"))
+	documentID := domain.ID("doc_abcdefgh")
+	first, err := codec.ChunkID(documentID, "ragflow-internal-chunk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, _ := codec.ChunkID(documentID, "ragflow-internal-chunk")
+	if first != second || !strings.HasPrefix(first, "chk_") || strings.Contains(first, "ragflow") {
+		t.Fatalf("unexpected chunk ID %q / %q", first, second)
+	}
+}
