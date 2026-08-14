@@ -88,14 +88,22 @@ flowchart LR
 
 Control Plane 默认无状态，不复制 Provider 数据，也不维护 Provider 状态的影子表或摘要索引。公共资源标识优先使用调用方生成 ID、Provider 原生 metadata/tag 或确定性命名；若仍无法避免暴露 Provider 内部 ID，必须在对应垂直切片中提交 ADR 后再决定最小方案。
 
+`Session`、`Turn`、`Message` 和统一事件只是 Aegis 对前端提供的防腐层命令、查询投影与
+流式协议，不是要求 Control Plane 保存的领域实体。冻结公共契约只保证前端不感知
+Codex/OpenCode 私有协议，不改变 Agent Provider 对会话数据的所有权。
+
 ### 3.4 Agent Provider
 
 领域接口以“会话、回合、事件、审批”为单位：
 
 ```go
 type AgentProvider interface {
+    ListSessions(ctx context.Context, page PageRequest) (Page[Session], error)
     CreateSession(ctx context.Context, input CreateSessionInput) (SessionRef, error)
-    LoadSession(ctx context.Context, ref SessionRef) (Session, error)
+    ReadSession(ctx context.Context, ref SessionRef) (SessionDetail, error)
+    RenameSession(ctx context.Context, ref SessionRef, title string) error
+    ArchiveSession(ctx context.Context, ref SessionRef) error
+    UnarchiveSession(ctx context.Context, ref SessionRef) error
     StartTurn(ctx context.Context, ref SessionRef, input TurnInput) (EventStream, error)
     CancelTurn(ctx context.Context, ref SessionRef, turnID string) error
     ResolveApproval(ctx context.Context, input ApprovalDecision) (EventStream, error)
@@ -104,6 +112,12 @@ type AgentProvider interface {
 ```
 
 Codex Adapter 使用 App Server 的 Thread/Turn/Item 和双向 JSON-RPC；OpenCode Adapter 使用 Session/Message、HTTP 和 SSE。两套协议只能存在于 adapter 内部。
+
+上述 list/read/create/rename/archive/delete 必须直接委托对应 Provider 的原生会话能力。
+Codex 的 `thread/list`、`thread/read`、`thread/resume`、`thread/name/set`、
+`thread/archive` 和 `thread/delete` 以及 OpenCode 的 Session API 是会话事实来源；
+Control Plane 不增加 `SessionRepository`、消息表、事件表、Checkpoint 或前端整会话保存接口。
+`thread/resume` 等加载动作属于 Adapter 为继续 Turn 执行的内部细节，不代表 Aegis 接管会话状态。
 
 统一事件：
 
@@ -118,7 +132,18 @@ turn.completed
 turn.failed
 ```
 
-Control Plane 通过 Agent Provider 直接 list/read/resume/archive/delete 会话，不保存产品 Session、Provider Session ID、当前回合状态或 Checkpoint。调用方生成的稳定 Turn ID 和 Provider 原生幂等能力在 Agent Adapter 中适配。
+Control Plane 通过 Agent Provider 直接 list/read/resume/archive/delete 会话，不保存产品 Session、Provider Session ID、当前回合状态或 Checkpoint。公共 ID 只做无状态引用转换；幂等只适配 Provider 已验证的原生能力。若 Provider 不支持调用方生成 Turn ID 或幂等键，Control Plane 不得通过内存去重或自建持久化伪造保证，而应禁止不安全的自动重试并明确暴露限制。
+
+首个版本按部署选择单一 `AGENT_PROVIDER=codex|opencode`，不在同一 Control Plane
+实例内为每个 Session 动态选择 Provider。切换 Provider 使用新的部署配置和会话空间；
+若以后需要并存，必须先证明 Provider 原生 metadata 或自包含公开引用足以完成无状态路由，
+否则另行提交 ADR，不预建 Session/Provider 映射表。
+
+多用户环境还必须先解决 Provider 原生会话命名空间隔离：优先按可信 Actor 范围隔离
+Provider 运行实例、数据目录或 Provider 原生租户空间。不得让共享 App Server 的
+`thread/list` 把其他 Actor 的会话暴露出来，也不得为弥补共享命名空间而建立 Aegis 影子会话表。
+`FolderUID` 默认是请求时的授权上下文；只有 Provider 原生支持可靠保存和查询时，才能成为
+Session 的持久属性。
 
 ### 3.5 Knowledge Provider 与 Knowledge MCP
 
@@ -171,7 +196,7 @@ Dagu REST API 必须启用独立服务凭据。Control Plane 从只读挂载的�
 | 数据 | 唯一事实来源 | Control Plane 行为 |
 | --- | --- | --- |
 | Grafana Folder、Dashboard、告警、标签和权限 | Grafana | 按 Actor Context 查询和收敛，不复制 |
-| Agent Session、Turn、消息、工具调用和 Agent Approval | Codex/OpenCode | 直接适配与流转，不保存映射、状态或历史 |
+| Agent Session、Turn、消息、工具调用和 Agent Approval | Codex/OpenCode | 直接 list/read/resume/archive/delete 与流转，不保存映射、状态、消息或事件历史 |
 | KnowledgeBase/Dataset、Document、解析状态、Chunk、Embedding 和索引 | RAGFlow | 直接适配与授权收敛，不建立影子资源 |
 | Playbook YAML、Run、Step、Human Task、Approval、日志和 Artifact | Dagu | 直接适配，不保存映射或摘要索引 |
 | request/trace ID | 请求上下文与可观测性后端 | 传播并写结构化日志，不作为业务记录保存 |
@@ -224,7 +249,10 @@ Aegis Control Plane 当前不部署自有数据库。接入每个 Provider 时�
 }
 ```
 
-`event_id + sequence` 用于断线重连和去重；Provider 原始事件只用于内部诊断，不直接透传。
+`event_id + sequence` 用于一次流连接内的排序和客户端去重；Provider 原始事件只用于内部诊断，
+不直接透传。浏览器或 Control Plane 断线后，优先重新连接 Provider，并通过 Provider 已持久化的
+Thread/Turn/Item 重建最终会话视图。若 Provider 不能重放断线期间的精确增量事件，应明确终止
+旧流并重新读取会话快照，不得为精确重放增加 Aegis 事件存储。
 
 ## 7. 部署拓扑
 
@@ -241,6 +269,10 @@ Grafana MCP Write（按需）
 Aegis MCP Auth Gateway
 Aegis mcp.call Runner
 ```
+
+Agent Provider 的数据目录或官方持久卷必须独立挂载并进入对应 Provider 的备份恢复流程。
+这是对成熟组件状态的部署管理，不是由 Aegis 复制 Session/Turn 数据。Codex App Server
+进程监管也只负责启动、健康检查、重连和退出，不实现会话存储或 Agent 编排。
 
 仓库根 `compose.yaml` 提供最小可复现链路。Grafana 和 Dagu 只绑定 loopback；Control Plane、Grafana MCP 和 MCP 鉴权网关不发布主机端口；MCP 网络为内部网络。一次性 Grafana Bootstrap 使用本地管理员凭据创建 Viewer Service Account，将 Token 写入共享卷后退出，它是部署初始化任务而不是新的产品服务。
 

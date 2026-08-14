@@ -15,8 +15,8 @@
 最小骨架和公共契约冻结，再逐个接入 Provider。未完成真实接入的能力不得注册到 Agent，
 也不得在真实模式中回退到 fixture。
 
-RAGFlow 依赖较多、资源占用较大，放在 Dagu、Grafana MCP 和 Agent 主链路稳定之后接入。
-Knowledge 的公共接口仍在前期冻结，避免延后部署 RAGFlow 反过来阻塞领域边界设计。
+RAGFlow 依赖较多、资源占用较大，放在 Dagu 与 Grafana MCP 基本链路稳定之后接入，但优先于 Agent 会话和 Canvas 增强。
+Knowledge 的公共接口仍先行冻结；完成真实检索与授权验收后保留 MCP 能力，待 Agent 接入时再注册给 Codex/OpenCode。
 
 ## 2. 全局完成标准
 
@@ -312,33 +312,39 @@ Provider 数据归属与标识策略复核：
 
 ## 9. 阶段 6：Codex 与 OpenCode Agent Provider
 
-状态：**暂缓接入。协议基线、标识策略和部分底层客户端已存在，但按当前决策不继续装配 Codex/OpenCode Provider，直到 Dagu/Grafana 主链路验收通过。**
+状态：**暂缓接入。协议基线、标识策略和部分底层客户端已存在；按当前顺序，先完成 Dagu/Grafana 主链路验收与 RAGFlow/Knowledge 垂直切片，再装配 Codex/OpenCode Provider。**
 
-目标：Codex 作为默认 Provider，同时用 OpenCode 证明抽象没有泄漏。Grafana 插件的 Workbench 是唯一会话入口，不增加 Codex 或 OpenCode 独立聊天页面。
+目标：Codex 作为默认 Provider，同时用 OpenCode 证明抽象没有泄漏。Grafana 插件的 Workbench 是唯一会话入口，不增加 Codex 或 OpenCode 独立聊天页面。Session、Turn、消息、审批和历史全部由 Agent Provider 持久化；Aegis 只提供无状态的公共契约、授权收敛、进程监管和协议适配。
 
 ### 6.0 单一会话入口与实现顺序
 
-- [ ] 前端只使用 Aegis `Session / Turn / Event` 公共契约，不直接连接 Codex App Server、OpenCode Server 或解释其私有事件。
-- [ ] Control Plane 在创建会话时选择 Agent Provider；单个会话创建后固定绑定一个 Provider，中途不得静默切换执行引擎。
-- [ ] Codex 使用由 Control Plane 监管的长期运行 App Server，通过 `stdio + JSONL` 双向 JSON-RPC 管理 Thread、Turn、审批和流事件；不得为每条消息临时执行 CLI 命令。
+- [ ] 前端只使用 Aegis `Session / Turn / Event` 公共契约，不直接连接 Codex App Server、OpenCode Server 或解释其私有事件；公共契约是防腐层和 Provider 数据投影，不是 Aegis 持久化模型。
+- [ ] 首个版本使用部署级 `AGENT_PROVIDER=codex|opencode`，同一 Control Plane 实例只装配一个 Agent Provider；不引入逐 Session Provider 选择和映射表。
+- [ ] Codex 使用由 Control Plane 监管的长期运行 App Server，通过 `stdio + JSONL` 双向 JSON-RPC 管理 Thread、Turn、审批和流事件；进程监管只负责生命周期和重连，不得为每条消息临时执行 CLI 命令，也不得接管会话存储。
 - [ ] OpenCode 使用长期运行的 Server HTTP API 与 SSE；SDK 只作为可选生成客户端，不为使用 SDK 额外引入 Node 中间服务。
 - [ ] Aegis 公共 Session ID 保持 Provider-neutral；Codex Thread ID、OpenCode Session ID 和 Provider 类型只存在于 adapter 内部。
-- [ ] 切换 Provider 时创建显式的新会话或分叉会话，不承诺把同一底层会话在 Codex 与 OpenCode 之间无损迁移。
+- [ ] 切换部署级 Provider 时使用新的会话空间，不承诺把同一底层会话在 Codex 与 OpenCode 之间无损迁移；以后如需同实例并存，必须先提交无状态路由 ADR。
+- [ ] Session list/read/resume/rename/archive/delete 直接调用 Provider 原生 API；不得增加 `SessionRepository`、消息表、事件表、Checkpoint、Provider 映射表或前端整会话保存接口。
+- [ ] 前端发送 Turn 时只提交本次输入、受信上下文和操作 ID，不回传完整消息历史；历史从 Provider 的 Thread/Session 读取。
+- [ ] 在多用户模式启用前，验证按 Tenant、Org、User 或明确产品范围隔离 Provider 会话命名空间；不得依赖 Aegis 影子表过滤共享 App Server 中的会话。
+- [ ] `FolderUID` 默认只作为请求时授权上下文；若 Codex/OpenCode 不能原生保存并查询会话 Folder，阶段 6 接入前从 Session 持久语义中移除，不为该字段建立映射。
 
-本阶段优先完成会话本身：create/list/read/resume/archive/delete、Turn 流、取消、审批、错误恢复和 Provider 重启恢复。图表、图片与 Canvas 的生成、恢复和编辑不作为会话首轮接入的阻塞条件，但必须按阶段 7 的已知缺口继续实现，不能因首轮暂缓而删除现有前端画布能力。
+本阶段优先完成会话本身：create/list/read/resume/rename/archive/delete、Turn 流、取消、审批、错误恢复和 Provider 重启恢复。所有恢复都从 Provider 的持久化数据执行，不从 Aegis 数据库恢复。图表、图片与 Canvas 的生成、恢复和编辑不作为会话首轮接入的阻塞条件；Canvas 是独立产品投影，不得借其持久化需求重新引入整套 Session 存储。
 
 ### 6.1 Codex Adapter
 
 - [x] 固定 Codex CLI/App Server 版本，并提交版本化 JSON Schema。
 - [ ] 由 Control Plane 管理持久 `stdio + JSONL` 子进程（JSONL 客户端已完成，进程监管待装配）。
 - [x] 完成 initialize/initialized 握手。
-- [ ] 实现 thread start/resume/read/delete。
+- [ ] 直接适配 `thread/start/list/read/resume/name/set/archive/unarchive/delete`；列表、详情、消息历史和归档状态均从 Codex 持久化数据读取。
 - [ ] 实现 turn start/interrupt。
 - [ ] 映射 message delta、MCP call、完成和失败事件。
 - [ ] 处理命令、文件变更和 MCP 工具审批请求。
 - [ ] 启动时校验当前声明启用的 Grafana 和 Dagu MCP；Knowledge 未接入前不得注册虚假工具。
 - [x] 验证 Codex Thread 的公共标识策略，不保存 Session/Thread 映射表。
 - [x] 使用生成的版本化 JSON Schema 做协议兼容测试。
+- [ ] 为 App Server 数据目录配置持久卷和备份恢复；不得把其 JSONL、状态数据库或 Thread 摘要复制到 Control Plane。
+- [ ] 明确 Codex `thread/start` 和 `turn/start` 不提供客户端幂等键时的限制：响应不确定后禁止自动重提；已有 Session 通过 `thread/read` 对账，创建结果无法可靠定位时向用户明确报告未知结果。
 
 ### 6.2 OpenCode Adapter
 
@@ -348,6 +354,7 @@ Provider 数据归属与标识策略复核：
 - [ ] 实现 async prompt 和 SSE event 订阅。
 - [ ] 映射 message part、tool call、permission 和完成事件。
 - [ ] 配置与 Codex 一致的已启用 MCP；Knowledge 在 RAGFlow 阶段完成后再加入。
+- [ ] Session list/read/update/delete 和消息历史直接使用 OpenCode 原生 API，并为 OpenCode 数据目录配置官方持久化与备份恢复；Control Plane 不保存副本。
 
 ### 6.3 Provider 合同测试
 
@@ -358,22 +365,25 @@ Provider 数据归属与标识策略复核：
 - [ ] 调用当前已启用的 Grafana 和 Dagu MCP 工具。
 - [ ] 拒绝和接受审批。
 - [ ] 中断运行中的 Turn。
-- [ ] Provider 重启后恢复会话。
-- [ ] 重复幂等请求不创建重复 Turn。
+- [ ] Provider 重启后从其原生持久化恢复会话，Control Plane 无本地 Session/Turn 数据仍可工作。
+- [ ] 对支持原生幂等的 Provider 验证重复请求不创建重复 Turn；不支持时验证响应不确定后不会自动重提，并在公共错误中明确能力限制。
+- [ ] 浏览器或 Control Plane 断线后重新读取 Provider 会话快照；Provider 不支持精确 delta 重放时明确终止旧流，不建立 Aegis Event Store。
 
-验收标准：切换 `AGENT_PROVIDER=codex|opencode` 后，插件请求和事件 Schema 不变化。
+验收标准：切换部署级 `AGENT_PROVIDER=codex|opencode` 后，插件请求和事件 Schema 不变化；清空或重启 Control Plane 不丢失会话，删除 Provider 持久卷则按 Provider 自身的数据丢失语义处理。
 
 ## 10. 阶段 7：核心前端真实模式收口
 
 状态：**部分完成。真实模式 fallback 已收口，Playbook 已接 Dagu，Workbench 已接公共契约；Playbook 完整运行观测、Alerts、Approvals、Audit 与真实 Agent 组合仍待完成。**
 
-目标：先收口不依赖 RAGFlow 的真实功能；Knowledge 页面保持明确不可用，直到最后的 RAGFlow 垂直切片完成。
+目标：先收口不依赖 RAGFlow 的真实功能；Knowledge 页面保持明确不可用，直到阶段 8 的 RAGFlow 垂直切片完成。
 
 任务：
 
 - [x] 生成或实现 Control Plane Resource Client。
 - [x] Workbench 使用统一 Agent Event，不再识别旧 AgentType。
-- [ ] Workbench 真实会话支持完整的 create/list/read/resume/archive/delete、流式 Turn、取消和 Agent Approval；此项优先于 Canvas 增强。
+- [ ] Workbench 真实会话支持完整的 create/list/read/resume/rename/archive/unarchive/delete、流式 Turn、取消和 Agent Approval；此项优先于 Canvas 增强。
+- [ ] 删除迁移遗留的 `saveSession`、前端 `persistenceQueue` 和发送完整 `history` 的真实模式抽象；前端可以乐观渲染，但最终会话与消息必须重新从 Agent Provider 读取。
+- [ ] 审计公共 `Session` 的 `folder_uid`、title、status 和时间字段，只保留 Provider 原生可读写或可可靠派生的字段；不支持的持久字段通过显式契约修订移除，不以数据库补齐。
 - [x] Playbook 使用 Dagu-backed API。
 - [ ] Playbook 在 Grafana 插件内完成参数、retry、日志、Human Task、Approval 和 Artifact 的运行闭环；不得要求用户跳转 Dagu UI 才能判断执行结果。
 - [ ] Approvals 汇总 Agent Approval 与 Dagu Approval。
@@ -391,7 +401,7 @@ Provider 数据归属与标识策略复核：
 - [ ] 将 Codex Image/Tool Item、OpenCode File/Message Part 和 Aegis 工具结果统一映射为稳定事件，不让前端识别 Provider 私有类型。
 - [ ] 扩展 `artifact.created` 或新增 Canvas 事件，携带受控资源引用、媒体类型、Chart Definition 及 upsert/remove/layout 语义；不得暴露 Provider 文件路径或内部 URL。
 - [ ] 修复真实 Workbench adapter 当前忽略 `artifact.created` 的问题，使流式生成的图表或图片可以直接进入消息和 Canvas。
-- [ ] 修复真实会话打开时 Canvas 总是为空、`updateCanvas` 只在前端原样返回的问题，保证刷新和 Provider 重启后仍能恢复布局、排序、删除与固定状态。
+- [ ] 删除 `updateCanvas` 原样返回造成的虚假持久化语义；优先从 Agent Artifact/结构化事件重建 Canvas。若确有无法由 Provider 承载的布局状态，按独立 Canvas ADR 决策，不把它并入 Session/Turn 存储。
 - [ ] Grafana 图表优先保存 datasource、PromQL/LogQL、绝对时间范围和 VizConfig，由插件查询真实 Grafana 数据并原生渲染；不得用 Agent 生成的截图替代可交互 Grafana Panel。
 - [ ] 为 Agent 提供受控的 Aegis Canvas 发布工具，使 Codex 与 OpenCode 通过同一工具发布图表，而不是分别实现画布协议。
 - [ ] 先验证能否从 Provider 会话的结构化事件或 metadata 重建 Canvas；若无法可靠承载产品专有布局状态，先提交 ADR 说明事实来源和最小持久化范围，再决定是否引入存储。
@@ -403,14 +413,21 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 
 - 真实模式不读取 fixture store。
 - Provider ID 和凭据不出现在浏览器响应、URL 或日志中。
-- SSE 断线后可从最后事件序号恢复或明确终止。
+- SSE 断线后优先从 Provider 会话快照恢复最终状态；只有 Provider 支持时才重放精确增量，否则明确终止旧流。
 - 页面卸载时会取消不再需要的请求和流。
 
 ## 11. 阶段 8：RAGFlow 与 Knowledge 最终垂直切片
 
-状态：**暂缓接入。等待 Dagu/Grafana 与核心前端缺口完成并经人工验收后再开始。**
+状态：**尚未接入。当前优先级位于 Agent 会话和 Canvas 增强之前，在 Playbook 基本链路稳定并验收后开始。**
 
-目标：在其他主链路稳定后，完成 `Grafana Plugin → Control Plane → RAGFlow` 的真实知识链路，并把 Knowledge MCP 加入 Agent。
+目标：完成 `Grafana Plugin → Control Plane → RAGFlow` 的真实知识链路；Agent 接入后再把已经验收的 Knowledge MCP 注册给 Agent。
+
+### 8.0 Runbook、文档与 Playbook 的语义边界
+
+- Runbook 和普通文档都是供人阅读、检索和引用的知识内容，归入 Knowledge 领域；不得因为名称中包含“操作步骤”就迁入可执行 Playbook。
+- Playbook 是唯一需要调度和执行的模型，以原生 Dagu YAML 为事实来源。
+- 当前阶段暂不实现独立 Runbook 模型、API、CRUD 或专用存储；前端 Runbook 区域只保留明确空态，不使用 fixture 冒充真实数据。
+- 后续需要 Runbook 时，优先将其作为 Knowledge 中的一类人类可读文档或标签/分类实现，不创建第二套 Workflow DSL，也不要求它具备执行语义。
 
 ### 8.1 基础部署
 
@@ -444,7 +461,7 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 ### 8.4 前端接入
 
 - [ ] 实现真实 `KnowledgeGateway`。
-- [ ] 将 Runbook 从 Knowledge 模型迁出，归入 Playbook。
+- [ ] Runbook 区域保持明确空态；当前不实现 Runbook Gateway、fixture fallback 或向 Playbook 的迁移逻辑。
 - [ ] 替换真实模式下的 Knowledge fixture fallback。
 - [ ] 展示解析状态、失败原因、引用和原文位置。
 
@@ -544,9 +561,8 @@ rollback version
 当前完成 Dagu 与 Grafana MCP 基本链路后，按以下顺序继续，避免并行铺开后没有可运行链路：
 
 1. 保持当前基本 Playbook 执行能力稳定，补齐 readiness、鉴权、契约测试和可复现部署（本轮完成）。
-2. 由用户验收当前 Dagu/Grafana MCP 主链路；本轮不扩展 Playbook 前端。
-3. 后续优先补齐 Grafana 插件内的 Playbook 参数、retry、日志、Human Task、Approval 和 Artifact，消除对 Dagu UI 的产品依赖。
-4. 再接入 Codex；随后用最小 OpenCode Adapter 验证可替换性。
-5. 收口 Workbench、Approvals、Alerts 和 Audit 的真实 Gateway。
-6. 最后部署 RAGFlow，完成 Knowledge Adapter、Knowledge MCP 和 Knowledge 前端。
-7. 完成包含知识检索的黄金 E2E 场景，再进入告警沉淀、Playbook 生成和代码分析等产品功能。
+2. 由用户验收当前 Dagu/Grafana MCP 主链路，再补齐 Grafana 插件内的 Playbook 参数、retry、日志、Human Task、Approval 和 Artifact，消除对 Dagu UI 的产品依赖。
+3. 部署 RAGFlow，完成 Knowledge Adapter、Knowledge MCP 和 Knowledge 前端；Runbook 页面保持空态，不在本阶段实现。
+4. 再接入 Codex，优先完成统一会话闭环；随后用最小 OpenCode Adapter 验证可替换性。
+5. 会话稳定后补齐 Canvas 与视觉 Artifact，再收口 Workbench、Approvals、Alerts 和 Audit 的真实 Gateway。
+6. 完成包含知识检索的黄金 E2E 场景，再进入 Runbook 产品设计、告警沉淀、Playbook 生成和代码分析等功能。
