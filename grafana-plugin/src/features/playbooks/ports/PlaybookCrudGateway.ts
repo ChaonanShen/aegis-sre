@@ -19,4 +19,5 @@ export interface PlaybookCrudGateway {
   startRun(playbookId: string, input: StartPlaybookRunInput, signal?: AbortSignal): Promise<PlaybookRunRecord>;
   getRun(runId: string, signal?: AbortSignal): Promise<PlaybookRunRecord>;
   cancelRun(runId: string, signal?: AbortSignal): Promise<void>;
+  retryRun(runId: string, idempotencyKey: string, signal?: AbortSignal): Promise<PlaybookRunRecord>;
 }

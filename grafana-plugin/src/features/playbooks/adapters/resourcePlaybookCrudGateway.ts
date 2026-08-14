@@ -99,6 +99,13 @@ export function createResourcePlaybookCrudGateway(
     async cancelRun(runId, signal) {
       await client().requestVoid(`${runPath(runId)}:cancel`, { method: 'POST', signal });
     },
+    async retryRun(runId, idempotencyKey, signal) {
+      return toRun(await client().request(`${runPath(runId)}:retry`, isRun, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        signal,
+      }));
+    },
   };
 }
 

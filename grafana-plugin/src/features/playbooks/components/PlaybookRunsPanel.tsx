@@ -35,6 +35,7 @@ export function PlaybookRunsPanel({ gateway, playbookId }: { gateway: PlaybookCr
   }, [gateway, playbookId]);
 
   const activeRun = useMemo(() => runs.find((run) => !terminal(run.status)), [runs]);
+  const latestRun = runs[0];
   const activeRunId = activeRun?.id;
   useEffect(() => {
     if (!activeRunId) {
@@ -112,12 +113,39 @@ export function PlaybookRunsPanel({ gateway, playbookId }: { gateway: PlaybookCr
     }
   }, [activeRun, busy, gateway]);
 
+  const retry = useCallback(async () => {
+    if (!latestRun || busy || (latestRun.status !== 'failed' && latestRun.status !== 'cancelled')) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const next = await gateway.retryRun(latestRun.id, `retry-${crypto.randomUUID()}`);
+      if (mounted.current) {
+        setRuns((current) => upsertRun(current, next));
+      }
+    } catch (reason) {
+      if (!isAbortError(reason)) {
+        setError(toError(reason).message);
+      }
+    } finally {
+      if (mounted.current) {
+        setBusy(false);
+      }
+    }
+  }, [busy, gateway, latestRun]);
+
   return (
     <section className="playbook-runs">
       <header>
         <div><h2>运行记录</h2><small>状态直接来自 Dagu，运行期间自动刷新。</small></div>
-        {activeRun ? (
-          <button className="playbook-button danger" disabled={busy} onClick={() => void cancel()} type="button">取消运行</button>
+        {activeRun || latestRun ? (
+          <div className="playbook-run-actions">
+            {latestRun && (latestRun.status === 'failed' || latestRun.status === 'cancelled') && (
+              <button className="playbook-button secondary" disabled={busy} onClick={() => void retry()} type="button">重试运行</button>
+            )}
+            {activeRun && <button className="playbook-button danger" disabled={busy} onClick={() => void cancel()} type="button">取消运行</button>}
+          </div>
         ) : (
           <button className="playbook-button primary" disabled={busy} onClick={() => void start()} type="button">{busy ? '启动中…' : '运行 Playbook'}</button>
         )}

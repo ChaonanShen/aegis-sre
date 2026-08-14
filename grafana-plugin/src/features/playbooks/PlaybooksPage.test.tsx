@@ -135,6 +135,7 @@ function fakeGateway(): jest.Mocked<PlaybookCrudGateway> {
     startRun: jest.fn(),
     getRun: jest.fn(),
     cancelRun: jest.fn(),
+    retryRun: jest.fn(),
   };
 }
 

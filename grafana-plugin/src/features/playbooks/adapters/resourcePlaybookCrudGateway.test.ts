@@ -71,7 +71,7 @@ describe('Control Plane Playbook CRUD gateway', () => {
   });
 
   test('starts, polls, lists and cancels real Dagu runs', async () => {
-    const backend = fakeBackend([{ ...run, status: 'queued' }, run, { items: [run], has_more: false }, undefined]);
+    const backend = fakeBackend([{ ...run, status: 'queued' }, run, { items: [run], has_more: false }, undefined, { ...run, status: 'queued' }]);
     const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
 
     await expect(
@@ -80,6 +80,7 @@ describe('Control Plane Playbook CRUD gateway', () => {
     await expect(gateway.getRun('run_abcdefgh')).resolves.toMatchObject({ status: 'running', steps: [{ id: 'inspect' }] });
     await expect(gateway.listRuns('pbk_scope_abcdefgh')).resolves.toHaveLength(1);
     await gateway.cancelRun('run_abcdefgh');
+    await expect(gateway.retryRun('run_abcdefgh', 'retry-operation-123')).resolves.toMatchObject({ status: 'queued' });
 
     const requests = (backend.fetch as jest.Mock).mock.calls.map(([request]) => request as BackendSrvRequest);
     expect(requests).toEqual([
@@ -92,6 +93,7 @@ describe('Control Plane Playbook CRUD gateway', () => {
       expect.objectContaining({ method: 'GET', url: expect.stringContaining('/runs/run_abcdefgh') }),
       expect.objectContaining({ method: 'GET', url: expect.stringContaining('/playbooks/pbk_scope_abcdefgh/runs') }),
       expect.objectContaining({ method: 'POST', url: expect.stringContaining('/runs/run_abcdefgh:cancel') }),
+      expect.objectContaining({ method: 'POST', headers: { 'Idempotency-Key': 'retry-operation-123' }, url: expect.stringContaining('/runs/run_abcdefgh:retry') }),
     ]);
   });
 });
