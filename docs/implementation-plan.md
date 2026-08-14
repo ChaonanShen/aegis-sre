@@ -312,7 +312,7 @@ Provider 数据归属与标识策略复核：
 
 ## 9. 阶段 6：Codex 与 OpenCode Agent Provider
 
-状态：**执行中。OpenCode + DeepSeek 的本地核心会话闭环已完成真实冒烟，当前只注册已验收的 Grafana Read MCP；Dagu MCP 与 Codex/OpenCode 的统一启用清单、审批续流和双 Provider 合同验收仍待完成。Knowledge MCP 在阶段 8 完成真实授权验收后再加入。**
+状态：**执行中。OpenCode + DeepSeek 的本地核心会话闭环已完成真实冒烟；Knowledge MCP 已按阶段 8 的边界接入 OpenCode 和 Dagu，Grafana Read MCP 保持不变。Codex 进程启动早于 Control Plane HTTP 监听，不能把 Control Plane 自身的 Knowledge endpoint 配成 required MCP 形成启动环；该启动时序重构、审批续流和双 Provider 合同验收仍待完成。**
 
 目标：Codex 作为默认 Provider，同时用 OpenCode 证明抽象没有泄漏。Grafana 插件的 Workbench 是唯一会话入口，不增加 Codex 或 OpenCode 独立聊天页面。Session、Turn、消息、审批和历史全部由 Agent Provider 持久化；Aegis 只提供无状态的公共契约、授权收敛、进程监管和协议适配。
 
@@ -357,7 +357,7 @@ Provider 数据归属与标识策略复核：
 - [x] 实现底层 session create/read/delete/abort 和 caller-supplied ID。
 - [x] 实现 async prompt 和 durable SSE event 订阅。
 - [ ] 映射 message part、tool call、permission 和完成事件（message/tool/完成已接通；固定版 durable SSE 不包含 permission 事件，审批续流待解决）。
-- [ ] 配置与 Codex 一致的已启用 MCP；Knowledge 在 RAGFlow 阶段完成后再加入。
+- [ ] 配置与 Codex 一致的完整 MCP 清单（Knowledge 已在可选部署中完成鉴权注册；Dagu 与 Grafana 清单统一仍待完成）。
 - [ ] Session list/read/update/delete 和消息历史直接使用 OpenCode 原生 API，并为 OpenCode 数据目录配置官方持久化与备份恢复；Control Plane 不保存副本。
 
 ### 6.3 Provider 合同测试
@@ -422,9 +422,9 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 
 ## 11. 阶段 8：RAGFlow 与 Knowledge 最终垂直切片
 
-状态：**执行中。按 ADR 0004 先完成无状态公共标识和 Knowledge 所需的最小 Folder 授权，再逐层接通 RAGFlow、前端、MCP、OpenCode 与 Dagu。**
+状态：**实现完成、真实数据验收待执行。RAGFlow、前端、MCP、OpenCode 与 Dagu 已按 ADR 0004 接通；尚需由真实 RAGFlow 租户提供 API Key，并导入至少 30 份真实运维文档运行质量门禁。Codex 注册因 Control Plane/App Server 启动时序存在自依赖，保留在阶段 6 重构，不虚报完成。**
 
-目标：完成 `Grafana Plugin → Control Plane → RAGFlow` 的真实知识链路；Agent 接入后再把已经验收的 Knowledge MCP 注册给 Agent。
+目标：完成 `Grafana Plugin → Control Plane → RAGFlow` 的真实知识链路，并把受限 Knowledge MCP 注册给 OpenCode 与 Dagu。
 
 ### 8.0 Runbook、文档与 Playbook 的语义边界
 
@@ -435,48 +435,50 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 
 ### 8.1 基础部署
 
-- [ ] 固定 RAGFlow 版本和镜像 digest。
-- [ ] 为 MySQL、Redis、对象存储和检索引擎配置持久卷。
-- [ ] 配置外部 Embedding 服务。
-- [ ] 建立 readiness、备份和恢复说明。
-- [ ] 记录最低资源、开发机降配方式，以及不启动 RAGFlow 时其他模块的独立开发方式。
+- [x] 固定 RAGFlow 版本和镜像 digest。
+- [x] 为 MySQL、Valkey、对象存储和检索引擎配置持久卷。
+- [x] 配置固定版本的外部 Embedding 服务；本地默认小模型仅用于节省资源，生产模型必须单独评测。
+- [x] 建立 readiness、备份和恢复说明。
+- [x] 记录最低资源、开发机降配方式，以及不启动 RAGFlow 时其他模块的独立开发方式。
 
 ### 8.1.1 公共标识与最小授权前置
 
 - [x] 通过 ADR 0004 冻结 KnowledgeBase/Document 确定性公共 ID、RAGFlow 原生 metadata 和无影子数据库方案。
-- [ ] Plugin Backend 丢弃浏览器伪造的身份与 Folder 头，并通过 Grafana RBAC 校验 `folders:uid:<uid>` 后注入可信上下文。
-- [ ] Control Plane 对所有 Knowledge 管理和检索操作重新校验 Actor/Folder 范围；公共 ID 不作为授权凭据。
-- [ ] Knowledge MCP Token 在服务端绑定固定 Actor 与 Folder allowlist，缺失或越界默认拒绝。
-- [ ] 覆盖跨 Folder 列表、详情、修改、删除、检索和 MCP 调用的拒绝测试。
+- [x] Plugin Backend 丢弃浏览器伪造的身份与 Folder 头，并通过 Grafana RBAC 校验 `folders:uid:<uid>` 后注入可信上下文。
+- [x] Control Plane 对所有 Knowledge 管理和检索操作重新校验 Actor/Folder 范围；公共 ID 不作为授权凭据。
+- [x] Knowledge MCP Token 在服务端绑定固定 Actor 与 Folder allowlist，缺失或越界默认拒绝。
+- [x] 覆盖跨 Folder 列表、详情、修改、删除、检索和 MCP 调用的拒绝测试。
 
 ### 8.2 Knowledge Adapter
 
-- [ ] Dataset 创建、更新和删除。
-- [ ] 文档上传、开始解析、停止解析和删除。
-- [ ] 文档解析状态轮询与状态映射。
-- [ ] 文档、Chunk 分页浏览。
-- [ ] 混合检索、阈值、Top K 和引用位置映射。
-- [ ] 请求超时、重试、限流和错误净化。
-- [ ] 验证 RAGFlow Dataset/Document 的公共标识与 metadata 查询策略，不建立映射表。
-- [ ] 对不确定的变更结果禁止自动重试，并提供 `provider_result_unknown` 对账语义。
+- [x] Dataset 创建、更新和删除。
+- [x] 文档上传、开始解析、停止解析和删除。
+- [x] 文档解析状态轮询与状态映射。
+- [x] 文档、Chunk 分页浏览。
+- [x] 混合检索、阈值、Top K 和引用位置映射。
+- [x] 请求超时、只读请求有限重试、响应限额和错误净化。
+- [x] 验证 RAGFlow Dataset/Document 的公共标识与 metadata 查询策略，不建立映射表。
+- [x] 对不确定的变更结果禁止自动重试，并提供 `provider_result_unknown` 对账语义。
 
 ### 8.3 Knowledge MCP
 
-- [ ] 在 Control Plane 中暴露 Streamable HTTP MCP endpoint。
-- [ ] 实现 `knowledge.search`。
-- [ ] 实现 `knowledge.get_document`。
-- [ ] 实现 `knowledge.list_sources`。
-- [ ] MCP 工具只接受业务 ID，不接受 Provider Dataset ID。
-- [ ] 检索前根据 Actor、Folder 和 Service 收敛范围。
-- [ ] 限制结果数量、单 Chunk 长度和总响应大小。
-- [ ] 真实检索与授权测试通过后，才把 Knowledge MCP 注册到 Codex 和 OpenCode。
+- [x] 在 Control Plane 中暴露 Streamable HTTP MCP endpoint。
+- [x] 实现 `knowledge.search`。
+- [x] 实现 `knowledge.get_document`。
+- [x] 实现 `knowledge.list_sources`。
+- [x] MCP 工具只接受业务 ID，不接受 Provider Dataset ID。
+- [x] 检索前根据 Actor、Folder 和 Service 收敛范围。
+- [x] 限制结果数量、单 Chunk 长度和总响应大小。
+- [x] 通过真实 MCP 客户端覆盖鉴权、越权拒绝和响应边界，并注册到 OpenCode 与 Dagu；Codex 注册等待阶段 6 启动时序重构。
 
 ### 8.4 前端接入
 
-- [ ] 实现真实 `KnowledgeGateway`。
-- [ ] Runbook 区域保持明确空态；当前不实现 Runbook Gateway、fixture fallback 或向 Playbook 的迁移逻辑。
-- [ ] 替换真实模式下的 Knowledge fixture fallback。
-- [ ] 展示解析状态、失败原因、引用和原文位置。
+- [x] 实现真实 `KnowledgeGateway` 和管理 Gateway。
+- [x] Runbook 区域保持明确空态；当前不实现 Runbook Gateway、fixture fallback 或向 Playbook 的迁移逻辑。
+- [x] 替换真实模式下的 Knowledge fixture fallback。
+- [x] 展示解析状态、失败原因、引用和原文位置。
+
+已提交独立评测命令 `go run ./cmd/knowledge-eval`，会拒绝少于 30 条的样例集，并强制检查解析成功率、Top 5 命中率、越权结果和删除残留。下列验收指标只有在真实租户凭据和私有评测集到位并产出报告后才视为通过。
 
 验收数据集：30～50 份真实运维文档，覆盖中文、错误码、PromQL、日志、Markdown 代码块、PDF 表格和 DOCX 标题。
 
@@ -575,7 +577,7 @@ rollback version
 
 1. 保持当前基本 Playbook 执行能力及 OpenCode + DeepSeek 会话闭环稳定，持续运行本地真实冒烟与契约验证（本轮完成）。
 2. 补齐 Grafana 插件内的 Playbook 参数、retry、日志、Human Task、Approval 和 Artifact，消除对 Dagu UI 的产品依赖。
-3. 部署 RAGFlow，完成 Knowledge Adapter、Knowledge MCP 和 Knowledge 前端；Runbook 页面保持空态，不在本阶段实现。
-4. 为 Codex 与 OpenCode 统一启用已验收的 MCP，补齐审批、重启恢复与双 Provider 合同测试，随后完成多用户隔离设计。
+3. 使用真实 RAGFlow 租户与至少 30 份运维文档执行 Knowledge 质量门禁；代码链路、OpenCode/Dagu MCP 和前端已完成，Runbook 页面保持空态。
+4. 重构 Codex App Server 与 Control Plane HTTP 的启动时序后注册 Knowledge MCP，再统一其他已验收 MCP，补齐审批、重启恢复与双 Provider 合同测试，随后完成多用户隔离设计。
 5. 会话稳定后补齐 Canvas 与视觉 Artifact，再收口 Workbench、Approvals、Alerts 和 Audit 的真实 Gateway。
 6. 完成包含知识检索的黄金 E2E 场景，再进入 Runbook 产品设计、告警沉淀、Playbook 生成和代码分析等功能。

@@ -2,7 +2,7 @@
 
 Aegis SRE 是一个以 Grafana App Plugin 为入口的开源 SRE 工作台。项目本身只维护产品控制面与必要的集成层，Agent、知识检索、Playbook 编排和 Grafana 工具能力分别交给成熟组件。
 
-当前已完成仓库基线、无状态 Control Plane、v1 公共契约、Plugin Backend 受信代理，以及 Dagu Playbook 到只读 Grafana MCP 的基本执行链。阶段 6 的 Agent 核心链路已经接入 Codex App Server 与 OpenCode Server：支持 Provider 原生会话、流式 Turn、显式取消、单 Actor 隔离和 Provider-neutral ID；Codex 已支持命令与文件变更审批。OpenCode 审批续流、统一 MCP 启动校验和真实 Provider 重启恢复验收仍是明确缺口，不能视为阶段 6 已完成。RAGFlow 继续留在阶段 8。
+当前已完成仓库基线、无状态 Control Plane、v1 公共契约、Plugin Backend 受信代理，以及 Dagu Playbook 到只读 Grafana MCP 的基本执行链。阶段 6 的 Agent 核心链路已经接入 Codex App Server 与 OpenCode Server。阶段 8 的 RAGFlow Adapter、Knowledge 管理与检索界面、受限 MCP endpoint，以及 OpenCode/Dagu 注册也已接通；真实数据质量验收仍需要部署方提供 RAGFlow 租户 API Key 和至少 30 份运维文档。Codex Knowledge MCP 注册、OpenCode 审批续流、统一 MCP 启动校验和真实 Provider 重启恢复仍是明确缺口。
 
 ## 目标组件
 
@@ -54,6 +54,8 @@ make local-smoke
 `local-secrets` 只在 git 忽略的 `deploy/local/secrets/` 生成开发凭据。运行前需要把 DeepSeek API Key 写入 `deploy/local/secrets/deepseek-api-key`；脚本不会生成或提交 Provider 凭据。启动过程会创建 Grafana Viewer Service Account；Grafana 默认只绑定 `127.0.0.1:3000`，Dagu 只绑定 `127.0.0.1:18081`，Control Plane、OpenCode、只读 Grafana MCP 和其鉴权网关不发布主机端口。可用 `GRAFANA_PORT`、`DAGU_PORT` 覆盖两个开发端口；运行冒烟时需传递相同的 `DAGU_PORT`。
 
 `local-smoke` 同时验证 Dagu 到 Grafana MCP 的底层路径、Grafana Plugin 经 Control Plane 管理和运行原生 Dagu Playbook 的产品路径，以及 OpenCode 到 DeepSeek 的真实文本会话；任一路径不可用都会明确失败。
+
+Knowledge 是可选的重型部署，不影响基础栈独立运行。初始化租户、稳态启动、资源要求、备份恢复和质量评测见 [RAGFlow 本地部署](deploy/ragflow/README.md)。
 
 Plugin Backend 通过以下环境变量连接 Control Plane：
 
