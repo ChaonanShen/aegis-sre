@@ -152,6 +152,27 @@ func TestClientRejectsInvalidReplyID(t *testing.T) {
 	}
 }
 
+func TestClientRepliesWithProtocolError(t *testing.T) {
+	t.Parallel()
+	process := newPipeProcess()
+	client, _ := NewClient(process.clientInput, process.clientOutput)
+	defer client.Close()
+	reply := make(chan map[string]any, 1)
+	go func() {
+		var message map[string]any
+		_ = json.NewDecoder(process.serverInput).Decode(&message)
+		reply <- message
+	}()
+	if err := client.ReplyError(Request{ID: json.RawMessage(`7`)}, -32601, "unsupported request"); err != nil {
+		t.Fatal(err)
+	}
+	message := <-reply
+	errorValue, _ := message["error"].(map[string]any)
+	if message["id"] != float64(7) || errorValue["code"] != float64(-32601) || errorValue["message"] != "unsupported request" {
+		t.Fatalf("reply = %#v", message)
+	}
+}
+
 func TestClientDoneClosesWhenExplicitlyStopped(t *testing.T) {
 	t.Parallel()
 	process := newPipeProcess()

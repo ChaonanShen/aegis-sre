@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"sync/atomic"
 )
@@ -124,6 +125,16 @@ func (client *Client) Reply(request Request, result any) error {
 		return errors.New("Codex request ID is invalid")
 	}
 	return client.write(map[string]any{"id": request.ID, "result": result})
+}
+
+func (client *Client) ReplyError(request Request, code int, message string) error {
+	if len(request.ID) == 0 || !json.Valid(request.ID) {
+		return errors.New("Codex request ID is invalid")
+	}
+	if code == 0 || strings.TrimSpace(message) == "" {
+		return errors.New("Codex response error is invalid")
+	}
+	return client.write(map[string]any{"id": request.ID, "error": wireError{Code: code, Message: message}})
 }
 
 func (client *Client) Close() error {
