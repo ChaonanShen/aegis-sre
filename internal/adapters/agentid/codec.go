@@ -98,6 +98,14 @@ func (codec *Codec) EncodeApprovalKey(value string) (domain.ID, error) {
 	return codec.encodeOpaqueKey(value, "apr_", "aegis-agent-approval-v1")
 }
 
+func (codec *Codec) EncodeSessionKey(value string) (domain.ID, error) {
+	return codec.encodeOpaqueKey(value, "ses_", "aegis-agent-session-key-v1")
+}
+
+func (codec *Codec) EncodeTurnKey(value string) (domain.ID, error) {
+	return codec.encodeOpaqueKey(value, "turn_", "aegis-agent-turn-key-v1")
+}
+
 func (codec *Codec) encodeOpaqueKey(value, prefix, purpose string) (domain.ID, error) {
 	if value == "" {
 		return "", errors.New("provider key is required")

@@ -94,6 +94,16 @@ func TestCodecSeparatesOpaqueEventCallAndApprovalIDs(t *testing.T) {
 	}
 }
 
+func TestCodecDerivesCallerOwnedSessionAndTurnIDs(t *testing.T) {
+	t.Parallel()
+	codec, _ := New([]byte("0123456789abcdef0123456789abcdef"))
+	sessionID, _ := codec.EncodeSessionKey("tenant\x00org\x00create-key")
+	turnID, _ := codec.EncodeTurnKey(string(sessionID) + "\x00turn-key")
+	if !strings.HasPrefix(string(sessionID), "ses_") || !strings.HasPrefix(string(turnID), "turn_") || !sessionID.Valid() || !turnID.Valid() {
+		t.Fatalf("session = %q, turn = %q", sessionID, turnID)
+	}
+}
+
 func TestDecodeKeyAcceptsOnlyExactKeyMaterial(t *testing.T) {
 	t.Parallel()
 	if key, err := DecodeKey([]byte("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY")); err != nil || len(key) != 32 {
