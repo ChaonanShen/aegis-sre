@@ -2,7 +2,10 @@ module github.com/1024XEngineer/aegis-sre/grafana-plugin
 
 go 1.26.4
 
-require github.com/grafana/grafana-plugin-sdk-go v0.292.2
+require (
+	github.com/grafana/authlib v0.0.0-20260723132736-22c8f38b300f
+	github.com/grafana/grafana-plugin-sdk-go v0.292.2
+)
 
 require (
 	github.com/BurntSushi/toml v1.6.0 // indirect
@@ -15,7 +18,7 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
 	github.com/fatih/color v1.19.0 // indirect
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
+	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
@@ -24,7 +27,10 @@ require (
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/google/go-querystring v1.2.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
+	github.com/grafana/authlib/types v0.0.0-20260304161757-e152786a5bb4 // indirect
+	github.com/grafana/dskit v0.0.0-20260108123158-1a1acfb6ef2e // indirect
 	github.com/grafana/otel-profiling-go v0.6.0 // indirect
 	github.com/grafana/pyroscope-go/godeltaprof v0.1.11 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware/providers/prometheus v1.1.0 // indirect
@@ -78,6 +84,7 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/exp v0.0.0-20260112195511-716be5621a96 // indirect
 	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/sync v0.21.0 // indirect
 	golang.org/x/sys v0.45.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect

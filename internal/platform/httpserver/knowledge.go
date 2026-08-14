@@ -327,8 +327,13 @@ func requireKnowledgeActor(w http.ResponseWriter, request *http.Request, write b
 		writeAPIProblem(w, request, http.StatusForbidden, "forbidden", "trusted Folder context is required", false)
 		return domain.ActorContext{}, false
 	}
-	if write && !hasPlaybookWriteRole(actor.Roles) {
-		writeAPIProblem(w, request, http.StatusForbidden, "forbidden", "Grafana Editor or Admin role is required", false)
+	access := request.Header.Get("X-Aegis-Folder-Access")
+	if access != "read" && access != "write" {
+		writeAPIProblem(w, request, http.StatusForbidden, "forbidden", "trusted Folder permission is required", false)
+		return domain.ActorContext{}, false
+	}
+	if write && access != "write" {
+		writeAPIProblem(w, request, http.StatusForbidden, "forbidden", "Folder write permission is required", false)
 		return domain.ActorContext{}, false
 	}
 	return actor, true

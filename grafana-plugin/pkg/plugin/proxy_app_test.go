@@ -3,6 +3,7 @@ package plugin
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -31,6 +32,8 @@ func TestProxyInjectsTrustedGrafanaIdentity(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/capabilities?scope=current", nil)
 	request.Header.Set(headerTenantID, "spoofed-tenant")
 	request.Header.Set(headerUserID, "spoofed-user")
+	request.Header.Set(headerFolderUID, "spoofed-folder")
+	request.Header.Set(headerFolderAccess, "write")
 	request.Header.Set("Cookie", "must-not-forward")
 	request = request.WithContext(backend.WithPluginContext(request.Context(), backend.PluginContext{
 		Namespace: "tenant-1",
@@ -57,6 +60,12 @@ func TestProxyInjectsTrustedGrafanaIdentity(t *testing.T) {
 	}
 	if received.Get("Cookie") != "" {
 		t.Fatal("browser cookies must not be forwarded")
+	}
+	if received.Get(headerFolderUID) != "" {
+		t.Fatal("unverified browser Folder header must not be forwarded")
+	}
+	if received.Get(headerFolderAccess) != "" {
+		t.Fatal("unverified browser Folder access must not be forwarded")
 	}
 }
 
@@ -131,6 +140,99 @@ func TestProxyPreservesPlaybookCRUDPayloadAndHeaders(t *testing.T) {
 	requireIdentity(app.proxy).ServeHTTP(response, request)
 	if response.Code != http.StatusNoContent || receivedMethod != http.MethodDelete || receivedContentType != "application/yaml" || receivedKey != "playbook-operation-123" || receivedBody != "name: diagnose\nsteps: []\n" {
 		t.Fatalf("status=%d method=%q content-type=%q key=%q body=%q", response.Code, receivedMethod, receivedContentType, receivedKey, receivedBody)
+	}
+}
+
+func TestKnowledgeFolderAuthorizationInjectsOnlyVerifiedFolder(t *testing.T) {
+	var received http.Header
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		received = request.Header.Clone()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer upstream.Close()
+	app := testProxyApp(t, upstream.URL, "")
+	var checkedAction, checkedFolder string
+	app.folderAccess = func(_ *http.Request, action, folder string) (bool, error) {
+		checkedAction, checkedFolder = action, folder
+		return true, nil
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge-bases", nil)
+	request.Header.Set(headerFolderUID, "folder-a")
+	request.Header.Set(headerGrafanaID, "signed-user-id-token")
+	request = request.WithContext(backend.WithPluginContext(request.Context(), backend.PluginContext{Namespace: "tenant", OrgID: 1, User: &backend.User{Login: "alice", Role: "Viewer"}}))
+	response := httptest.NewRecorder()
+	requireIdentity(app.requireFolderAuthorization(app.proxy)).ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent || checkedAction != actionKnowledgeRead || checkedFolder != "folder-a" {
+		t.Fatalf("status=%d action=%q folder=%q body=%s", response.Code, checkedAction, checkedFolder, response.Body.String())
+	}
+	if received.Get(headerFolderUID) != "folder-a" || received.Get(headerFolderAccess) != "read" || received.Get(headerGrafanaID) != "" {
+		t.Fatalf("upstream headers = %v", received)
+	}
+}
+
+func TestKnowledgeFolderAuthorizationMapsSearchToReadAndMutationsToWrite(t *testing.T) {
+	app := testProxyApp(t, "http://control-plane.invalid", "")
+	tests := []struct {
+		method string
+		path   string
+		action string
+	}{
+		{method: http.MethodPost, path: "/api/v1/knowledge:search", action: actionKnowledgeRead},
+		{method: http.MethodPost, path: "/api/v1/knowledge-bases", action: actionKnowledgeWrite},
+		{method: http.MethodDelete, path: "/api/v1/knowledge-bases/kbs_abcdefgh", action: actionKnowledgeWrite},
+	}
+	for _, test := range tests {
+		t.Run(test.method+test.path, func(t *testing.T) {
+			checked := ""
+			app.folderAccess = func(_ *http.Request, action, _ string) (bool, error) {
+				checked = action
+				return false, nil
+			}
+			request := httptest.NewRequest(test.method, test.path, nil)
+			request.Header.Set(headerFolderUID, "folder-a")
+			request.Header.Set(headerGrafanaID, "signed-token")
+			response := httptest.NewRecorder()
+			app.requireFolderAuthorization(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("denied request reached upstream") })).ServeHTTP(response, request)
+			if checked != test.action || response.Code != http.StatusForbidden {
+				t.Fatalf("action=%q status=%d body=%s", checked, response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
+func TestKnowledgeFolderAuthorizationFailsClosed(t *testing.T) {
+	app := testProxyApp(t, "http://control-plane.invalid", "")
+	var calls atomic.Int32
+	app.folderAccess = func(*http.Request, string, string) (bool, error) {
+		calls.Add(1)
+		return false, errors.New("Grafana auth unavailable")
+	}
+	tests := []struct {
+		name   string
+		folder string
+		token  string
+		status int
+	}{
+		{name: "missing folder", token: "token", status: http.StatusForbidden},
+		{name: "unsafe folder", folder: "../escape", token: "token", status: http.StatusForbidden},
+		{name: "missing ID token", folder: "folder-a", status: http.StatusUnauthorized},
+		{name: "authorization unavailable", folder: "folder-a", token: "token", status: http.StatusServiceUnavailable},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "/api/v1/knowledge-bases", nil)
+			request.Header.Set(headerFolderUID, test.folder)
+			request.Header.Set(headerGrafanaID, test.token)
+			response := httptest.NewRecorder()
+			app.requireFolderAuthorization(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("request reached upstream") })).ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+		})
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("authorization calls = %d, want 1", calls.Load())
 	}
 }
 

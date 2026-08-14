@@ -36,6 +36,25 @@
       "addToNav": true
     }
   ],
+  "iam": {
+    "permissions": [
+      {"action": "users.permissions:read", "scope": "users:*"}
+    ]
+  },
+  "actionSets": [
+    {
+      "action": "folders:view",
+      "actions": ["grafana-plugin-app.knowledge:read"]
+    },
+    {
+      "action": "folders:edit",
+      "actions": ["grafana-plugin-app.knowledge:write"]
+    },
+    {
+      "action": "folders:admin",
+      "actions": ["grafana-plugin-app.knowledge:write"]
+    }
+  ],
   "dependencies": {
     "grafanaDependency": ">=13.0.0 <14.0.0",
     "plugins": []

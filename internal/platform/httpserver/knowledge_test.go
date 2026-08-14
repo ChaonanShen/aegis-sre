@@ -46,7 +46,7 @@ func TestKnowledgeWritesRequireTrustedFolderAndEditorRole(t *testing.T) {
 		mutate func(*http.Request)
 	}{
 		{name: "missing folder", mutate: func(request *http.Request) { request.Header.Del("X-Aegis-Folder-UID") }},
-		{name: "viewer", mutate: func(request *http.Request) { request.Header.Set("X-Aegis-Roles", "Viewer") }},
+		{name: "read-only Folder", mutate: func(request *http.Request) { request.Header.Set("X-Aegis-Folder-Access", "read") }},
 		{name: "mismatched body folder", mutate: func(request *http.Request) {
 			request.Body = io.NopCloser(strings.NewReader(`{"name":"KB","folder_uid":"folder-b"}`))
 		}},
@@ -175,6 +175,7 @@ func knowledgeRequest(method, path, body string) *http.Request {
 	request.Header.Set(headerOrgID, "org")
 	request.Header.Set(headerUserID, "user")
 	request.Header.Set("X-Aegis-Folder-UID", "folder-a")
+	request.Header.Set("X-Aegis-Folder-Access", "write")
 	request.Header.Set("X-Aegis-Roles", "Editor")
 	return request
 }
