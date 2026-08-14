@@ -185,7 +185,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		}
 		writeJSON(w, http.StatusOK, knowledgeDocumentJSON(document))
 	})
-	mux.HandleFunc("PATCH /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}", func(w http.ResponseWriter, request *http.Request) {
+	updateDocument := func(w http.ResponseWriter, request *http.Request) {
 		actor, ref, ok := knowledgeDocumentRequest(w, request, true)
 		if !ok {
 			return
@@ -202,7 +202,10 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 			return
 		}
 		writeJSON(w, http.StatusOK, knowledgeDocumentJSON(document))
-	})
+	}
+	// PUT 是冻结公共契约；PATCH 仅保留给迁移期客户端，至少跨过兼容窗口后再删除。
+	mux.HandleFunc("PUT /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}", updateDocument)
+	mux.HandleFunc("PATCH /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}", updateDocument)
 	mux.HandleFunc("DELETE /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}", func(w http.ResponseWriter, request *http.Request) {
 		actor, ref, ok := knowledgeDocumentRequest(w, request, true)
 		if !ok {

@@ -157,6 +157,16 @@ func TestDocumentIndexActionUsesPublicReference(t *testing.T) {
 	}
 }
 
+func TestDocumentMetadataUpdateUsesFrozenPutContract(t *testing.T) {
+	server, fake := newKnowledgeHTTPServer(t)
+	request := knowledgeRequest(http.MethodPut, "/api/v1/knowledge-bases/kbs_abcdefgh/documents/doc_abcdefgh", `{"service":"checkout","tags":["prod","guide"]}`)
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || fake.updateRef.ID != "doc_abcdefgh" || fake.updateInput.Service != "checkout" || len(fake.updateInput.Tags) != 2 {
+		t.Fatalf("status=%d ref=%+v input=%+v body=%s", response.Code, fake.updateRef, fake.updateInput, response.Body.String())
+	}
+}
+
 func newKnowledgeHTTPServer(t *testing.T) (*http.Server, *knowledgeHTTPFake) {
 	t.Helper()
 	ids, err := knowledgeid.New([]byte("01234567890123456789012345678901"))
@@ -193,6 +203,8 @@ type knowledgeHTTPFake struct {
 	retrieveInput ports.RetrievalInput
 	listErr       error
 	startRef      ports.KnowledgeDocumentRef
+	updateRef     ports.KnowledgeDocumentRef
+	updateInput   ports.UpdateKnowledgeDocumentInput
 }
 
 func (fake *knowledgeHTTPFake) ListCollections(context.Context, domain.ActorContext, string, domain.PageRequest) (domain.Page[ports.KnowledgeCollection], error) {
@@ -217,6 +229,10 @@ func (fake *knowledgeHTTPFake) Retrieve(_ context.Context, actor domain.ActorCon
 func (fake *knowledgeHTTPFake) StartIndexing(_ context.Context, _ domain.ActorContext, ref ports.KnowledgeDocumentRef) error {
 	fake.startRef = ref
 	return nil
+}
+func (fake *knowledgeHTTPFake) UpdateDocument(_ context.Context, _ domain.ActorContext, ref ports.KnowledgeDocumentRef, input ports.UpdateKnowledgeDocumentInput) (ports.KnowledgeDocument, error) {
+	fake.updateRef, fake.updateInput = ref, input
+	return ports.KnowledgeDocument{Ref: ref, Name: "guide.md", MediaType: "text/markdown", Service: input.Service, Tags: input.Tags, Status: domain.DocumentReady}, nil
 }
 
 var _ ports.KnowledgeProvider = (*knowledgeHTTPFake)(nil)
