@@ -1145,14 +1145,13 @@ function summary(id: string): SessionSummary {
   };
 }
 
-function committedSession(id: string, clientTurnId: string): OpenedSession {
+function committedSession(id: string, _clientTurnId: string): OpenedSession {
   return {
     ...openedSession(id),
     messages: [
-      { id: 'user-1', clientTurnId, role: 'user', content: 'persisted user' },
+      { id: 'user-1', role: 'user', content: 'persisted user' },
       {
         id: 'assistant-1',
-        clientTurnId,
         role: 'assistant',
         content: 'persisted assistant',
         streamStatus: 'complete',

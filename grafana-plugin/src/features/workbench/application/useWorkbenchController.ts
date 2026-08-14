@@ -396,9 +396,10 @@ export function useWorkbenchController({
         if (runID !== streamRunRef.current || controller.signal.aborted) {
           return false;
         }
+        const previousMessageIDs = new Set(command.input.history.map(({ id }) => id));
         const committed = persisted.messages.some(
-          ({ clientTurnId, role, streamStatus }) =>
-            clientTurnId === command.input.clientTurnId && role === 'assistant' && streamStatus === 'complete'
+          ({ id, role, streamStatus }) =>
+            !previousMessageIDs.has(id) && role === 'assistant' && streamStatus === 'complete'
         );
         if (committed) {
           publishOpened(persisted, false);
