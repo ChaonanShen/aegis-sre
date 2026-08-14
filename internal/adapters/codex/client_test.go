@@ -41,7 +41,7 @@ func TestClientInitializesCorrelatesConcurrentCallsAndReceivesNotifications(t *t
 			}
 			id := request["id"]
 			if method == "initialize" {
-				_, _ = process.serverOutput.Write([]byte(`{"id":` + number(id) + `,"result":{}}` + "\n"))
+				_, _ = process.serverOutput.Write([]byte(`{"id":` + number(id) + `,"result":{"codexHome":"/tmp/codex","platformFamily":"unix","platformOs":"linux","userAgent":"Codex CLI/` + PinnedVersion + ` (test)"}}` + "\n"))
 				_, _ = process.serverOutput.Write([]byte(`{"method":"thread/started","params":{"thread":{"id":"uuid"}}}` + "\n"))
 				continue
 			}
@@ -76,6 +76,34 @@ func TestClientInitializesCorrelatesConcurrentCallsAndReceivesNotifications(t *t
 		}(method)
 	}
 	wg.Wait()
+}
+
+func TestClientRejectsIncompleteOrUnexpectedServerIdentity(t *testing.T) {
+	t.Parallel()
+	for name, response := range map[string]string{
+		"incomplete":         `{"codexHome":"relative","platformFamily":"unix","platformOs":"linux","userAgent":"Codex CLI/` + PinnedVersion + ` (test)"}`,
+		"unexpected version": `{"codexHome":"/tmp/codex","platformFamily":"unix","platformOs":"linux","userAgent":"Codex CLI/0.0.0 (test)"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			process := newPipeProcess()
+			client, err := NewClient(process.clientInput, process.clientOutput)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer client.Close()
+			go func() {
+				var request map[string]any
+				_ = json.NewDecoder(process.serverInput).Decode(&request)
+				_, _ = process.serverOutput.Write([]byte(`{"id":` + number(request["id"]) + `,"result":` + response + `}` + "\n"))
+			}()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			if err := client.Initialize(ctx); err == nil {
+				t.Fatal("invalid Codex server identity must fail initialization")
+			}
+		})
+	}
 }
 
 func TestClientSanitizesRPCErrorAndUnblocksOnExit(t *testing.T) {

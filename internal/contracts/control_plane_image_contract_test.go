@@ -12,11 +12,15 @@ func TestControlPlaneImagePinsAndPersistsCodexRuntime(t *testing.T) {
 	repositoryRoot := filepath.Join("..", "..")
 	dockerfile := mustReadContractFile(t, filepath.Join(repositoryRoot, "deploy", "control-plane", "Dockerfile"))
 	versions := mustReadContractFile(t, filepath.Join(repositoryRoot, "deploy", "agents", "versions.env"))
+	codexClient := mustReadContractFile(t, filepath.Join(repositoryRoot, "internal", "adapters", "codex", "client.go"))
 
 	versionPattern := regexp.MustCompile(`(?m)^CODEX_CLI_VERSION=([^\s]+)$`)
 	match := versionPattern.FindStringSubmatch(versions)
 	if len(match) != 2 {
 		t.Fatal("deploy/agents/versions.env must pin CODEX_CLI_VERSION")
+	}
+	if !strings.Contains(codexClient, `const PinnedVersion = "`+match[1]+`"`) {
+		t.Fatal("Codex runtime handshake version must match deploy/agents/versions.env")
 	}
 	for _, required := range []string{
 		"ARG CODEX_CLI_VERSION=" + match[1],

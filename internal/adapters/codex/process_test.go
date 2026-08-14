@@ -85,7 +85,7 @@ func TestCodexProcessHelper(t *testing.T) {
 	if json.Unmarshal([]byte(line), &request) != nil || request["method"] != "initialize" {
 		os.Exit(3)
 	}
-	response := `{"id":` + number(request["id"]) + `,"result":{"userAgent":"test"}}` + "\n"
+	response := `{"id":` + number(request["id"]) + `,"result":{"codexHome":"/tmp/codex","platformFamily":"unix","platformOs":"linux","userAgent":"Codex CLI/` + PinnedVersion + ` (test)"}}` + "\n"
 	_, _ = os.Stdout.WriteString(response)
 	initialized, err := reader.ReadString('\n')
 	if err != nil || !strings.Contains(initialized, `"method":"initialized"`) {

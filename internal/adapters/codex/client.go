@@ -7,12 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 )
 
 const maxJSONLMessageBytes = 8 << 20
+
+const PinnedVersion = "0.144.4"
 
 type wireMessage struct {
 	ID     json.RawMessage `json:"id,omitempty"`
@@ -71,12 +74,23 @@ func NewClient(input io.WriteCloser, output io.ReadCloser) (*Client, error) {
 }
 
 func (client *Client) Initialize(ctx context.Context) error {
-	var result struct{}
+	var result struct {
+		CodexHome      string `json:"codexHome"`
+		PlatformFamily string `json:"platformFamily"`
+		PlatformOS     string `json:"platformOs"`
+		UserAgent      string `json:"userAgent"`
+	}
 	if err := client.Call(ctx, "initialize", map[string]any{
 		"clientInfo":   map[string]string{"name": "aegis-sre", "title": "Aegis SRE", "version": "1.0.0"},
 		"capabilities": map[string]any{"experimentalApi": false},
 	}, &result); err != nil {
 		return fmt.Errorf("initialize Codex App Server: %w", err)
+	}
+	if !filepath.IsAbs(result.CodexHome) || result.PlatformFamily == "" || result.PlatformOS == "" || result.UserAgent == "" {
+		return errors.New("initialize Codex App Server: incomplete server identity")
+	}
+	if !strings.Contains(result.UserAgent, "/"+PinnedVersion+" ") {
+		return fmt.Errorf("initialize Codex App Server: expected version %s", PinnedVersion)
 	}
 	return client.Notify("initialized", map[string]any{})
 }
