@@ -102,6 +102,70 @@ func TestClientSanitizesRPCErrorAndUnblocksOnExit(t *testing.T) {
 	}
 }
 
+func TestClientReceivesAndRepliesToServerRequests(t *testing.T) {
+	t.Parallel()
+	process := newPipeProcess()
+	client, _ := NewClient(process.clientInput, process.clientOutput)
+	defer client.Close()
+	serverReply := make(chan map[string]any, 1)
+	go func() {
+		_, _ = process.serverOutput.Write([]byte(`{"id":"approval-1","method":"item/commandExecution/requestApproval","params":{"threadId":"thread-1","turnId":"turn-1","itemId":"item-1"}}` + "\n"))
+		var reply map[string]any
+		_ = json.NewDecoder(process.serverInput).Decode(&reply)
+		serverReply <- reply
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	select {
+	case request := <-client.Requests():
+		if request.Method != "item/commandExecution/requestApproval" || string(request.ID) != `"approval-1"` {
+			t.Fatalf("request = %#v", request)
+		}
+		if err := client.Reply(request, map[string]string{"decision": "accept"}); err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	select {
+	case reply := <-serverReply:
+		if reply["id"] != "approval-1" || reply["method"] != nil {
+			t.Fatalf("reply = %#v", reply)
+		}
+		result, _ := reply["result"].(map[string]any)
+		if result["decision"] != "accept" {
+			t.Fatalf("result = %#v", result)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+}
+
+func TestClientRejectsInvalidReplyID(t *testing.T) {
+	t.Parallel()
+	process := newPipeProcess()
+	client, _ := NewClient(process.clientInput, process.clientOutput)
+	defer client.Close()
+	if err := client.Reply(Request{ID: json.RawMessage(`not-json`)}, map[string]any{}); err == nil {
+		t.Fatal("invalid server request ID must be rejected")
+	}
+}
+
+func TestClientDoneClosesWhenExplicitlyStopped(t *testing.T) {
+	t.Parallel()
+	process := newPipeProcess()
+	client, _ := NewClient(process.clientInput, process.clientOutput)
+	if err := client.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-client.Done():
+	case <-time.After(time.Second):
+		t.Fatal("Done was not closed")
+	}
+}
+
 func number(value any) string {
 	data, _ := json.Marshal(value)
 	return string(data)

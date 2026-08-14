@@ -31,6 +31,13 @@ type Notification struct {
 	Params json.RawMessage
 }
 
+// Request 是 App Server 发给控制面的双向请求，例如命令或文件变更审批。
+type Request struct {
+	ID     json.RawMessage
+	Method string
+	Params json.RawMessage
+}
+
 type response struct {
 	result json.RawMessage
 	err    error
@@ -43,6 +50,7 @@ type Client struct {
 	pendingMu     sync.Mutex
 	pending       map[int64]chan response
 	notifications chan Notification
+	requests      chan Request
 	done          chan struct{}
 	closeOnce     sync.Once
 	terminalErr   error
@@ -55,7 +63,7 @@ func NewClient(input io.WriteCloser, output io.ReadCloser) (*Client, error) {
 	}
 	client := &Client{
 		input: input, output: output, pending: make(map[int64]chan response),
-		notifications: make(chan Notification, 128), done: make(chan struct{}),
+		notifications: make(chan Notification, 128), requests: make(chan Request, 32), done: make(chan struct{}),
 	}
 	go client.readLoop()
 	return client, nil
@@ -108,7 +116,15 @@ func (client *Client) Notify(method string, params any) error {
 }
 
 func (client *Client) Notifications() <-chan Notification { return client.notifications }
+func (client *Client) Requests() <-chan Request           { return client.requests }
 func (client *Client) Done() <-chan struct{}              { return client.done }
+
+func (client *Client) Reply(request Request, result any) error {
+	if len(request.ID) == 0 || !json.Valid(request.ID) {
+		return errors.New("Codex request ID is invalid")
+	}
+	return client.write(map[string]any{"id": request.ID, "result": result})
+}
 
 func (client *Client) Close() error {
 	client.closeWithError(io.EOF)
@@ -142,6 +158,15 @@ func (client *Client) readLoop() {
 		if err := json.Unmarshal(scanner.Bytes(), &message); err != nil {
 			client.closeWithError(errors.New("decode Codex JSONL message"))
 			return
+		}
+		if len(message.ID) > 0 && message.Method != "" {
+			request := Request{ID: append(json.RawMessage(nil), message.ID...), Method: message.Method, Params: message.Params}
+			select {
+			case client.requests <- request:
+			case <-client.done:
+				return
+			}
+			continue
 		}
 		if len(message.ID) > 0 {
 			var id int64
@@ -198,6 +223,6 @@ func (client *Client) closeWithError(err error) {
 		}
 		client.pendingMu.Unlock()
 		close(client.done)
-		close(client.notifications)
+		// 通知和请求通道可能正被 readLoop 发送；统一以 Done 作为终止信号，避免并发关闭导致 panic。
 	})
 }
