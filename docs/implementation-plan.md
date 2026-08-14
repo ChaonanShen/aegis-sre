@@ -422,7 +422,7 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 
 ## 11. 阶段 8：RAGFlow 与 Knowledge 最终垂直切片
 
-状态：**尚未接入。当前优先级位于 Agent 会话和 Canvas 增强之前，在 Playbook 基本链路稳定并验收后开始。**
+状态：**执行中。按 ADR 0004 先完成无状态公共标识和 Knowledge 所需的最小 Folder 授权，再逐层接通 RAGFlow、前端、MCP、OpenCode 与 Dagu。**
 
 目标：完成 `Grafana Plugin → Control Plane → RAGFlow` 的真实知识链路；Agent 接入后再把已经验收的 Knowledge MCP 注册给 Agent。
 
@@ -441,6 +441,14 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 - [ ] 建立 readiness、备份和恢复说明。
 - [ ] 记录最低资源、开发机降配方式，以及不启动 RAGFlow 时其他模块的独立开发方式。
 
+### 8.1.1 公共标识与最小授权前置
+
+- [x] 通过 ADR 0004 冻结 KnowledgeBase/Document 确定性公共 ID、RAGFlow 原生 metadata 和无影子数据库方案。
+- [ ] Plugin Backend 丢弃浏览器伪造的身份与 Folder 头，并通过 Grafana RBAC 校验 `folders:uid:<uid>` 后注入可信上下文。
+- [ ] Control Plane 对所有 Knowledge 管理和检索操作重新校验 Actor/Folder 范围；公共 ID 不作为授权凭据。
+- [ ] Knowledge MCP Token 在服务端绑定固定 Actor 与 Folder allowlist，缺失或越界默认拒绝。
+- [ ] 覆盖跨 Folder 列表、详情、修改、删除、检索和 MCP 调用的拒绝测试。
+
 ### 8.2 Knowledge Adapter
 
 - [ ] Dataset 创建、更新和删除。
@@ -450,6 +458,7 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 - [ ] 混合检索、阈值、Top K 和引用位置映射。
 - [ ] 请求超时、重试、限流和错误净化。
 - [ ] 验证 RAGFlow Dataset/Document 的公共标识与 metadata 查询策略，不建立映射表。
+- [ ] 对不确定的变更结果禁止自动重试，并提供 `provider_result_unknown` 对账语义。
 
 ### 8.3 Knowledge MCP
 
@@ -514,9 +523,9 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 
 任务：
 
-- [ ] Plugin Backend 补全并验证 Grafana Org、用户、角色和 Folder 授权上下文。
+- [ ] Plugin Backend 补全并验证 Grafana Org、用户、角色和 Folder 授权上下文（Knowledge 所需最小链路已前置到阶段 8，阶段 10 完成全产品生产化）。
 - [ ] Control Plane 校验受信来源、Actor Context 完整性和调用链签名或等价凭证。
-- [ ] Folder 级 Knowledge 授权。
+- [ ] Folder 级 Knowledge 授权生产化（阶段 8 先完成真实链路和默认拒绝，阶段 10 补密钥轮换、多用户委托与运维策略）。
 - [ ] Dagu 和 Grafana 写操作角色映射。
 - [ ] Agent 文件系统、网络和命令权限 Profile。
 - [ ] Secret Manager、Token 轮换和吊销。

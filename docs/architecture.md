@@ -169,6 +169,16 @@ knowledge.list_sources
 
 Agent 传公共资源 ID、Service 或当前 Folder 上下文。Control Plane 完成范围收敛后，由 Knowledge Adapter 使用 RAGFlow 原生资源和 metadata 查询；Provider 内部 ID 不进入前端契约。RAGFlow 原生 MCP 可作为单租户开发调试工具，但不作为正式授权入口。
 
+阶段 8 按 ADR 0004 使用确定性公共标识而不建立映射表：KnowledgeBase ID 由 Actor 范围、
+Folder UID 和幂等键派生，Document ID 由 KnowledgeBase ID 和幂等键派生。RAGFlow Dataset
+使用确定性名称，Document 的公共 ID、原始文件名、Service、标签和内容摘要保存在原生
+`meta_fields`。公共 ID 只用于定位，不是授权凭据；每次操作都重新校验可信 Actor 与 Folder 范围。
+
+Knowledge 所需的最小 Folder 授权从阶段 10 前置到阶段 8。Plugin Backend 丢弃浏览器提供的身份和
+Folder 转发头，使用 Grafana 后端身份校验 `folders:uid:<uid>` 权限后再注入可信上下文。Control
+Plane 对缺少或越界的 Folder 默认拒绝。当前单用户 MCP Token 在服务端绑定固定 Actor 与显式
+Folder allowlist；模型不能自行声明身份或扩大范围。多用户委托身份仍需单独 ADR。
+
 ### 3.6 Dagu 与双向 MCP
 
 Dagu 是 Playbook 定义和运行的唯一事实来源：
