@@ -264,9 +264,27 @@ func TestProviderStartsTurnWithoutDroppingEarlyNotificationsAndCancelsExplicitly
 	if err != nil || event.Type != domain.EventMessageDelta || event.Sequence != 1 || string(event.Payload) != `{"delta":"hello"}` || event.SessionID != sessionID || event.TurnID != turn.ID {
 		t.Fatalf("event = %#v, err = %v", event, err)
 	}
+	fake.notifications <- Notification{Method: "item/started", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turnId":"` + turnUUID + `","startedAtMs":1786673000000,"item":{"id":"tool-item","type":"mcpToolCall","server":"grafana","tool":"query_prometheus","arguments":{"expr":"up"},"status":"inProgress"}}`)}
+	fake.notifications <- Notification{Method: "item/completed", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turnId":"` + turnUUID + `","completedAtMs":1786673000100,"item":{"id":"tool-item","type":"mcpToolCall","server":"grafana","tool":"query_prometheus","arguments":{"expr":"up"},"status":"completed","durationMs":100}}`)}
+	started, err := stream.Next(ctx)
+	if err != nil || started.Type != domain.EventToolStarted || started.Sequence != 2 || !strings.Contains(string(started.Payload), `"server":"grafana"`) || !strings.Contains(string(started.Payload), `"access":"read"`) {
+		t.Fatalf("tool started = %#v, err = %v", started, err)
+	}
+	completed, err := stream.Next(ctx)
+	if err != nil || completed.Type != domain.EventToolCompleted || completed.Sequence != 3 || !strings.Contains(string(completed.Payload), `"duration_ms":100`) {
+		t.Fatalf("tool completed = %#v, err = %v", completed, err)
+	}
+	var startedPayload, completedPayload struct {
+		CallID domain.ID `json:"call_id"`
+	}
+	_ = json.Unmarshal(started.Payload, &startedPayload)
+	_ = json.Unmarshal(completed.Payload, &completedPayload)
+	if startedPayload.CallID == "" || startedPayload.CallID != completedPayload.CallID || !startedPayload.CallID.Valid() {
+		t.Fatalf("call IDs = %q / %q", startedPayload.CallID, completedPayload.CallID)
+	}
 	fake.notifications <- Notification{Method: "turn/completed", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turn":{"id":"` + turnUUID + `","status":"completed","items":[]}}`)}
 	terminal, err := stream.Next(ctx)
-	if err != nil || terminal.Type != domain.EventTurnCompleted || terminal.Sequence != 2 || !strings.Contains(string(terminal.Payload), `"succeeded"`) {
+	if err != nil || terminal.Type != domain.EventTurnCompleted || terminal.Sequence != 4 || !strings.Contains(string(terminal.Payload), `"succeeded"`) {
 		t.Fatalf("terminal = %#v, err = %v", terminal, err)
 	}
 	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {

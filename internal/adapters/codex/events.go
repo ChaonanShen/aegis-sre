@@ -158,6 +158,18 @@ func (hub *eventHub) projectNotification(stream *codexEventStream, threadID, tur
 			return domain.Event{}, false, false, errors.New("invalid Codex message delta")
 		}
 		return stream.newEvent(domain.EventMessageDelta, map[string]any{"delta": params.Delta}, notification), false, false, nil
+	case "item/started":
+		payload, ok, err := hub.projectToolStarted(stream, notification)
+		if err != nil || !ok {
+			return domain.Event{}, false, false, err
+		}
+		return stream.newEvent(domain.EventToolStarted, payload, notification), false, false, nil
+	case "item/completed":
+		payload, ok, err := hub.projectToolCompleted(stream, notification)
+		if err != nil || !ok {
+			return domain.Event{}, false, false, err
+		}
+		return stream.newEvent(domain.EventToolCompleted, payload, notification), false, false, nil
 	case "turn/completed":
 		var params struct {
 			Turn struct {
@@ -193,6 +205,97 @@ func (hub *eventHub) projectNotification(stream *codexEventStream, threadID, tur
 	default:
 		return domain.Event{}, false, false, nil
 	}
+}
+
+func (hub *eventHub) projectToolStarted(stream *codexEventStream, notification Notification) (map[string]any, bool, error) {
+	var params struct {
+		Item struct {
+			ID        string         `json:"id"`
+			Type      string         `json:"type"`
+			Server    string         `json:"server"`
+			Tool      string         `json:"tool"`
+			Namespace *string        `json:"namespace"`
+			Arguments map[string]any `json:"arguments"`
+			Command   string         `json:"command"`
+			Changes   []any          `json:"changes"`
+		} `json:"item"`
+	}
+	if json.Unmarshal(notification.Params, &params) != nil || params.Item.ID == "" {
+		return nil, false, errors.New("invalid Codex tool start")
+	}
+	server, tool, access, arguments := params.Item.Server, params.Item.Tool, "execute", params.Item.Arguments
+	switch params.Item.Type {
+	case "mcpToolCall":
+		if server == "" || tool == "" {
+			return nil, false, errors.New("invalid Codex MCP tool start")
+		}
+		access = codexToolAccess(tool)
+	case "dynamicToolCall":
+		server = "agent"
+		if params.Item.Namespace != nil && *params.Item.Namespace != "" {
+			server = *params.Item.Namespace
+		}
+		if tool == "" {
+			return nil, false, errors.New("invalid Codex dynamic tool start")
+		}
+		access = codexToolAccess(tool)
+	case "commandExecution":
+		server, tool, arguments = "shell", "execute", map[string]any{"command": params.Item.Command}
+	case "fileChange":
+		server, tool, access, arguments = "workspace", "apply_patch", "write", map[string]any{"change_count": len(params.Item.Changes)}
+	default:
+		return nil, false, nil
+	}
+	if arguments == nil {
+		arguments = map[string]any{}
+	}
+	callID, err := hub.provider.codec.EncodeCallKey(stream.threadID + "\x00" + stream.turnID + "\x00" + params.Item.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	return map[string]any{"call_id": callID, "server": server, "tool": tool, "arguments": arguments, "access": access}, true, nil
+}
+
+func (hub *eventHub) projectToolCompleted(stream *codexEventStream, notification Notification) (map[string]any, bool, error) {
+	var params struct {
+		Item struct {
+			ID         string `json:"id"`
+			Type       string `json:"type"`
+			Status     string `json:"status"`
+			DurationMS *int64 `json:"durationMs"`
+		} `json:"item"`
+	}
+	if json.Unmarshal(notification.Params, &params) != nil || params.Item.ID == "" {
+		return nil, false, errors.New("invalid Codex tool completion")
+	}
+	switch params.Item.Type {
+	case "mcpToolCall", "dynamicToolCall", "commandExecution", "fileChange":
+	default:
+		return nil, false, nil
+	}
+	status := "succeeded"
+	if params.Item.Status != "completed" {
+		status = "failed"
+	}
+	duration := int64(0)
+	if params.Item.DurationMS != nil && *params.Item.DurationMS > 0 {
+		duration = *params.Item.DurationMS
+	}
+	callID, err := hub.provider.codec.EncodeCallKey(stream.threadID + "\x00" + stream.turnID + "\x00" + params.Item.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	return map[string]any{"call_id": callID, "status": status, "duration_ms": duration}, true, nil
+}
+
+func codexToolAccess(tool string) string {
+	lower := strings.ToLower(tool)
+	for _, marker := range []string{"get", "list", "read", "query", "search", "find"} {
+		if strings.Contains(lower, marker) {
+			return "read"
+		}
+	}
+	return "execute"
 }
 
 func (hub *eventHub) handleRequest(request Request) {
