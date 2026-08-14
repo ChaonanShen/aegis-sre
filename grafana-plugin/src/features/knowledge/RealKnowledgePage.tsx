@@ -259,6 +259,24 @@ function KnowledgeBaseActions({
   };
   return (
     <div className="knowledge-header-actions">
+      <form
+        className="knowledge-rename-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          const name = String(new FormData(event.currentTarget).get('name') ?? '').trim();
+          if (name && name !== base.name) {
+            void onMutate(async () => {
+              await gateway.updateKnowledgeBase(folderUid, base.id, { name, status: base.status });
+              refresh();
+            }, '知识库名称已更新。');
+          }
+        }}
+      >
+        <input aria-label="修改知识库名称" defaultValue={base.name} name="name" />
+        <button className="knowledge-button secondary" disabled={busy} type="submit">
+          保存名称
+        </button>
+      </form>
       <button className="knowledge-button secondary" disabled={busy} onClick={() => void toggle()} type="button">
         {base.status === 'active' ? '停用' : '启用'}
       </button>
@@ -375,15 +393,26 @@ function DocumentsPanel({
                 <Download size={13} />
               </button>
               {writable && (
-                <DocumentWriteActions
-                  busy={busy}
-                  document={document}
-                  folderUid={folderUid}
-                  gateway={gateway}
-                  knowledgeBaseId={knowledgeBaseId}
-                  mutate={mutate}
-                  refresh={refresh}
-                />
+                <>
+                  <DocumentWriteActions
+                    busy={busy}
+                    document={document}
+                    folderUid={folderUid}
+                    gateway={gateway}
+                    knowledgeBaseId={knowledgeBaseId}
+                    mutate={mutate}
+                    refresh={refresh}
+                  />
+                  <DocumentMetadataForm
+                    busy={busy}
+                    document={document}
+                    folderUid={folderUid}
+                    gateway={gateway}
+                    knowledgeBaseId={knowledgeBaseId}
+                    mutate={mutate}
+                    refresh={refresh}
+                  />
+                </>
               )}
             </div>
           </article>
@@ -394,6 +423,49 @@ function DocumentsPanel({
       </section>
       {chunks && <ChunksPanel close={() => setChunks(undefined)} document={chunks.document} state={chunks.state} />}
     </>
+  );
+}
+
+function DocumentMetadataForm({
+  busy,
+  document,
+  folderUid,
+  gateway,
+  knowledgeBaseId,
+  mutate,
+  refresh,
+}: {
+  busy: boolean;
+  document: KnowledgeDocumentRecord;
+  folderUid: string;
+  gateway: KnowledgeManagementGateway;
+  knowledgeBaseId: string;
+  mutate: (operation: () => Promise<void>, success: string) => Promise<void>;
+  refresh: () => void;
+}) {
+  return (
+    <details className="knowledge-metadata-editor">
+      <summary>元数据</summary>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          const form = new FormData(event.currentTarget);
+          void mutate(async () => {
+            await gateway.updateDocument(folderUid, knowledgeBaseId, document.id, {
+              service: String(form.get('service') ?? '').trim(),
+              tags: splitTags(String(form.get('tags') ?? '')),
+            });
+            refresh();
+          }, '文档元数据已更新。');
+        }}
+      >
+        <input aria-label={`${document.name} 服务`} defaultValue={document.service} name="service" />
+        <input aria-label={`${document.name} 标签`} defaultValue={document.tags.join(', ')} name="tags" />
+        <button disabled={busy} type="submit">
+          保存
+        </button>
+      </form>
+    </details>
   );
 }
 

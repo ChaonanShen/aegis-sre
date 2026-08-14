@@ -95,6 +95,22 @@ describe('real Knowledge management page', () => {
     expect(await screen.findByText('检查实例健康并逐个重启。')).toBeInTheDocument();
     expect(screen.getByText('第 2 页 · paragraph-4')).toBeInTheDocument();
   });
+
+  test('updates document service and tags through the public metadata contract', async () => {
+    const gateway = fakeGateway();
+    renderPage(gateway);
+    await screen.findByText('restart.md');
+    fireEvent.click(screen.getByText('元数据'));
+    fireEvent.change(screen.getByLabelText('restart.md 服务'), { target: { value: 'checkout' } });
+    fireEvent.change(screen.getByLabelText('restart.md 标签'), { target: { value: 'prod, guide' } });
+    fireEvent.submit(screen.getByLabelText('restart.md 服务').closest('form')!);
+    await waitFor(() =>
+      expect(gateway.updateDocument).toHaveBeenCalledWith('ops', kb.id, document.id, {
+        service: 'checkout',
+        tags: ['prod', 'guide'],
+      })
+    );
+  });
 });
 
 function renderPage(gateway: KnowledgeManagementGateway) {
