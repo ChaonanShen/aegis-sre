@@ -1,0 +1,13 @@
+{
+  "folder_uid": "infra",
+  "knowledge_base_ids": ["kbs_replace_with_public_business_id"],
+  "cases": [
+    {
+      "name": "replace-with-30-or-more-real-annotations",
+      "query": "如何处理服务错误码？",
+      "service": "example-service",
+      "expected_document_ids": ["doc_replace_with_public_business_id"],
+      "forbidden_document_ids": []
+    }
+  ]
+}
