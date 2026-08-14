@@ -39,6 +39,8 @@ services:
       dockerfile: deploy/ragflow/Dockerfile
     command: ["--init-model-provider-tables"]
     environment:
+      # RAGFlow 0.26.4 未设置该值时会加载 Python nginx 配置却不启动 Python API 进程。
+      API_PROXY_SCHEME: python
       COMPOSE_PROFILES: elasticsearch,tei-cpu
       DOC_ENGINE: elasticsearch
       DOC_BULK_SIZE: "2"

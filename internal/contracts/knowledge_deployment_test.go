@@ -34,6 +34,16 @@ func TestKnowledgeComposePinsEveryProviderImageAndKeepsSecretsInFiles(t *testing
 	}
 }
 
+func TestKnowledgeComposeSelectsTheRAGFlowAPIServer(t *testing.T) {
+	content, err := os.ReadFile("../../compose.knowledge.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(content), "API_PROXY_SCHEME: python") {
+		t.Fatal("Knowledge Compose must explicitly start RAGFlow's Python API server")
+	}
+}
+
 func TestDaguKnowledgeMCPPolicyOnlyAllowsReadTools(t *testing.T) {
 	content, err := os.ReadFile("../../deploy/local/mcp-servers.knowledge.yaml")
 	if err != nil {
