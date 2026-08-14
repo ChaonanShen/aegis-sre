@@ -4,7 +4,7 @@ set -eu
 repository_root="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
 password="$(tr -d '\r\n' < "$repository_root/deploy/local/secrets/dagu-basic-password")"
 base_url="http://127.0.0.1:${DAGU_PORT:-18081}/api/v1"
-credentials="aegis-control-plane:$password"
+credentials="admin:$password"
 spec="$(cat "$repository_root/deploy/local/grafana-mcp-smoke.yaml")"
 create_response="$(mktemp "${TMPDIR:-/tmp}/aegis-smoke-create.XXXXXX")"
 trap 'rm -f "$create_response"' EXIT

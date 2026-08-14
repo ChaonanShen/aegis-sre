@@ -85,7 +85,7 @@ services:
       AEGIS_AGENT_URL: http://opencode:4096
       AEGIS_AGENT_USER_ID: grafana:default:admin
       AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE: /run/secrets/dagu-basic-password
-      AEGIS_DAGU_BASIC_AUTH_USERNAME: aegis-control-plane
+      AEGIS_DAGU_BASIC_AUTH_USERNAME: admin
       AEGIS_DAGU_URL: http://dagu:8080
       AEGIS_HTTP_ADDRESS: :8080
       AEGIS_OPENCODE_PASSWORD_FILE: /run/secrets/opencode-server-password
@@ -147,7 +147,7 @@ services:
       dockerfile: deploy/dagu/Dockerfile
     environment:
       DAGU_AUTH_BASIC_PASSWORD_FILE: /run/secrets/dagu-basic-password
-      DAGU_AUTH_BASIC_USERNAME: aegis-control-plane
+      DAGU_AUTH_BASIC_USERNAME: admin
       DAGU_AUTH_MODE: basic
       DAGU_COORDINATOR_ENABLED: "false"
       DAGU_HOME: /var/lib/dagu
