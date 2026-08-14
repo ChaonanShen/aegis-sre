@@ -73,7 +73,6 @@ export function useWorkbenchController({
   const mountedRef = useRef(true);
   const sessionsControllerRef = useRef<AbortController>();
   const sessionsRefreshTimeoutRef = useRef<number>();
-  const persistenceQueueRef = useRef(Promise.resolve());
   const assistantMessageIdRef = useRef<string>();
   const openRequestRef = useRef(0);
   const sessionsRequestRef = useRef(0);
@@ -289,7 +288,7 @@ export function useWorkbenchController({
   }, [activeFolderUid, loadContext]);
 
   const publishOpened = useCallback(
-    (opened: OpenedSession, persist = true) => {
+    (opened: OpenedSession) => {
       if (routeSessionIdRef.current !== opened.session.id) {
         return;
       }
@@ -305,12 +304,8 @@ export function useWorkbenchController({
             }
           : current
       );
-      if (persist) {
-        const save = persistenceQueueRef.current.catch(() => undefined).then(() => gateway.saveSession(opened));
-        persistenceQueueRef.current = save.catch(() => undefined);
-      }
     },
-    [gateway, invalidateSessions]
+    [invalidateSessions]
   );
 
   const createSession = useCallback(
@@ -402,7 +397,7 @@ export function useWorkbenchController({
             !previousMessageIDs.has(id) && role === 'assistant' && streamStatus === 'complete'
         );
         if (committed) {
-          publishOpened(persisted, false);
+          publishOpened(persisted);
           failedCommandRef.current = undefined;
           failedCommandSessionIdRef.current = undefined;
           setLastFailedInput(undefined);
@@ -791,13 +786,9 @@ export function useWorkbenchController({
       }
       const canvas = update(opened.canvas);
       const next = { ...opened, canvas };
-      publishOpened(next, false);
-      const updateRequest = persistenceQueueRef.current
-        .catch(() => undefined)
-        .then(() => gateway.updateCanvas(opened.session.id, canvas).then(() => undefined));
-      persistenceQueueRef.current = updateRequest.catch(() => undefined);
+      publishOpened(next);
     },
-    [gateway, publishOpened]
+    [publishOpened]
   );
 
   const archiveCurrentSession = useCallback(async () => {
@@ -821,7 +812,7 @@ export function useWorkbenchController({
         void loadSessions();
         return false;
       }
-      publishOpened({ ...currentOpened, session: summary }, false);
+      publishOpened({ ...currentOpened, session: summary });
       return true;
     } catch (error) {
       if (
