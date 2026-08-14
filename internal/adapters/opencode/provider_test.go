@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -37,12 +38,18 @@ func TestProviderCreatesCallerOwnedSessionIdempotently(t *testing.T) {
 	var sessionID string
 	provider, _ := newOpenCodeProvider(t, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/config":
+			_, _ = w.Write([]byte(`{"model":"deepseek/deepseek-v4-flash"}`))
 		case request.Method == http.MethodPost && request.URL.Path == "/api/session":
 			var body map[string]any
 			_ = json.NewDecoder(request.Body).Decode(&body)
 			sessionID, _ = body["id"].(string)
 			if _, leaked := body["title"]; leaked {
 				t.Error("V2 create must not receive title")
+			}
+			model, _ := body["model"].(map[string]any)
+			if model["providerID"] != "deepseek" || model["id"] != "deepseek-v4-flash" {
+				t.Errorf("model = %#v", body["model"])
 			}
 			if created {
 				w.WriteHeader(http.StatusConflict)
@@ -52,6 +59,8 @@ func TestProviderCreatesCallerOwnedSessionIdempotently(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":{"id":"` + sessionID + `","title":"","time":{"created":1786672800000,"updated":1786672800000}}}`))
 		case request.Method == http.MethodGet && request.URL.Path == "/api/session/"+sessionID:
 			_, _ = w.Write([]byte(`{"data":{"id":"` + sessionID + `","title":"Investigate","time":{"created":1786672800000,"updated":1786672900000}}}`))
+		case request.Method == http.MethodPost && request.URL.Path == "/api/session/"+sessionID+"/model":
+			w.WriteHeader(http.StatusNoContent)
 		case request.Method == http.MethodPatch && request.URL.Path == "/session/"+sessionID:
 			_, _ = w.Write([]byte(`{"id":"` + sessionID + `","title":"Investigate","time":{"created":1786672800000,"updated":1786672900000}}`))
 		default:
@@ -201,6 +210,9 @@ func TestProviderStreamsDurableTurnEventsAndVerifiesCancellationOwnership(t *tes
 		if strings.Contains(string(event.ID), "evt_") && string(event.ID) == "evt_text0001" {
 			t.Fatalf("provider event ID leaked: %q", event.ID)
 		}
+	}
+	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("stream after terminal event = %v, want EOF", err)
 	}
 	if err := provider.CancelTurn(context.Background(), actor, ports.AgentSessionRef{ID: "ses_abcdefgh"}, turn); err != nil {
 		t.Fatal(err)

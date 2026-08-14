@@ -33,6 +33,11 @@ type Session struct {
 	} `json:"time"`
 }
 
+type ModelRef struct {
+	ID         string `json:"id"`
+	ProviderID string `json:"providerID"`
+}
+
 type Message struct {
 	Info  json.RawMessage   `json:"info"`
 	Parts []json.RawMessage `json:"parts"`
@@ -86,12 +91,30 @@ func (client *Client) Check(ctx context.Context) error {
 	return client.call(ctx, http.MethodGet, "api/health", nil, nil, &struct{}{})
 }
 
-func (client *Client) CreateSession(ctx context.Context, id string) (Session, error) {
+func (client *Client) DefaultModel(ctx context.Context) (ModelRef, error) {
+	var output struct {
+		Model string `json:"model"`
+	}
+	if err := client.call(ctx, http.MethodGet, "config", nil, nil, &output); err != nil {
+		return ModelRef{}, err
+	}
+	providerID, modelID, ok := strings.Cut(strings.TrimSpace(output.Model), "/")
+	if !ok || providerID == "" || modelID == "" {
+		return ModelRef{}, errors.New("OpenCode default model is not configured")
+	}
+	return ModelRef{ID: modelID, ProviderID: providerID}, nil
+}
+
+func (client *Client) CreateSession(ctx context.Context, id string, model ModelRef) (Session, error) {
 	var output struct {
 		Data Session `json:"data"`
 	}
-	err := client.call(ctx, http.MethodPost, "api/session", nil, map[string]any{"id": id}, &output)
+	err := client.call(ctx, http.MethodPost, "api/session", nil, map[string]any{"id": id, "model": model}, &output)
 	return output.Data, err
+}
+
+func (client *Client) SwitchSessionModel(ctx context.Context, id string, model ModelRef) error {
+	return client.call(ctx, http.MethodPost, "api/session/"+url.PathEscape(id)+"/model", nil, map[string]any{"model": model}, nil)
 }
 
 func (client *Client) UpdateSession(ctx context.Context, id string, patch map[string]any) (Session, error) {

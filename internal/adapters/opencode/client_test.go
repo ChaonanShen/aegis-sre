@@ -3,6 +3,7 @@ package opencode
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,19 +23,42 @@ func TestClientUsesCallerSessionIDAndRotatingBasicAuth(t *testing.T) {
 		if request.URL.Path != "/api/session" {
 			t.Errorf("path = %q", request.URL.Path)
 		}
+		var body struct {
+			Model ModelRef `json:"model"`
+		}
+		_ = json.NewDecoder(request.Body).Decode(&body)
+		if body.Model.ProviderID != "deepseek" || body.Model.ID != "deepseek-v4-flash" {
+			t.Errorf("model = %#v", body.Model)
+		}
 		_, _ = w.Write([]byte(`{"data":{"id":"ses_abcdefgh","title":"diagnose","time":{"created":1,"updated":1}}}`))
 	}))
 	defer server.Close()
 	client, _ := NewClient(server.URL, server.Client(), "aegis", func() (string, error) { return password, nil })
 	for _, next := range []string{"first", "rotated"} {
 		password = next
-		session, err := client.CreateSession(context.Background(), "ses_abcdefgh")
+		session, err := client.CreateSession(context.Background(), "ses_abcdefgh", ModelRef{ProviderID: "deepseek", ID: "deepseek-v4-flash"})
 		if err != nil || session.ID != "ses_abcdefgh" {
 			t.Fatalf("session = %#v, err = %v", session, err)
 		}
 	}
 	if requests != 2 {
 		t.Fatalf("requests = %d", requests)
+	}
+}
+
+func TestClientReadsDefaultModelFromNativeConfig(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.Method != http.MethodGet || request.URL.Path != "/config" {
+			t.Errorf("request = %s %s", request.Method, request.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"model":"deepseek/deepseek-v4-flash"}`))
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client(), "", nil)
+	model, err := client.DefaultModel(context.Background())
+	if err != nil || model.ProviderID != "deepseek" || model.ID != "deepseek-v4-flash" {
+		t.Fatalf("model = %#v, err = %v", model, err)
 	}
 }
 

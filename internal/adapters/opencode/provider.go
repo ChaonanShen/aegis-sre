@@ -50,7 +50,12 @@ func (provider *Provider) CreateSession(ctx context.Context, actor domain.ActorC
 	if err != nil {
 		return ports.AgentSession{}, invalidOpenCodeArgument(err)
 	}
-	session, err := provider.client.CreateSession(ctx, string(id))
+	// V2 不会把全局默认模型隐式写入会话；创建时必须显式传入 Provider 原生配置中的默认模型。
+	model, err := provider.client.DefaultModel(ctx)
+	if err != nil {
+		return ports.AgentSession{}, err
+	}
+	session, err := provider.client.CreateSession(ctx, string(id), model)
 	if err != nil {
 		var httpErr *HTTPError
 		if !errors.As(err, &httpErr) || httpErr.Status != http.StatusConflict {
@@ -59,6 +64,10 @@ func (provider *Provider) CreateSession(ctx context.Context, actor domain.ActorC
 		// V2 接受调用方 Session ID；冲突时直接读取原生会话即可实现无影子表幂等。
 		session, err = provider.client.GetSession(ctx, string(id))
 		if err != nil {
+			return ports.AgentSession{}, err
+		}
+		// 兼容修复历史上未绑定模型、已经创建成功但无法执行回合的会话。
+		if err := provider.client.SwitchSessionModel(ctx, string(id), model); err != nil {
 			return ports.AgentSession{}, err
 		}
 	}
@@ -182,6 +191,7 @@ type openCodeEventStream struct {
 	sessionID domain.ID
 	turnID    domain.ID
 	sequence  int64
+	terminal  bool
 }
 
 func newOpenCodeEventStream(body io.ReadCloser, codec *agentid.Codec, sessionID, turnID domain.ID) *openCodeEventStream {
@@ -191,6 +201,9 @@ func newOpenCodeEventStream(body io.ReadCloser, codec *agentid.Codec, sessionID,
 }
 
 func (stream *openCodeEventStream) Next(ctx context.Context) (domain.Event, error) {
+	if stream.terminal {
+		return domain.Event{}, io.EOF
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -206,6 +219,7 @@ func (stream *openCodeEventStream) Next(ctx context.Context) (domain.Event, erro
 			return domain.Event{}, &domain.AppError{Code: domain.ErrorProviderResultUnknown, Message: "OpenCode event cannot be projected", Retryable: false, Cause: err}
 		}
 		if ok {
+			stream.terminal = event.Type == domain.EventTurnCompleted || event.Type == domain.EventTurnFailed
 			return event, nil
 		}
 	}
