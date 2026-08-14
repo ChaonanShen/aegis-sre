@@ -83,14 +83,30 @@ func (codec *Codec) DecodeTurnUUID(id domain.ID) (string, error) {
 
 // EncodeMessageKey 为只需展示、不需要反向寻址的 Provider item 生成稳定公开 ID。
 func (codec *Codec) EncodeMessageKey(value string) (domain.ID, error) {
+	return codec.encodeOpaqueKey(value, "msg_", "aegis-agent-message-v1")
+}
+
+func (codec *Codec) EncodeEventKey(value string) (domain.ID, error) {
+	return codec.encodeOpaqueKey(value, "evt_", "aegis-agent-event-v1")
+}
+
+func (codec *Codec) EncodeCallKey(value string) (domain.ID, error) {
+	return codec.encodeOpaqueKey(value, "call_", "aegis-agent-call-v1")
+}
+
+func (codec *Codec) EncodeApprovalKey(value string) (domain.ID, error) {
+	return codec.encodeOpaqueKey(value, "apr_", "aegis-agent-approval-v1")
+}
+
+func (codec *Codec) encodeOpaqueKey(value, prefix, purpose string) (domain.ID, error) {
 	if value == "" {
-		return "", errors.New("provider message key is required")
+		return "", errors.New("provider key is required")
 	}
 	mac := hmac.New(sha256.New, codec.key)
-	_, _ = mac.Write([]byte("aegis-agent-message-v1"))
+	_, _ = mac.Write([]byte(purpose))
 	_, _ = mac.Write([]byte{0})
 	_, _ = mac.Write([]byte(value))
-	id := domain.ID("msg_" + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:18]))
+	id := domain.ID(prefix + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:18]))
 	if !id.Valid() {
 		return "", errors.New("encoded message ID does not satisfy the public contract")
 	}

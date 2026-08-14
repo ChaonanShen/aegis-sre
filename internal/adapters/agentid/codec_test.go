@@ -78,6 +78,22 @@ func TestCodecProducesStableOneWayMessageID(t *testing.T) {
 	}
 }
 
+func TestCodecSeparatesOpaqueEventCallAndApprovalIDs(t *testing.T) {
+	t.Parallel()
+	codec, _ := New([]byte("0123456789abcdef0123456789abcdef"))
+	eventID, _ := codec.EncodeEventKey("same-provider-key")
+	callID, _ := codec.EncodeCallKey("same-provider-key")
+	approvalID, _ := codec.EncodeApprovalKey("same-provider-key")
+	for prefix, id := range map[string]domain.ID{"evt_": eventID, "call_": callID, "apr_": approvalID} {
+		if !strings.HasPrefix(string(id), prefix) || !id.Valid() {
+			t.Fatalf("%s ID = %q", prefix, id)
+		}
+	}
+	if eventID == callID || callID == approvalID || eventID == approvalID {
+		t.Fatalf("opaque namespaces collided: %q, %q, %q", eventID, callID, approvalID)
+	}
+}
+
 func TestDecodeKeyAcceptsOnlyExactKeyMaterial(t *testing.T) {
 	t.Parallel()
 	if key, err := DecodeKey([]byte("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY")); err != nil || len(key) != 32 {
