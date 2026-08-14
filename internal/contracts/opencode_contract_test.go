@@ -127,6 +127,20 @@ func TestOpenCodeDeploymentPinsRuntimeAndModelWithoutSecrets(t *testing.T) {
 	}
 }
 
+func TestOpenCodeBaseConfigRegistersPlaybookMCPButNotKnowledge(t *testing.T) {
+	content, err := os.ReadFile("../../deploy/agents/opencode/opencode.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(content)
+	if !strings.Contains(text, `"url": "http://control-plane:8080/mcp/playbooks"`) || !strings.Contains(text, "PLAYBOOK_MCP_TOKEN") {
+		t.Fatal("base OpenCode config must register authenticated Playbook MCP")
+	}
+	if strings.Contains(text, "knowledge") {
+		t.Fatal("base OpenCode config must not register Knowledge MCP")
+	}
+}
+
 func nestedMap(t *testing.T, root map[string]any, path ...string) map[string]any {
 	t.Helper()
 	current := root
