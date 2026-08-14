@@ -1,0 +1,61 @@
+type: graph
+description: Collect node exporter metrics through Grafana MCP and summarize them.
+
+steps:
+  - id: query_up
+    action: mcp.call
+    with:
+      server: grafana-read
+      tool: query_prometheus
+      args:
+        datasourceUid: prometheus
+        expr: up{job="node-exporter"}
+        endTime: now
+        queryType: instant
+
+  - id: query_cpu_idle
+    action: mcp.call
+    with:
+      server: grafana-read
+      tool: query_prometheus
+      args:
+        datasourceUid: prometheus
+        expr: avg by (instance) (rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[5m]))
+        endTime: now
+        queryType: instant
+
+  - id: query_memory_available
+    action: mcp.call
+    with:
+      server: grafana-read
+      tool: query_prometheus
+      args:
+        datasourceUid: prometheus
+        expr: node_memory_MemAvailable_bytes{job="node-exporter"}
+        endTime: now
+        queryType: instant
+
+  - id: summarize
+    depends: [query_up, query_cpu_idle, query_memory_available]
+    action: template.render
+    with:
+      data:
+        up: ${query_up.output.text}
+        cpu_idle: ${query_cpu_idle.output.text}
+        memory_available: ${query_memory_available.output.text}
+      template: |
+        # Node health summary
+
+        ## Availability
+
+        {{ .up }}
+
+        ## CPU idle ratio
+
+        {{ .cpu_idle }}
+
+        ## Available memory
+
+        {{ .memory_available }}
+    stdout:
+      artifact: reports/node-health-summary.md

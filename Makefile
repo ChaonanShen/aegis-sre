@@ -1,4 +1,4 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke local-secrets local-config-check local-up local-agent-smoke local-playbook-smoke agent-playbook-e2e local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate node-health-playbook-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke local-secrets local-config-check local-up local-agent-smoke local-playbook-smoke agent-playbook-e2e local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 OAPI_CODEGEN_VERSION := v2.8.0
 MAGE_VERSION := v1.17.2
@@ -35,7 +35,13 @@ dagu-validate:
 	dagu_tmp=$$(mktemp -d); \
 	trap 'rm -rf "$$dagu_tmp"' EXIT; \
 	cp deploy/dagu/base.yaml "$$dagu_tmp/base.yaml"; \
-	$(DAGU_BIN) validate --dagu-home "$$dagu_tmp" -c deploy/dagu/config.yaml deploy/dagu/dags/mcp-call-contract.yaml
+	  $(DAGU_BIN) validate --dagu-home "$$dagu_tmp" -c deploy/dagu/config.yaml deploy/dagu/dags/mcp-call-contract.yaml
+
+node-health-playbook-validate:
+	dagu_tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$dagu_tmp"' EXIT; \
+	cp deploy/dagu/base.yaml "$$dagu_tmp/base.yaml"; \
+	$(DAGU_BIN) validate --dagu-home "$$dagu_tmp" -c deploy/dagu/config.yaml deploy/playbooks/examples/node-health-summary.yaml
 
 dagu-contract-test:
 	./scripts/test-dagu-contract.sh
