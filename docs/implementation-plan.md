@@ -312,7 +312,7 @@ Provider 数据归属与标识策略复核：
 
 ## 9. 阶段 6：Codex 与 OpenCode Agent Provider
 
-状态：**暂缓接入。协议基线、标识策略和部分底层客户端已存在；按当前顺序，先完成 Dagu/Grafana 主链路验收与 RAGFlow/Knowledge 垂直切片，再装配 Codex/OpenCode Provider。**
+状态：**执行中。协议基线、标识策略和部分底层客户端已存在；先完成不依赖 Knowledge 的 Agent 核心会话闭环，只注册已验收的 Grafana Read 与 Dagu MCP。Knowledge MCP 在阶段 8 完成真实授权验收后再加入。**
 
 目标：Codex 作为默认 Provider，同时用 OpenCode 证明抽象没有泄漏。Grafana 插件的 Workbench 是唯一会话入口，不增加 Codex 或 OpenCode 独立聊天页面。Session、Turn、消息、审批和历史全部由 Agent Provider 持久化；Aegis 只提供无状态的公共契约、授权收敛、进程监管和协议适配。
 
@@ -328,6 +328,10 @@ Provider 数据归属与标识策略复核：
 - [ ] 前端发送 Turn 时只提交本次输入、受信上下文和操作 ID，不回传完整消息历史；历史从 Provider 的 Thread/Session 读取。
 - [ ] 在多用户模式启用前，验证按 Tenant、Org、User 或明确产品范围隔离 Provider 会话命名空间；不得依赖 Aegis 影子表过滤共享 App Server 中的会话。
 - [ ] `FolderUID` 默认只作为请求时授权上下文；若 Codex/OpenCode 不能原生保存并查询会话 Folder，阶段 6 接入前从 Session 持久语义中移除，不为该字段建立映射。
+
+首版按 ADR 0003 绑定唯一受信 Tenant、Org 和 User；不匹配的 Actor 必须 fail-closed。该模式只用于
+形成可验收的单 Actor Provider 会话空间，不代表多用户 private Session 已经完成。Provider 原生
+隔离或按 Actor 确定性隔离的进程与数据目录完成前，不得开启多用户 Agent 能力。
 
 本阶段优先完成会话本身：create/list/read/resume/rename/archive/delete、Turn 流、取消、审批、错误恢复和 Provider 重启恢复。所有恢复都从 Provider 的持久化数据执行，不从 Aegis 数据库恢复。图表、图片与 Canvas 的生成、恢复和编辑不作为会话首轮接入的阻塞条件；Canvas 是独立产品投影，不得借其持久化需求重新引入整套 Session 存储。
 

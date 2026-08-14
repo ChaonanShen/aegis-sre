@@ -145,6 +145,11 @@ Provider 运行实例、数据目录或 Provider 原生租户空间。不得让�
 `FolderUID` 默认是请求时的授权上下文；只有 Provider 原生支持可靠保存和查询时，才能成为
 Session 的持久属性。
 
+首个可运行版本按 ADR 0003 只允许配置的单一 Tenant、Org 和 User 使用 Agent Provider；其余
+Actor fail-closed。该限制用于在不建立影子表的前提下形成真实会话闭环。多用户 private Session
+需要 Provider 原生租户空间或按 Actor 确定性隔离的进程与数据目录，并在新的 ADR 与恢复验收后
+才能启用。
+
 ### 3.5 Knowledge Provider 与 Knowledge MCP
 
 RAGFlow REST API 负责管理面：
