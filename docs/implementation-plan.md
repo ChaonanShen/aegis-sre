@@ -252,6 +252,8 @@ Provider 数据归属与标识策略复核：
 - [x] 为写操作传递幂等键和 trace ID。
 - [x] 禁止调用 Dagu 自身执行类工具形成递归。
 - [x] Write Tool 默认拒绝，逐项评审加入。
+- [x] 本地 Prometheus/node-exporter 监控通过 Grafana datasource 和 `grafana-read` MCP 接入；Playbook 不直连 Prometheus。
+- [x] 提供带 `depends` 的 Node Health DAG：并行查询可用性、CPU idle、可用内存，汇总为 Artifact。
 
 本阶段使用只实现允许工具的 MCP contract server 验证 `mcp.call` 协议、限制和 Artifact；
 不得迁入实验用 Prometheus MCP。对 Grafana 官方 MCP 的真实调用在阶段 5 补充验收。
@@ -264,6 +266,7 @@ Provider 数据归属与标识策略复核：
 - [x] 实现真实 `PlaybookGateway`。
 - [x] 展示 Run、Step、Human Task、Approval 和 Artifact（日志展示仍待补稳定契约）。
 - [x] 删除真实模式下的 Playbook fixture fallback。
+- [x] 通过真实 Dagu Run 验证多个 `mcp.call` 查询节点和汇总 Artifact。
 
 本轮保证 Playbook 可以从 Grafana 插件执行并处理人工交互；不把 Dagu UI 当作最终产品界面。日志展示仍因缺少稳定的 provider-neutral API 暂缓，不能把 Provider 私有日志协议直接泄漏到前端。
 
