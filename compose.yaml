@@ -30,7 +30,48 @@ services:
       - ./deploy/local/secrets/plugin-token:/run/secrets/aegis-plugin-token:ro
       - ./deploy/local/secrets/grafana-admin-password:/run/secrets/grafana-admin-password:ro
     restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
     networks: [aegis-app, aegis-mcp]
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-19090}:9090"
+    restart: unless-stopped
+    networks: [aegis-app]
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro,rslave
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9100/metrics"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    networks: [aegis-app]
 
   control-plane:
     build:
@@ -207,3 +248,4 @@ volumes:
   grafana-data:
   grafana-mcp-secrets:
   opencode-data:
+  prometheus-data:
