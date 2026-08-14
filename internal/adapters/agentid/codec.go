@@ -81,6 +81,22 @@ func (codec *Codec) DecodeTurnUUID(id domain.ID) (string, error) {
 	return codec.decodeUUID(id, "turn_", "aegis-agent-turn-v1")
 }
 
+// EncodeMessageKey 为只需展示、不需要反向寻址的 Provider item 生成稳定公开 ID。
+func (codec *Codec) EncodeMessageKey(value string) (domain.ID, error) {
+	if value == "" {
+		return "", errors.New("provider message key is required")
+	}
+	mac := hmac.New(sha256.New, codec.key)
+	_, _ = mac.Write([]byte("aegis-agent-message-v1"))
+	_, _ = mac.Write([]byte{0})
+	_, _ = mac.Write([]byte(value))
+	id := domain.ID("msg_" + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)[:18]))
+	if !id.Valid() {
+		return "", errors.New("encoded message ID does not satisfy the public contract")
+	}
+	return id, nil
+}
+
 func (codec *Codec) decodeUUID(id domain.ID, prefix, purpose string) (string, error) {
 	if !id.Valid() || !strings.HasPrefix(string(id), prefix) {
 		return "", errors.New("invalid public agent ID")

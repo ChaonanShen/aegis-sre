@@ -64,6 +64,20 @@ func TestCodecSeparatesSessionAndTurnNamespaces(t *testing.T) {
 	}
 }
 
+func TestCodecProducesStableOneWayMessageID(t *testing.T) {
+	t.Parallel()
+	codec, _ := New([]byte("0123456789abcdef0123456789abcdef"))
+	first, err := codec.EncodeMessageKey("provider-item-1")
+	second, _ := codec.EncodeMessageKey("provider-item-1")
+	other, _ := codec.EncodeMessageKey("provider-item-2")
+	if err != nil || first != second || first == other || !strings.HasPrefix(string(first), "msg_") || strings.Contains(string(first), "provider") {
+		t.Fatalf("message IDs = %q / %q / %q, err = %v", first, second, other, err)
+	}
+	if _, err := codec.EncodeMessageKey(""); err == nil {
+		t.Fatal("empty provider key must be rejected")
+	}
+}
+
 func TestDecodeKeyAcceptsOnlyExactKeyMaterial(t *testing.T) {
 	t.Parallel()
 	if key, err := DecodeKey([]byte("MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY")); err != nil || len(key) != 32 {
