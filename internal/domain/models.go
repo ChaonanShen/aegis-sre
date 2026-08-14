@@ -14,7 +14,6 @@ type Session struct {
 	ID        ID
 	Title     string
 	Status    SessionStatus
-	FolderUID string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

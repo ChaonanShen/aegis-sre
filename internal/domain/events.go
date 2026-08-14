@@ -14,6 +14,7 @@ const (
 	EventApprovalRequested EventType = "approval.requested"
 	EventApprovalResolved  EventType = "approval.resolved"
 	EventArtifactCreated   EventType = "artifact.created"
+	EventTurnStarted       EventType = "turn.started"
 	EventTurnCompleted     EventType = "turn.completed"
 	EventTurnFailed        EventType = "turn.failed"
 	EventRunUpdated        EventType = "run.updated"

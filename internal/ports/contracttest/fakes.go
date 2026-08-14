@@ -30,18 +30,37 @@ func (stream *EventStream) Next(context.Context) (domain.Event, error) {
 func (*EventStream) Close() error { return nil }
 
 type AgentProvider struct {
-	Session ports.AgentSessionRef
-	Events  []domain.Event
-	Err     error
+	Session       ports.AgentSession
+	SessionDetail ports.AgentSessionDetail
+	Sessions      domain.Page[ports.AgentSession]
+	Turn          ports.AgentTurnRef
+	Events        []domain.Event
+	Err           error
 }
 
-func (fake *AgentProvider) CreateSession(context.Context, domain.ActorContext, ports.CreateAgentSessionInput) (ports.AgentSessionRef, error) {
+func (fake *AgentProvider) Check(context.Context) error { return fake.Err }
+func (fake *AgentProvider) ListSessions(context.Context, domain.ActorContext, ports.ListAgentSessionsInput) (domain.Page[ports.AgentSession], error) {
+	return fake.Sessions, fake.Err
+}
+func (fake *AgentProvider) CreateSession(context.Context, domain.ActorContext, ports.CreateAgentSessionInput) (ports.AgentSession, error) {
 	return fake.Session, fake.Err
 }
-func (fake *AgentProvider) StartTurn(context.Context, domain.ActorContext, ports.AgentSessionRef, ports.StartTurnInput) (ports.EventStream, error) {
-	return &EventStream{Events: fake.Events}, fake.Err
+func (fake *AgentProvider) ReadSession(context.Context, domain.ActorContext, ports.AgentSessionRef) (ports.AgentSessionDetail, error) {
+	return fake.SessionDetail, fake.Err
 }
-func (fake *AgentProvider) CancelTurn(context.Context, domain.ActorContext, ports.AgentSessionRef, string) error {
+func (fake *AgentProvider) RenameSession(context.Context, domain.ActorContext, ports.AgentSessionRef, string) (ports.AgentSession, error) {
+	return fake.Session, fake.Err
+}
+func (fake *AgentProvider) ArchiveSession(context.Context, domain.ActorContext, ports.AgentSessionRef) (ports.AgentSession, error) {
+	return fake.Session, fake.Err
+}
+func (fake *AgentProvider) UnarchiveSession(context.Context, domain.ActorContext, ports.AgentSessionRef) (ports.AgentSession, error) {
+	return fake.Session, fake.Err
+}
+func (fake *AgentProvider) StartTurn(context.Context, domain.ActorContext, ports.AgentSessionRef, ports.StartTurnInput) (ports.AgentTurnRef, ports.EventStream, error) {
+	return fake.Turn, &EventStream{Events: fake.Events}, fake.Err
+}
+func (fake *AgentProvider) CancelTurn(context.Context, domain.ActorContext, ports.AgentSessionRef, ports.AgentTurnRef) error {
 	return fake.Err
 }
 func (fake *AgentProvider) ResolveApproval(context.Context, domain.ActorContext, ports.AgentSessionRef, ports.ApprovalDecision) (ports.EventStream, error) {

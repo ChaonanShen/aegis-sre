@@ -48,6 +48,7 @@ const (
 	ErrorCapabilityUnavailable ErrorCode = "capability_unavailable"
 	ErrorProviderTimeout       ErrorCode = "provider_timeout"
 	ErrorProviderUnavailable   ErrorCode = "provider_unavailable"
+	ErrorProviderResultUnknown ErrorCode = "provider_result_unknown"
 	ErrorInternal              ErrorCode = "internal"
 )
 
