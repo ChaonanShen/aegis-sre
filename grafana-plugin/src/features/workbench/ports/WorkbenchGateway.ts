@@ -17,6 +17,7 @@ export interface WorkbenchGateway {
   deleteSession(sessionId: string, signal?: AbortSignal): Promise<void>;
   getContext(folderUid: string, signal?: AbortSignal): Promise<WorkbenchContext>;
   streamMessage(input: SendMessageInput, signal: AbortSignal): AsyncIterable<AgentEvent>;
+  cancelTurn(sessionId: string, turnId: string, idempotencyKey: string, signal?: AbortSignal): Promise<void>;
   resolveInterrupt(input: ResolveInterruptInput, signal: AbortSignal): AsyncIterable<AgentEvent>;
   saveSession(session: OpenedSession, signal?: AbortSignal): Promise<void>;
   updateCanvas(sessionId: string, canvas: CanvasPreview, signal?: AbortSignal): Promise<CanvasPreview>;

@@ -35,10 +35,17 @@ describe('Control Plane Workbench gateway', () => {
 
   test('maps stable SSE events and sends the turn idempotency key', async () => {
     const chunks = [
+      event({ event_type: 'turn.started', turn_id: 'turn_0123456789', payload: { status: 'running' } }),
       event({ event_type: 'message.delta', payload: { delta: '完成' } }),
       event({
         event_type: 'tool.started',
-        payload: { call_id: 'call_0123456789', server: 'grafana-read', tool: 'query', arguments: { expr: 'up' }, access: 'read' },
+        payload: {
+          call_id: 'call_0123456789',
+          server: 'grafana-read',
+          tool: 'query',
+          arguments: { expr: 'up' },
+          access: 'read',
+        },
       }),
       event({
         event_type: 'tool.completed',
@@ -57,6 +64,7 @@ describe('Control Plane Workbench gateway', () => {
 
     expect(events.map(({ type }) => type)).toEqual([
       'message_start',
+      'turn_started',
       'message_delta',
       'tool_call',
       'tool_result',
@@ -72,12 +80,34 @@ describe('Control Plane Workbench gateway', () => {
     );
   });
 
+  test('cancels a concrete provider turn instead of treating SSE abort as cancellation', async () => {
+    const backendSrv = fakeBackend({ data: undefined });
+    const gateway = createResourceWorkbenchGateway({ backendSrv });
+
+    await gateway.cancelTurn(session.id, 'turn_0123456789', 'cancel-client-turn-1');
+
+    const request = (backendSrv.fetch as jest.Mock).mock.calls[0][0] as BackendSrvRequest;
+    expect(request).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+        url: expect.stringContaining(`/api/v1/sessions/${session.id}/turns/turn_0123456789:cancel`),
+        headers: { 'Idempotency-Key': 'cancel-client-turn-1' },
+      })
+    );
+  });
+
   test('maps approval requests to the existing HITL view', async () => {
     const backendSrv = fakeBackend({
       chunks: [
         event({
           event_type: 'approval.requested',
-          payload: { approval_id: 'apr_0123456789', action: 'restart', reason: '高风险操作', risk: 'high', preview: ['pod/api'] },
+          payload: {
+            approval_id: 'apr_0123456789',
+            action: 'restart',
+            reason: '高风险操作',
+            risk: 'high',
+            preview: ['pod/api'],
+          },
         }),
       ],
     });
@@ -96,8 +126,14 @@ describe('Control Plane Workbench gateway', () => {
 
   test('decodes a split problem response without exposing upstream details', async () => {
     const problem = JSON.stringify({
-      type: 'about:blank', title: 'Conflict', status: 409, code: 'conflict', detail: 'session busy',
-      request_id: 'req-1', trace_id: 'trace-1', retryable: false,
+      type: 'about:blank',
+      title: 'Conflict',
+      status: 409,
+      code: 'conflict',
+      detail: 'session busy',
+      request_id: 'req-1',
+      trace_id: 'trace-1',
+      retryable: false,
     });
     const backendSrv = fakeBackend({ chunks: [problem.slice(0, 20), problem.slice(20)], streamStatus: 409 });
     const gateway = createResourceWorkbenchGateway({ backendSrv });
@@ -114,7 +150,11 @@ describe('Control Plane Workbench gateway', () => {
 
   test('aborting a live stream unsubscribes the Grafana request', async () => {
     let unsubscribed = false;
-    const backendSrv = fakeBackend({ stream: new Observable(() => () => { unsubscribed = true; }) });
+    const backendSrv = fakeBackend({
+      stream: new Observable(() => () => {
+        unsubscribed = true;
+      }),
+    });
     const gateway = createResourceWorkbenchGateway({ backendSrv });
     const controller = new AbortController();
     const iterator = gateway
@@ -157,10 +197,25 @@ function fakeBackend(options: {
   streamStatus?: number;
 }): BackendSrv {
   const response = (data: unknown, status = 200): FetchResponse<unknown> =>
-    ({ data, status, statusText: status === 200 ? 'OK' : 'Error', ok: status >= 200 && status < 300,
-      headers: new Headers(), redirected: false, type: 'basic', url: '', config: { url: '' } }) as FetchResponse<unknown>;
-  const stream = options.stream ?? of(...(options.chunks ?? []).map((chunk) =>
-    response(new TextEncoder().encode(chunk), options.streamStatus) as FetchResponse<Uint8Array | undefined>));
+    ({
+      data,
+      status,
+      statusText: status === 200 ? 'OK' : 'Error',
+      ok: status >= 200 && status < 300,
+      headers: new Headers(),
+      redirected: false,
+      type: 'basic',
+      url: '',
+      config: { url: '' },
+    }) as FetchResponse<unknown>;
+  const stream =
+    options.stream ??
+    of(
+      ...(options.chunks ?? []).map(
+        (chunk) =>
+          response(new TextEncoder().encode(chunk), options.streamStatus) as FetchResponse<Uint8Array | undefined>
+      )
+    );
   return {
     fetch: jest.fn(() => of(response(options.data))),
     chunked: jest.fn(() => stream),

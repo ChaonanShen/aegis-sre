@@ -12,6 +12,7 @@ export function applyAgentEvent(
 ): ApplyAgentEventResult {
   switch (event.type) {
     case 'message_start':
+    case 'turn_started':
     case 'interrupt':
     case 'done':
       return { session: opened };
@@ -67,11 +68,7 @@ export function applyAgentEvent(
       const messages =
         assistantIndex < 0
           ? [...opened.messages, toolMessage]
-          : [
-              ...opened.messages.slice(0, assistantIndex),
-              toolMessage,
-              ...opened.messages.slice(assistantIndex),
-            ];
+          : [...opened.messages.slice(0, assistantIndex), toolMessage, ...opened.messages.slice(assistantIndex)];
       return { session: withMessages(opened, messages) };
     }
     case 'tool_result':

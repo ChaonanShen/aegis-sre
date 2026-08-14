@@ -364,6 +364,7 @@ describe('useWorkbenchController', () => {
       signal: AbortSignal
     ): AsyncGenerator<AgentEvent> {
       yield { type: 'message_start' };
+      yield { type: 'turn_started', payload: { turnId: 'turn-provider-archive' } };
       await new Promise<void>((_resolve, reject) => {
         signal.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')), {
           once: true,
@@ -862,6 +863,7 @@ describe('useWorkbenchController', () => {
       signal: AbortSignal
     ): AsyncGenerator<AgentEvent> {
       yield { type: 'message_start' };
+      yield { type: 'turn_started', payload: { turnId: 'turn-provider-canvas' } };
       await streamGate.promise;
       yield { type: 'message_delta', payload: { delta: 'partial' } };
       await new Promise<void>((_resolve, reject) => {
@@ -907,7 +909,9 @@ describe('useWorkbenchController', () => {
     await act(async () => streamGate.resolve(undefined));
     await waitFor(() =>
       expect(result.current.openedSession).toMatchObject({
-        data: { messages: expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining('partial') })]) },
+        data: {
+          messages: expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining('partial') })]),
+        },
       })
     );
     expect(result.current.openedSession).toMatchObject({
@@ -1011,6 +1015,7 @@ describe('useWorkbenchController', () => {
 
   test('reconciles after Stop and restores a Turn committed before cancellation', async () => {
     const baseGateway = createFixtureWorkbenchGateway({ latencyMs: 0 });
+    const cancelTurn = jest.fn(baseGateway.cancelTurn);
     const openSession = jest
       .fn<Promise<OpenedSession>, [string, AbortSignal?]>()
       .mockResolvedValueOnce(openedSession('s-001'))
@@ -1020,6 +1025,7 @@ describe('useWorkbenchController', () => {
       signal: AbortSignal
     ): AsyncGenerator<AgentEvent> {
       yield { type: 'message_start' };
+      yield { type: 'turn_started', payload: { turnId: 'turn-provider-1' } };
       yield { type: 'message_delta', payload: { delta: 'partial' } };
       await new Promise<void>((_resolve, reject) => {
         signal.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')), {
@@ -1027,7 +1033,13 @@ describe('useWorkbenchController', () => {
         });
       });
     });
-    const gateway: WorkbenchGateway = { ...baseGateway, openSession, streamMessage, saveSession: jest.fn() };
+    const gateway: WorkbenchGateway = {
+      ...baseGateway,
+      openSession,
+      streamMessage,
+      cancelTurn,
+      saveSession: jest.fn(),
+    };
     const { result } = renderHook(() =>
       useWorkbenchController({
         gateway,
@@ -1053,11 +1065,61 @@ describe('useWorkbenchController', () => {
       await sendPromise;
     });
 
+    expect(cancelTurn).toHaveBeenCalledWith('s-001', 'turn-provider-1', 'cancel-123e4567-e89b-42d3-a456-426614174000');
     expect(openSession).toHaveBeenCalledTimes(2);
     expect(result.current.openedSession).toMatchObject({
       data: { messages: [{ content: 'persisted user' }, { content: 'persisted assistant' }] },
     });
     expect(result.current.lastFailedInput).toBeUndefined();
+  });
+
+  test('keeps the stream connected when Turn cancellation is rejected', async () => {
+    const baseGateway = createFixtureWorkbenchGateway({ latencyMs: 0 });
+    const cancelTurn = jest.fn().mockRejectedValue(new Error('cancel unavailable'));
+    let streamSignal: AbortSignal | undefined;
+    const streamMessage = jest.fn(async function* (
+      _input: SendMessageInput,
+      signal: AbortSignal
+    ): AsyncGenerator<AgentEvent> {
+      streamSignal = signal;
+      yield { type: 'message_start' };
+      yield { type: 'turn_started', payload: { turnId: 'turn-provider-1' } };
+      yield { type: 'message_delta', payload: { delta: 'partial' } };
+      await new Promise<void>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')), {
+          once: true,
+        });
+      });
+    });
+    const gateway: WorkbenchGateway = { ...baseGateway, streamMessage, cancelTurn };
+    const { result, unmount } = renderHook(() =>
+      useWorkbenchController({
+        gateway,
+        sessionId: 's-001',
+        activeFolder: fixtureFolders[1],
+        onNavigate: jest.fn(),
+        onFolderChange: jest.fn(),
+      })
+    );
+    await waitFor(() => expect(result.current.openedSession.status).toBe('success'));
+    act(() => {
+      void result.current.sendMessage('investigate');
+    });
+    await waitFor(() =>
+      expect(result.current.openedSession).toMatchObject({
+        data: { messages: expect.arrayContaining([expect.objectContaining({ content: 'partial' })]) },
+      })
+    );
+
+    await act(async () => {
+      result.current.stopStreaming();
+      await Promise.resolve();
+    });
+
+    expect(cancelTurn).toHaveBeenCalledTimes(1);
+    expect(streamSignal?.aborted).toBe(false);
+    expect(result.current.streaming).toBe(true);
+    unmount();
   });
 });
 

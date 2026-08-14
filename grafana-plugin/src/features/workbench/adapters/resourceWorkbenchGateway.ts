@@ -78,6 +78,13 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
         signal
       );
     },
+    async cancelTurn(sessionId, turnId, idempotencyKey, signal) {
+      await resources().requestVoid(`${sessionPath(sessionId)}/turns/${encodeURIComponent(turnId)}:cancel`, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        signal,
+      });
+    },
     resolveInterrupt(input, signal) {
       return streamEvents(
         backendSrv(),
@@ -176,6 +183,8 @@ interface EventMapping {
 function mapEvent(event: AegisEvent, clientTurnId: string, lastToolCallID?: string): EventMapping {
   const payload = asRecord(event.payload) ?? {};
   switch (event.event_type) {
+    case 'turn.started':
+      return { events: [{ type: 'turn_started', payload: { turnId: event.turn_id ?? '' } }] };
     case 'message.delta':
       return { events: [{ type: 'message_delta', payload: { delta: stringField(payload, 'delta') } }] };
     case 'tool.started': {
@@ -264,7 +273,11 @@ function toOpenedSession(detail: ContractSessionDetail): OpenedSession {
 }
 
 function emptyOpenedSession(session: ContractSession): OpenedSession {
-  return { session: toSessionSummary(session), messages: [], canvas: { visible: false, layout: 'grid-2x2', charts: [] } };
+  return {
+    session: toSessionSummary(session),
+    messages: [],
+    canvas: { visible: false, layout: 'grid-2x2', charts: [] },
+  };
 }
 
 function toSessionSummary(session: ContractSession, messages: WorkbenchMessage[] = []): SessionSummary {
@@ -289,17 +302,19 @@ function isSession(value: unknown): value is ContractSession {
   const record = asRecord(value);
   return Boolean(
     record &&
-      typeof record.id === 'string' &&
-      typeof record.title === 'string' &&
-      typeof record.status === 'string' &&
-      typeof record.created_at === 'string' &&
-      typeof record.updated_at === 'string'
+    typeof record.id === 'string' &&
+    typeof record.title === 'string' &&
+    typeof record.status === 'string' &&
+    typeof record.created_at === 'string' &&
+    typeof record.updated_at === 'string'
   );
 }
 
 function isSessionPage(value: unknown): value is ContractSessionPage {
   const record = asRecord(value);
-  return Boolean(record && Array.isArray(record.items) && record.items.every(isSession) && typeof record.has_more === 'boolean');
+  return Boolean(
+    record && Array.isArray(record.items) && record.items.every(isSession) && typeof record.has_more === 'boolean'
+  );
 }
 
 function isSessionDetail(value: unknown): value is ContractSessionDetail {
@@ -314,10 +329,10 @@ function isMessages(value: unknown): value is ContractMessage[] {
       const record = asRecord(message);
       return Boolean(
         record &&
-          typeof record.id === 'string' &&
-          (record.role === 'user' || record.role === 'assistant' || record.role === 'tool') &&
-          typeof record.content === 'string' &&
-          typeof record.created_at === 'string'
+        typeof record.id === 'string' &&
+        (record.role === 'user' || record.role === 'assistant' || record.role === 'tool') &&
+        typeof record.content === 'string' &&
+        typeof record.created_at === 'string'
       );
     })
   );
@@ -421,7 +436,9 @@ function problemFrom(error: BufferedError): ResourceRequestError {
 
 function isProblem(value: unknown): value is Problem {
   const record = asRecord(value);
-  return Boolean(record && typeof record.status === 'number' && typeof record.code === 'string' && typeof record.title === 'string');
+  return Boolean(
+    record && typeof record.status === 'number' && typeof record.code === 'string' && typeof record.title === 'string'
+  );
 }
 
 async function* observableValues<T>(observable: Observable<T>, signal: AbortSignal): AsyncGenerator<T> {
@@ -517,7 +534,9 @@ function throwIfAborted(signal?: AbortSignal) {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === 'object' && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
 }
 
 function stringField(record: Record<string, unknown> | undefined, field: string): string {

@@ -140,18 +140,21 @@ describe('createFixtureWorkbenchGateway', () => {
   test('aborts an in-flight stream', async () => {
     const gateway = createFixtureWorkbenchGateway({ latencyMs: 0, streamDelayMs: 20 });
     const controller = new AbortController();
-    const iterator = gateway.streamMessage(
-      {
-        clientTurnId: 'turn-command-3',
-        sessionId: 's-001',
-        input: 'p95 latency',
-        activeFolder: fixtureFolders[3],
-        mentions: [],
-        history: [],
-      },
-      controller.signal
-    )[Symbol.asyncIterator]();
+    const iterator = gateway
+      .streamMessage(
+        {
+          clientTurnId: 'turn-command-3',
+          sessionId: 's-001',
+          input: 'p95 latency',
+          activeFolder: fixtureFolders[3],
+          mentions: [],
+          history: [],
+        },
+        controller.signal
+      )
+      [Symbol.asyncIterator]();
 
+    await iterator.next();
     await iterator.next();
     controller.abort();
     await expect(iterator.next()).rejects.toMatchObject({ name: 'AbortError' });

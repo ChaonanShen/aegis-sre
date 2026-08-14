@@ -129,6 +129,10 @@ export function createFixtureWorkbenchGateway(options: FixtureWorkbenchGatewayOp
       return streamFixtureReply(input, signal, streamDelayMs);
     },
 
+    async cancelTurn(_sessionId: string, _turnId: string, _idempotencyKey: string, signal?: AbortSignal) {
+      await delay(0, signal);
+    },
+
     resolveInterrupt(input: ResolveInterruptInput, signal: AbortSignal) {
       return streamFixtureResolution(input, signal, streamDelayMs);
     },
@@ -174,6 +178,7 @@ async function* streamFixtureReply(
   const service = input.mentions[0]?.replace(/^@/, '') || 'checkout-api';
 
   yield { type: 'message_start' };
+  yield { type: 'turn_started', payload: { turnId: `turn-${input.clientTurnId}` } };
 
   if (route === 'switch_folder') {
     const folderUid = input.input.match(/(?:switch-?folder|cd)\s+([\w-]+)/i)?.[1] ?? 'infra';

@@ -63,6 +63,8 @@ export function useWorkbenchController({
   const pendingHITLFolderUidRef = useRef<string>();
   const failedCommandSessionIdRef = useRef<string>();
   const streamSessionIdRef = useRef<string>();
+  const activeTurnIdRef = useRef<string>();
+  const activeClientTurnIdRef = useRef<string>();
   const archiveErrorSessionIdRef = useRef<string>();
   const streamControllerRef = useRef<AbortController>();
   const reconcileControllerRef = useRef<AbortController>();
@@ -99,6 +101,8 @@ export function useWorkbenchController({
     pendingHITLFolderUidRef.current = undefined;
     failedCommandSessionIdRef.current = undefined;
     archiveErrorSessionIdRef.current = undefined;
+    activeTurnIdRef.current = undefined;
+    activeClientTurnIdRef.current = undefined;
   }
 
   const setOpenedSession = useCallback((state: AsyncState<OpenedSession>) => {
@@ -213,18 +217,15 @@ export function useWorkbenchController({
     };
   }, [loadOpenedSession, sessionId]);
 
-  useLayoutEffect(
-    () => {
-      mountedRef.current = true;
-      return () => {
-        mountedRef.current = false;
-        createRequestRef.current += 1;
-        createControllerRef.current?.abort();
-        createControllerRef.current = undefined;
-      };
-    },
-    []
-  );
+  useLayoutEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      createRequestRef.current += 1;
+      createControllerRef.current?.abort();
+      createControllerRef.current = undefined;
+    };
+  }, []);
 
   useEffect(
     () => () => {
@@ -428,6 +429,8 @@ export function useWorkbenchController({
       reconcileControllerRef.current?.abort();
       streamControllerRef.current = controller;
       streamSessionIdRef.current = command.input.sessionId;
+      activeClientTurnIdRef.current = command.input.clientTurnId;
+      activeTurnIdRef.current = undefined;
       assistantMessageIdRef.current = command.assistantMessageId;
       stopRequestedRef.current = false;
       failedCommandRef.current = undefined;
@@ -448,6 +451,8 @@ export function useWorkbenchController({
           streamControllerRef.current = undefined;
           assistantMessageIdRef.current = undefined;
           streamSessionIdRef.current = undefined;
+          activeTurnIdRef.current = undefined;
+          activeClientTurnIdRef.current = undefined;
           setStreaming(false);
         }
       };
@@ -461,6 +466,10 @@ export function useWorkbenchController({
               return;
             }
             current = mergeLatestCanvas(current, openedRef.current);
+            if (event.type === 'turn_started') {
+              activeTurnIdRef.current = event.payload.turnId;
+              continue;
+            }
             const applied = applyAgentEvent(current, event, command.assistantMessageId);
             current = applied.session;
             publishOpened(current);
@@ -615,13 +624,30 @@ export function useWorkbenchController({
   );
 
   const stopStreaming = useCallback(() => {
-    stopRequestedRef.current = true;
-    streamControllerRef.current?.abort();
-    const opened = openedRef.current;
-    if (opened && opened.session.id === routeSessionIdRef.current) {
-      publishOpened(markMessageStopped(opened, assistantMessageIdRef.current));
+    const activeSessionId = streamSessionIdRef.current;
+    const turnId = activeTurnIdRef.current;
+    const clientTurnId = activeClientTurnIdRef.current;
+    const streamController = streamControllerRef.current;
+    if (!activeSessionId || !turnId || !clientTurnId || !streamController) {
+      return;
     }
-  }, [publishOpened]);
+    void gateway
+      .cancelTurn(activeSessionId, turnId, `cancel-${clientTurnId}`)
+      .then(() => {
+        if (streamControllerRef.current !== streamController || activeTurnIdRef.current !== turnId) {
+          return;
+        }
+        stopRequestedRef.current = true;
+        streamController.abort();
+        const opened = openedRef.current;
+        if (opened && opened.session.id === routeSessionIdRef.current) {
+          publishOpened(markMessageStopped(opened, assistantMessageIdRef.current));
+        }
+      })
+      .catch(() => {
+        // 取消未被服务端确认时保留 SSE，避免把断开连接误报为 Turn 已停止。
+      });
+  }, [gateway, publishOpened]);
 
   const retryLastMessage = useCallback(async () => {
     const command = failedCommandRef.current;
@@ -657,9 +683,9 @@ export function useWorkbenchController({
       const requestFolderUid = pendingHITLFolderUidRef.current;
       const canApprove = Boolean(
         activeFolder &&
-          requestFolderUid &&
-          activeFolder.uid === requestFolderUid &&
-          (activeFolder.permission === 'Edit' || activeFolder.permission === 'Admin')
+        requestFolderUid &&
+        activeFolder.uid === requestFolderUid &&
+        (activeFolder.permission === 'Edit' || activeFolder.permission === 'Admin')
       );
       if (
         !opened ||
@@ -797,7 +823,11 @@ export function useWorkbenchController({
       publishOpened({ ...currentOpened, session: summary }, false);
       return true;
     } catch (error) {
-      if (!isAbortError(error) && routeVersion === routeVersionRef.current && routeSessionIdRef.current === sessionToArchive) {
+      if (
+        !isAbortError(error) &&
+        routeVersion === routeVersionRef.current &&
+        routeSessionIdRef.current === sessionToArchive
+      ) {
         archiveErrorSessionIdRef.current = sessionToArchive;
         setArchiveError(toError(error).message);
       }
@@ -807,12 +837,7 @@ export function useWorkbenchController({
 
   const deleteCurrentSession = useCallback(async () => {
     const opened = openedRef.current;
-    if (
-      !opened ||
-      opened.session.id !== routeSessionIdRef.current ||
-      streaming ||
-      deleting.status === 'loading'
-    ) {
+    if (!opened || opened.session.id !== routeSessionIdRef.current || streaming || deleting.status === 'loading') {
       return false;
     }
     const deletedID = opened.session.id;
@@ -861,13 +886,11 @@ export function useWorkbenchController({
     : contextFolderUidRef.current !== activeFolderUid
       ? { status: 'loading' }
       : context;
-  const visiblePendingHITL =
-    sessionId && pendingHITLSessionIdRef.current === sessionId ? pendingHITL : null;
+  const visiblePendingHITL = sessionId && pendingHITLSessionIdRef.current === sessionId ? pendingHITL : null;
   const visiblePendingHITLFolderUid = visiblePendingHITL ? pendingHITLFolderUidRef.current : undefined;
   const visibleLastFailedInput =
     sessionId && failedCommandSessionIdRef.current === sessionId ? lastFailedInput : undefined;
-  const visibleArchiveError =
-    sessionId && archiveErrorSessionIdRef.current === sessionId ? archiveError : undefined;
+  const visibleArchiveError = sessionId && archiveErrorSessionIdRef.current === sessionId ? archiveError : undefined;
   const visibleStreaming = Boolean(sessionId && streaming && streamSessionIdRef.current === sessionId);
   const visibleHITL = Boolean(visiblePendingHITL && hitlVisible);
 

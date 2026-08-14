@@ -148,6 +148,7 @@ export interface ResolveInterruptInput {
 
 export type AgentEvent =
   | { type: 'message_start' }
+  | { type: 'turn_started'; payload: { turnId: string } }
   | { type: 'message_delta'; payload: { delta: string } }
   | { type: 'message_end'; payload: { charts?: SavedChartPreview[] } }
   | { type: 'chart'; payload: SavedChartPreview }

@@ -115,6 +115,14 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
       return streamMessage(backendSrv(), input, signal);
     },
 
+    async cancelTurn(sessionId, turnId, idempotencyKey, signal) {
+      await resources().request(`${sessionPath(sessionId)}/turns/${encodeURIComponent(turnId)}:cancel`, isUndefined, {
+        method: 'POST',
+        headers: { 'Idempotency-Key': idempotencyKey },
+        signal,
+      });
+    },
+
     resolveInterrupt(input, signal: AbortSignal) {
       return streamResume(backendSrv(), input, signal);
     },
