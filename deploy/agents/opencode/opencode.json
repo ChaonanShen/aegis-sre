@@ -24,6 +24,16 @@
       },
       "enabled": true,
       "timeout": 10000
+    },
+    "playbooks": {
+      "type": "remote",
+      "url": "http://control-plane:8080/mcp/playbooks",
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {env:PLAYBOOK_MCP_TOKEN}"
+      },
+      "enabled": true,
+      "timeout": 10000
     }
   },
   "tools": {

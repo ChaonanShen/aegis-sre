@@ -33,6 +33,7 @@ type dependencies struct {
 	knowledgeIDs    ports.KnowledgeIDGenerator
 	knowledgeHealth func(context.Context) error
 	knowledgeMCP    http.Handler
+	playbookMCP     http.Handler
 }
 
 func WithAgentProvider(provider ports.AgentProvider) Option {
@@ -69,6 +70,10 @@ func WithKnowledgeMCP(handler http.Handler) Option {
 	return func(deps *dependencies) { deps.knowledgeMCP = handler }
 }
 
+func WithPlaybookMCP(handler http.Handler) Option {
+	return func(deps *dependencies) { deps.playbookMCP = handler }
+}
+
 func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -100,6 +105,9 @@ func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server
 	mux.Handle("/api/v1/", apiHandler(cfg, deps))
 	if deps.knowledgeMCP != nil {
 		mux.Handle("/mcp/knowledge", deps.knowledgeMCP)
+	}
+	if deps.playbookMCP != nil {
+		mux.Handle("/mcp/playbooks", deps.playbookMCP)
 	}
 
 	return &http.Server{

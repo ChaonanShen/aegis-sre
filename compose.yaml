@@ -49,11 +49,14 @@ services:
       AEGIS_HTTP_ADDRESS: :8080
       AEGIS_OPENCODE_PASSWORD_FILE: /run/secrets/opencode-server-password
       AEGIS_OPENCODE_USERNAME: opencode
+      AEGIS_PLAYBOOK_MCP_FOLDER_UIDS: "infra,payment"
+      AEGIS_PLAYBOOK_MCP_TOKEN_FILE: /run/secrets/playbook-mcp-token
       AEGIS_PLUGIN_TOKEN_FILE: /run/secrets/aegis-plugin-token
     volumes:
       - ./deploy/local/secrets/agent-id-key:/run/secrets/agent-id-key:ro
       - ./deploy/local/secrets/dagu-basic-password:/run/secrets/dagu-basic-password:ro
       - ./deploy/local/secrets/opencode-server-password:/run/secrets/opencode-server-password:ro
+      - ./deploy/local/secrets/playbook-mcp-token:/run/secrets/playbook-mcp-token:ro
       - ./deploy/local/secrets/plugin-token:/run/secrets/aegis-plugin-token:ro
     depends_on:
       dagu:
@@ -79,6 +82,7 @@ services:
       - opencode-data:/var/lib/opencode
       - ./deploy/local/secrets/deepseek-api-key:/run/secrets/deepseek-api-key:ro
       - ./deploy/local/secrets/grafana-mcp-caller-token:/run/secrets/grafana-mcp-caller-token:ro
+      - ./deploy/local/secrets/playbook-mcp-token:/run/secrets/playbook-mcp-token:ro
       - ./deploy/local/secrets/opencode-server-password:/run/secrets/opencode-server-password:ro
     depends_on:
       grafana-mcp-gateway:

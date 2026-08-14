@@ -127,3 +127,20 @@ func TestKnowledgeMCPIsOnlyExposedWhenConfigured(t *testing.T) {
 		t.Fatalf("unconfigured status = %d", response.Code)
 	}
 }
+
+func TestPlaybookMCPIsOnlyExposedWhenConfigured(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
+	server := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookMCP(handler))
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/mcp/playbooks", nil))
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("configured Playbook MCP status = %d", response.Code)
+	}
+
+	withoutMCP := New(config.Config{Endpoints: map[config.Capability]string{}}, nil)
+	response = httptest.NewRecorder()
+	withoutMCP.Handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/mcp/playbooks", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("unconfigured Playbook MCP status = %d", response.Code)
+	}
+}

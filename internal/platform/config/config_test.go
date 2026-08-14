@@ -144,6 +144,37 @@ func TestLoadAcceptsAuthenticatedOpenCodeProvider(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsPlaybookMCPBindingForAgentActor(t *testing.T) {
+	directory := t.TempDir()
+	keyFile := filepath.Join(directory, "agent-id-key")
+	tokenFile := filepath.Join(directory, "playbook-mcp-token")
+	if err := os.WriteFile(keyFile, []byte("0123456789abcdef0123456789abcdef"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(tokenFile, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{
+		EnvAgentProvider: "opencode", EnvAgentURL: "http://opencode.internal", EnvAgentTenantID: "tenant", EnvAgentOrgID: "org", EnvAgentUserID: "user", EnvAgentIDKeyFile: keyFile,
+		EnvOpenCodePasswordFile: keyFile, EnvDaguURL: "http://dagu.internal", EnvDaguBasicUser: "dagu", EnvDaguBasicPass: keyFile,
+		EnvPlaybookMCPToken: tokenFile, EnvPlaybookMCPFolders: "ops,payments",
+	}
+	cfg, err := Load(func(key string) string { return values[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.PlaybookMCPTokenFile != tokenFile || len(cfg.PlaybookMCPFolders) != 2 {
+		t.Fatalf("config = %+v", cfg)
+	}
+}
+
+func TestLoadRejectsPlaybookMCPWithoutDaguOrFolders(t *testing.T) {
+	values := map[string]string{EnvPlaybookMCPToken: filepath.Join(t.TempDir(), "missing"), EnvPlaybookMCPFolders: "ops"}
+	if _, err := Load(func(key string) string { return values[key] }); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error = %v, want ErrInvalid", err)
+	}
+}
+
 func TestLoadAcceptsCompleteKnowledgeConfiguration(t *testing.T) {
 	directory := t.TempDir()
 	apiKey := filepath.Join(directory, "ragflow-api-key")

@@ -40,6 +40,8 @@ const (
 	EnvKnowledgeMCPOrg      = "AEGIS_KNOWLEDGE_MCP_ORG_ID"
 	EnvKnowledgeMCPUser     = "AEGIS_KNOWLEDGE_MCP_USER_ID"
 	EnvKnowledgeMCPFolders  = "AEGIS_KNOWLEDGE_MCP_FOLDER_UIDS"
+	EnvPlaybookMCPToken     = "AEGIS_PLAYBOOK_MCP_TOKEN_FILE"
+	EnvPlaybookMCPFolders   = "AEGIS_PLAYBOOK_MCP_FOLDER_UIDS"
 	EnvGrafanaMCPURL        = "AEGIS_GRAFANA_MCP_URL"
 	EnvPluginTokenFile      = "AEGIS_PLUGIN_TOKEN_FILE"
 )
@@ -83,6 +85,8 @@ type Config struct {
 	KnowledgeMCPOrgID     string
 	KnowledgeMCPUserID    string
 	KnowledgeMCPFolders   []string
+	PlaybookMCPTokenFile  string
+	PlaybookMCPFolders    []string
 }
 
 func Load(getenv func(string) string) (Config, error) {
@@ -287,7 +291,22 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, RAGFlowAPIKeyFile: ragFlowAPIKeyFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, RAGFlowTimeout: ragFlowTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders}, nil
+	playbookMCPTokenFile := strings.TrimSpace(getenv(EnvPlaybookMCPToken))
+	playbookMCPFolders, playbookFolderErr := parseKnowledgeMCPFolders(getenv(EnvPlaybookMCPFolders))
+	playbookMCPConfigured := playbookMCPTokenFile != "" || len(playbookMCPFolders) > 0
+	if playbookMCPConfigured {
+		if endpoints[CapabilityPlaybook] == "" || agentTenantID == "" || agentOrgID == "" || agentUserID == "" {
+			return Config{}, fmt.Errorf("%w: Playbook MCP requires Dagu endpoint and Agent actor", ErrInvalid)
+		}
+		if err := requireRegularFile(playbookMCPTokenFile, EnvPlaybookMCPToken); err != nil {
+			return Config{}, err
+		}
+		if playbookFolderErr != nil || len(playbookMCPFolders) == 0 {
+			return Config{}, fmt.Errorf("%w: Playbook MCP Folder allowlist must be complete and valid", ErrInvalid)
+		}
+	}
+
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, RAGFlowAPIKeyFile: ragFlowAPIKeyFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, RAGFlowTimeout: ragFlowTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders, PlaybookMCPTokenFile: playbookMCPTokenFile, PlaybookMCPFolders: playbookMCPFolders}, nil
 }
 
 func parseBool(raw string, defaultValue bool) (bool, error) {

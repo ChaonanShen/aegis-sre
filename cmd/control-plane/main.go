@@ -21,6 +21,7 @@ import (
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/httpserver"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/knowledgemcp"
+	"github.com/1024XEngineer/aegis-sre/internal/platform/playbookmcp"
 	"github.com/1024XEngineer/aegis-sre/internal/ports"
 )
 
@@ -89,6 +90,7 @@ func run(logger *slog.Logger) error {
 		}
 		serverOptions = append(serverOptions, httpserver.WithAgentProvider(scoped))
 	}
+	var playbookProvider ports.PlaybookProvider
 	if endpoint := cfg.Endpoints[config.CapabilityPlaybook]; endpoint != "" {
 		var tokenSource dagu.TokenSource
 		var basicAuthSource dagu.BasicAuthSource
@@ -112,7 +114,18 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
+		playbookProvider = provider
 		serverOptions = append(serverOptions, httpserver.WithPlaybookProvider(provider))
+	}
+	if playbookProvider != nil && cfg.PlaybookMCPTokenFile != "" {
+		handler, err := playbookmcp.NewHandler(playbookProvider, playbookmcp.Config{
+			TokenFile: cfg.PlaybookMCPTokenFile, TenantID: cfg.AgentTenantID, OrgID: cfg.AgentOrgID,
+			UserID: cfg.AgentUserID, FolderUIDs: cfg.PlaybookMCPFolders,
+		})
+		if err != nil {
+			return err
+		}
+		serverOptions = append(serverOptions, httpserver.WithPlaybookMCP(handler))
 	}
 	if endpoint := cfg.Endpoints[config.CapabilityKnowledge]; endpoint != "" {
 		keyContent, err := os.ReadFile(cfg.KnowledgeIDKeyFile)
