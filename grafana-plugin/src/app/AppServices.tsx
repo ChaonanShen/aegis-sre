@@ -15,12 +15,14 @@ import { createFixtureWorkbenchGateway } from '../features/workbench/adapters/fi
 import { createResourceWorkbenchGateway } from '../features/workbench/adapters/resourceWorkbenchGateway';
 import { WorkbenchGateway } from '../features/workbench/ports/WorkbenchGateway';
 import { createFixtureFolderGateway } from './adapters/fixtureFolderGateway';
+import { createGrafanaFolderGateway } from './adapters/grafanaFolderGateway';
 import { FolderGateway } from './ports/FolderGateway';
+import { createResourceKnowledgeManagementGateway } from '../features/knowledge/adapters/resourceKnowledgeManagementGateway';
+import { KnowledgeManagementGateway } from '../features/knowledge/ports/KnowledgeManagementGateway';
 import {
   unavailableAlertGateway,
   unavailableApprovalGateway,
   unavailableAuditGateway,
-  unavailableFolderGateway,
   unavailableKnowledgeGateway,
   unavailableSkillGateway,
 } from './adapters/unavailableGateways';
@@ -32,6 +34,7 @@ export interface AppServices {
   approvalGateway: ApprovalGateway;
   folderGateway: FolderGateway;
   knowledgeGateway: KnowledgeGateway;
+  knowledgeManagementGateway?: KnowledgeManagementGateway;
   playbookGateway: PlaybookCrudGateway;
   skillGateway: SkillGateway;
   workbenchGateway: WorkbenchGateway;
@@ -64,15 +67,15 @@ export function AppServicesProvider({
       auditGateway: runtimeMode === 'fixture' ? fixtureServices.auditGateway : unavailableAuditGateway,
       alertGateway: runtimeMode === 'fixture' ? fixtureServices.alertGateway : unavailableAlertGateway,
       approvalGateway: runtimeMode === 'fixture' ? fixtureServices.approvalGateway : unavailableApprovalGateway,
-      folderGateway: runtimeMode === 'fixture' ? fixtureServices.folderGateway : unavailableFolderGateway,
+      folderGateway: runtimeMode === 'fixture' ? fixtureServices.folderGateway : createGrafanaFolderGateway(),
       knowledgeGateway: runtimeMode === 'fixture' ? fixtureServices.knowledgeGateway : unavailableKnowledgeGateway,
+      knowledgeManagementGateway:
+        runtimeMode === 'real' && !services?.knowledgeGateway ? createResourceKnowledgeManagementGateway() : undefined,
       skillGateway: runtimeMode === 'fixture' ? fixtureServices.skillGateway : unavailableSkillGateway,
       workbenchGateway:
         services?.workbenchGateway ??
         (runtimeMode === 'fixture' ? fixtureServices.workbenchGateway : createResourceWorkbenchGateway()),
-      playbookGateway:
-        services?.playbookGateway ??
-        createResourcePlaybookCrudGateway(),
+      playbookGateway: services?.playbookGateway ?? createResourcePlaybookCrudGateway(),
     };
     // runtimeMode 由 Provider 统一拥有，普通 gateway 覆盖不能悄悄改变能力边界。
     return { ...defaults, ...services, runtimeMode };

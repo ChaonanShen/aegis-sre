@@ -92,6 +92,38 @@ export class ResourceClient {
       throw error;
     }
   }
+
+  async requestBlob(path: string, options: ResourceRequestOptions = {}): Promise<Blob> {
+    const request: BackendSrvRequest = {
+      url: resourceURL(path),
+      method: options.method ?? 'GET',
+      abortSignal: options.signal,
+      headers: options.headers,
+      responseType: 'blob',
+      showErrorAlert: false,
+      validatePath: true,
+    };
+    try {
+      const response = await lastValueFrom(this.backendSrv.fetch<Blob>(request));
+      if (!(response.data instanceof Blob)) {
+        throw new ResourceClientError(response.status, 0, 'Plugin Backend 返回了无效文件。');
+      }
+      return response.data;
+    } catch (error) {
+      if (error instanceof ResourceClientError) {
+        throw error;
+      }
+      if (isFetchError<unknown>(error)) {
+        if (error.cancelled) {
+          throw new DOMException('The operation was aborted.', 'AbortError');
+        }
+        if (isProblem(error.data)) {
+          throw new ResourceClientError(error.status, error.data.code, error.data.detail || error.data.title);
+        }
+      }
+      throw error;
+    }
+  }
 }
 
 function resourceURL(path: string): string {

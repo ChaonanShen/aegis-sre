@@ -40,8 +40,14 @@ describe('ResourceClient', () => {
         status: 403,
         statusText: 'Forbidden',
         data: {
-          type: 'about:blank', title: 'Forbidden', status: 403, code: 'forbidden', detail: 'folder denied',
-          request_id: 'req-1', trace_id: 'trace-1', retryable: false,
+          type: 'about:blank',
+          title: 'Forbidden',
+          status: 403,
+          code: 'forbidden',
+          detail: 'folder denied',
+          request_id: 'req-1',
+          trace_id: 'trace-1',
+          retryable: false,
         },
         config: {} as BackendSrvRequest,
       }))
@@ -79,6 +85,24 @@ describe('ResourceClient', () => {
       message: 'Resource 路径必须位于 /api/v1 下。',
     });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  test('downloads binary resources with the same folder authorization headers', async () => {
+    const blob = new Blob(['document']);
+    const fetch = jest.fn(() => of(response(blob)));
+    const client = new ResourceClient({ fetch } as unknown as BackendSrv);
+
+    await expect(
+      client.requestBlob('/api/v1/knowledge-bases/kbs_1/documents/doc_1/content', {
+        headers: { 'X-Aegis-Folder-UID': 'ops' },
+      })
+    ).resolves.toBe(blob);
+    expect(fetch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        responseType: 'blob',
+        headers: { 'X-Aegis-Folder-UID': 'ops' },
+      })
+    );
   });
 });
 
