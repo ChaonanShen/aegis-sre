@@ -14,7 +14,7 @@ The configured embedding is `BAAI/bge-small-en-v1.5@Builtin`, served by the pinn
 
 ## Resources and readiness
 
-Allow at least 12 GiB RAM, 4 CPUs, and 30 GiB free disk for the local stack. Elasticsearch is capped at a 2 GiB JVM heap, document bulk size is reduced to 2, and embedding batches to 8. RAGFlow readiness calls `/api/v1/system/healthz`; Control Plane readiness also probes RAGFlow through its adapter. Without `compose.knowledge.yaml`, the existing Grafana, Dagu, and Agent stack remains independently runnable.
+Allow at least 12 GiB RAM, 4 CPUs, and 50 GiB free disk for the local stack. The pinned TEI image alone expands to about 33 GB in Docker Desktop; RAGFlow, Elasticsearch, writable layers, and initial indexes need additional headroom. Elasticsearch is capped at a 2 GiB JVM heap, document bulk size is reduced to 2, and embedding batches to 8. RAGFlow readiness calls `/api/v1/system/healthz`; Control Plane readiness also probes RAGFlow through its adapter. Without `compose.knowledge.yaml`, the existing Grafana, Dagu, and Agent stack remains independently runnable.
 
 ## Backup and restore
 
