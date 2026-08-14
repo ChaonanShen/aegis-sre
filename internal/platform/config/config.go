@@ -6,21 +6,30 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
 
 const (
-	EnvHTTPAddress     = "AEGIS_HTTP_ADDRESS"
-	EnvShutdownTimeout = "AEGIS_SHUTDOWN_TIMEOUT"
-	EnvAgentURL        = "AEGIS_AGENT_URL"
-	EnvDaguURL         = "AEGIS_DAGU_URL"
-	EnvDaguTokenFile   = "AEGIS_DAGU_TOKEN_FILE"
-	EnvDaguBasicUser   = "AEGIS_DAGU_BASIC_AUTH_USERNAME"
-	EnvDaguBasicPass   = "AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE"
-	EnvRAGFlowURL      = "AEGIS_RAGFLOW_URL"
-	EnvGrafanaMCPURL   = "AEGIS_GRAFANA_MCP_URL"
-	EnvPluginTokenFile = "AEGIS_PLUGIN_TOKEN_FILE"
+	EnvHTTPAddress      = "AEGIS_HTTP_ADDRESS"
+	EnvShutdownTimeout  = "AEGIS_SHUTDOWN_TIMEOUT"
+	EnvAgentProvider    = "AEGIS_AGENT_PROVIDER"
+	EnvAgentURL         = "AEGIS_AGENT_URL"
+	EnvAgentTenantID    = "AEGIS_AGENT_TENANT_ID"
+	EnvAgentOrgID       = "AEGIS_AGENT_ORG_ID"
+	EnvAgentUserID      = "AEGIS_AGENT_USER_ID"
+	EnvAgentIDKeyFile   = "AEGIS_AGENT_ID_KEY_FILE"
+	EnvAgentWorkDir     = "AEGIS_AGENT_WORKING_DIRECTORY"
+	EnvCodexCommand     = "AEGIS_CODEX_COMMAND"
+	EnvCodexInitTimeout = "AEGIS_CODEX_INITIALIZE_TIMEOUT"
+	EnvDaguURL          = "AEGIS_DAGU_URL"
+	EnvDaguTokenFile    = "AEGIS_DAGU_TOKEN_FILE"
+	EnvDaguBasicUser    = "AEGIS_DAGU_BASIC_AUTH_USERNAME"
+	EnvDaguBasicPass    = "AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE"
+	EnvRAGFlowURL       = "AEGIS_RAGFLOW_URL"
+	EnvGrafanaMCPURL    = "AEGIS_GRAFANA_MCP_URL"
+	EnvPluginTokenFile  = "AEGIS_PLUGIN_TOKEN_FILE"
 )
 
 var ErrInvalid = errors.New("invalid configuration")
@@ -35,13 +44,21 @@ const (
 )
 
 type Config struct {
-	HTTPAddress     string
-	ShutdownTimeout time.Duration
-	Endpoints       map[Capability]string
-	PluginToken     string
-	DaguTokenFile   string
-	DaguBasicUser   string
-	DaguBasicPass   string
+	HTTPAddress      string
+	ShutdownTimeout  time.Duration
+	Endpoints        map[Capability]string
+	PluginToken      string
+	DaguTokenFile    string
+	DaguBasicUser    string
+	DaguBasicPass    string
+	AgentProvider    string
+	AgentTenantID    string
+	AgentOrgID       string
+	AgentUserID      string
+	AgentIDKeyFile   string
+	AgentWorkDir     string
+	CodexCommand     string
+	CodexInitTimeout time.Duration
 }
 
 func Load(getenv func(string) string) (Config, error) {
@@ -121,5 +138,67 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass}, nil
+	agentProvider := strings.ToLower(strings.TrimSpace(getenv(EnvAgentProvider)))
+	if agentProvider != "" && agentProvider != "codex" && agentProvider != "opencode" {
+		return Config{}, fmt.Errorf("%w: %s must be codex or opencode", ErrInvalid, EnvAgentProvider)
+	}
+	agentTenantID := strings.TrimSpace(getenv(EnvAgentTenantID))
+	agentOrgID := strings.TrimSpace(getenv(EnvAgentOrgID))
+	agentUserID := strings.TrimSpace(getenv(EnvAgentUserID))
+	agentIDKeyFile := strings.TrimSpace(getenv(EnvAgentIDKeyFile))
+	agentWorkDir := strings.TrimSpace(getenv(EnvAgentWorkDir))
+	codexCommand := strings.TrimSpace(getenv(EnvCodexCommand))
+	if codexCommand == "" {
+		codexCommand = "codex"
+	}
+	codexInitTimeout := 15 * time.Second
+	if raw := strings.TrimSpace(getenv(EnvCodexInitTimeout)); raw != "" {
+		parsed, err := time.ParseDuration(raw)
+		if err != nil || parsed <= 0 {
+			return Config{}, fmt.Errorf("%w: %s must be a positive duration", ErrInvalid, EnvCodexInitTimeout)
+		}
+		codexInitTimeout = parsed
+	}
+	if agentProvider != "" {
+		for name, value := range map[string]string{EnvAgentTenantID: agentTenantID, EnvAgentOrgID: agentOrgID, EnvAgentUserID: agentUserID, EnvAgentIDKeyFile: agentIDKeyFile} {
+			if !validAgentConfigValue(value) {
+				return Config{}, fmt.Errorf("%w: %s is required and invalid", ErrInvalid, name)
+			}
+		}
+		if err := requireRegularFile(agentIDKeyFile, EnvAgentIDKeyFile); err != nil {
+			return Config{}, err
+		}
+	}
+	if agentProvider == "codex" {
+		if agentWorkDir == "" || !filepath.IsAbs(agentWorkDir) {
+			return Config{}, fmt.Errorf("%w: %s must be an absolute directory", ErrInvalid, EnvAgentWorkDir)
+		}
+		info, err := os.Stat(agentWorkDir)
+		if err != nil || !info.IsDir() {
+			return Config{}, fmt.Errorf("%w: %s must be an existing directory", ErrInvalid, EnvAgentWorkDir)
+		}
+		if endpoints[CapabilityAgent] != "" {
+			return Config{}, fmt.Errorf("%w: %s is not used by the codex provider", ErrInvalid, EnvAgentURL)
+		}
+	}
+	if agentProvider == "opencode" && endpoints[CapabilityAgent] == "" {
+		return Config{}, fmt.Errorf("%w: %s is required by the opencode provider", ErrInvalid, EnvAgentURL)
+	}
+	if agentProvider == "" && endpoints[CapabilityAgent] != "" {
+		return Config{}, fmt.Errorf("%w: %s is required when %s is set", ErrInvalid, EnvAgentProvider, EnvAgentURL)
+	}
+
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout}, nil
+}
+
+func validAgentConfigValue(value string) bool {
+	return value != "" && len(value) <= 128 && !strings.ContainsAny(value, "\r\n\x00")
+}
+
+func requireRegularFile(path, envName string) error {
+	info, err := os.Stat(path)
+	if err != nil || !info.Mode().IsRegular() {
+		return fmt.Errorf("%w: %s must point to a readable regular file", ErrInvalid, envName)
+	}
+	return nil
 }
