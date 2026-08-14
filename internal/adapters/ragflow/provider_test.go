@@ -188,6 +188,81 @@ func TestRetrieveRejectsDisabledCollection(t *testing.T) {
 	}
 }
 
+func TestCrossFolderScopeRejectsEveryCollectionAndDocumentOperation(t *testing.T) {
+	provider, fake, codec, owner := newTestProvider(t)
+	collectionID, _ := codec.CollectionID(owner, "kb")
+	documentID, _ := codec.DocumentID(collectionID, "doc")
+	ownerScope, _ := codec.ScopeFingerprint(owner)
+	fake.datasets = []Dataset{testDataset(t, collectionID, "KB", ownerScope)}
+	fake.documents = []Document{{ID: "internal-doc", MetaFields: testDocumentMetadata(documentID, "guide.md", "text/markdown", "checkout", ownerScope, "sha")}}
+	other := owner
+	other.FolderUID = "folder-b"
+	collectionRef := ports.KnowledgeCollectionRef{ID: collectionID}
+	documentRef := ports.KnowledgeDocumentRef{ID: documentID, CollectionID: collectionID}
+
+	tests := map[string]func() error{
+		"collection detail": func() error {
+			_, err := provider.GetCollection(context.Background(), other, collectionRef)
+			return err
+		},
+		"collection update": func() error {
+			_, err := provider.UpdateCollection(context.Background(), other, collectionRef, ports.UpdateKnowledgeCollectionInput{Name: "renamed"})
+			return err
+		},
+		"collection delete": func() error {
+			return provider.DeleteCollection(context.Background(), other, collectionRef)
+		},
+		"document list": func() error {
+			_, err := provider.ListDocuments(context.Background(), other, collectionRef, domain.PageRequest{})
+			return err
+		},
+		"document detail": func() error {
+			_, err := provider.GetDocument(context.Background(), other, documentRef)
+			return err
+		},
+		"document upload": func() error {
+			_, err := provider.UploadDocument(context.Background(), other, collectionRef, ports.DocumentFile{ID: documentID, Name: "guide.md", SHA256: "sha", Content: strings.NewReader("body")})
+			return err
+		},
+		"document update": func() error {
+			_, err := provider.UpdateDocument(context.Background(), other, documentRef, ports.UpdateKnowledgeDocumentInput{Service: "payments"})
+			return err
+		},
+		"document index": func() error {
+			return provider.StartIndexing(context.Background(), other, documentRef)
+		},
+		"document stop": func() error {
+			return provider.StopIndexing(context.Background(), other, documentRef)
+		},
+		"document delete": func() error {
+			return provider.DeleteDocument(context.Background(), other, documentRef)
+		},
+		"chunk list": func() error {
+			_, err := provider.ListChunks(context.Background(), other, documentRef, domain.PageRequest{})
+			return err
+		},
+		"document download": func() error {
+			_, err := provider.DownloadDocument(context.Background(), other, documentRef)
+			return err
+		},
+		"retrieval": func() error {
+			_, err := provider.Retrieve(context.Background(), other, ports.RetrievalInput{Query: "restart", Collections: []ports.KnowledgeCollectionRef{collectionRef}, Limit: 5})
+			return err
+		},
+	}
+
+	for name, invoke := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := invoke(); appCode(err) != domain.ErrorForbidden {
+				t.Fatalf("error = %#v", err)
+			}
+		})
+	}
+	if fake.uploadCalls != 0 || fake.updateDocumentCalls != 0 {
+		t.Fatalf("forbidden requests reached provider mutations: upload=%d update=%d", fake.uploadCalls, fake.updateDocumentCalls)
+	}
+}
+
 func TestListChunksHashesProviderIDsAndMapsPagination(t *testing.T) {
 	provider, fake, codec, actor := newTestProvider(t)
 	collectionID, _ := codec.CollectionID(actor, "kb")
