@@ -29,6 +29,7 @@ const (
 	EnvDaguTokenFile        = "AEGIS_DAGU_TOKEN_FILE"
 	EnvDaguBasicUser        = "AEGIS_DAGU_BASIC_AUTH_USERNAME"
 	EnvDaguBasicPass        = "AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE"
+	EnvKnowledgeEnabled     = "AEGIS_KNOWLEDGE_ENABLED"
 	EnvRAGFlowURL           = "AEGIS_RAGFLOW_URL"
 	EnvRAGFlowAPIKeyFile    = "AEGIS_RAGFLOW_API_KEY_FILE"
 	EnvKnowledgeIDKeyFile   = "AEGIS_KNOWLEDGE_ID_KEY_FILE"
@@ -72,6 +73,7 @@ type Config struct {
 	CodexInitTimeout      time.Duration
 	OpenCodeUsername      string
 	OpenCodePasswordFile  string
+	KnowledgeEnabled      bool
 	RAGFlowAPIKeyFile     string
 	KnowledgeIDKeyFile    string
 	KnowledgeEmbedding    string
@@ -105,11 +107,15 @@ func Load(getenv func(string) string) (Config, error) {
 		shutdownTimeout = parsed
 	}
 
+	knowledgeEnabled, err := parseBool(getenv(EnvKnowledgeEnabled), false)
+	if err != nil {
+		return Config{}, fmt.Errorf("%w: %s must be true or false", ErrInvalid, EnvKnowledgeEnabled)
+	}
+
 	endpoints := make(map[Capability]string)
 	for capability, envName := range map[Capability]string{
 		CapabilityAgent:      EnvAgentURL,
 		CapabilityPlaybook:   EnvDaguURL,
-		CapabilityKnowledge:  EnvRAGFlowURL,
 		CapabilityGrafanaMCP: EnvGrafanaMCPURL,
 	} {
 		raw := strings.TrimSpace(getenv(envName))
@@ -121,6 +127,14 @@ func Load(getenv func(string) string) (Config, error) {
 			return Config{}, fmt.Errorf("%w: %s must be an HTTP origin", ErrInvalid, envName)
 		}
 		endpoints[capability] = raw
+	}
+	knowledgeURL := strings.TrimSpace(getenv(EnvRAGFlowURL))
+	if knowledgeEnabled && knowledgeURL != "" {
+		parsed, err := url.Parse(knowledgeURL)
+		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return Config{}, fmt.Errorf("%w: %s must be an HTTP origin", ErrInvalid, EnvRAGFlowURL)
+		}
+		endpoints[CapabilityKnowledge] = knowledgeURL
 	}
 
 	pluginToken := ""
@@ -234,6 +248,10 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		ragFlowTimeout = parsed
 	}
+	knowledgeConfigured := knowledgeURL != "" || ragFlowAPIKeyFile != "" || knowledgeIDKeyFile != "" || knowledgeEmbedding != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPToken)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPTenant)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPOrg)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPUser)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPFolders)) != ""
+	if knowledgeConfigured && !knowledgeEnabled {
+		return Config{}, fmt.Errorf("%w: %s must be true before Knowledge can be configured", ErrInvalid, EnvKnowledgeEnabled)
+	}
 	if endpoints[CapabilityKnowledge] != "" {
 		if err := requireRegularFile(ragFlowAPIKeyFile, EnvRAGFlowAPIKeyFile); err != nil {
 			return Config{}, err
@@ -269,7 +287,22 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, RAGFlowAPIKeyFile: ragFlowAPIKeyFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, RAGFlowTimeout: ragFlowTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders}, nil
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, RAGFlowAPIKeyFile: ragFlowAPIKeyFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, RAGFlowTimeout: ragFlowTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders}, nil
+}
+
+func parseBool(raw string, defaultValue bool) (bool, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return defaultValue, nil
+	}
+	switch strings.ToLower(raw) {
+	case "1", "true", "yes", "on":
+		return true, nil
+	case "0", "false", "no", "off":
+		return false, nil
+	default:
+		return false, ErrInvalid
+	}
 }
 
 func parseKnowledgeMCPFolders(raw string) ([]string, error) {

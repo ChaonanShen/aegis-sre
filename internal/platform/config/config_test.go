@@ -19,6 +19,9 @@ func TestLoadDefaultsWithoutProviders(t *testing.T) {
 	if len(cfg.Endpoints) != 0 {
 		t.Fatalf("providers must remain optional: %+v", cfg.Endpoints)
 	}
+	if cfg.KnowledgeEnabled {
+		t.Fatal("Knowledge must be disabled by default")
+	}
 }
 
 func TestLoadKeepsDaguTokenAsRotatingFileReference(t *testing.T) {
@@ -152,7 +155,8 @@ func TestLoadAcceptsCompleteKnowledgeConfiguration(t *testing.T) {
 		}
 	}
 	values := map[string]string{
-		EnvRAGFlowURL: "https://ragflow.internal", EnvRAGFlowAPIKeyFile: apiKey, EnvKnowledgeIDKeyFile: idKey,
+		EnvKnowledgeEnabled: "true",
+		EnvRAGFlowURL:       "https://ragflow.internal", EnvRAGFlowAPIKeyFile: apiKey, EnvKnowledgeIDKeyFile: idKey,
 		EnvKnowledgeEmbedding: "Qwen/Qwen3-Embedding-0.6B@OpenAI-API-Compatible", EnvRAGFlowTimeout: "45s", EnvPluginTokenFile: pluginToken,
 	}
 	cfg, err := Load(func(key string) string { return values[key] })
@@ -191,6 +195,30 @@ func TestLoadRejectsIncompleteKnowledgeConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadRejectsKnowledgeConfigurationUnlessExplicitlyEnabled(t *testing.T) {
+	_, err := Load(func(key string) string {
+		if key == EnvRAGFlowURL {
+			return "https://ragflow.internal"
+		}
+		return ""
+	})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error = %v, want ErrInvalid", err)
+	}
+}
+
+func TestLoadRejectsInvalidKnowledgeEnabledValue(t *testing.T) {
+	_, err := Load(func(key string) string {
+		if key == EnvKnowledgeEnabled {
+			return "maybe"
+		}
+		return ""
+	})
+	if !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error = %v, want ErrInvalid", err)
+	}
+}
+
 func TestLoadBindsKnowledgeMCPTokenToActorAndFolderAllowlist(t *testing.T) {
 	directory := t.TempDir()
 	files := map[string]string{
@@ -198,7 +226,8 @@ func TestLoadBindsKnowledgeMCPTokenToActorAndFolderAllowlist(t *testing.T) {
 		EnvPluginTokenFile: "plugin-secret", EnvKnowledgeMCPToken: "mcp-secret",
 	}
 	values := map[string]string{
-		EnvRAGFlowURL: "https://ragflow.internal", EnvKnowledgeEmbedding: "model@factory",
+		EnvKnowledgeEnabled: "true",
+		EnvRAGFlowURL:       "https://ragflow.internal", EnvKnowledgeEmbedding: "model@factory",
 		EnvKnowledgeMCPTenant: "tenant", EnvKnowledgeMCPOrg: "org", EnvKnowledgeMCPUser: "knowledge-agent",
 		EnvKnowledgeMCPFolders: "ops, payments,ops",
 	}

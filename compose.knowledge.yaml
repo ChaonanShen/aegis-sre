@@ -1,6 +1,7 @@
 services:
   control-plane:
     environment:
+      AEGIS_KNOWLEDGE_ENABLED: "true"
       AEGIS_KNOWLEDGE_EMBEDDING_MODEL: BAAI/bge-small-en-v1.5@Builtin
       AEGIS_KNOWLEDGE_ID_KEY_FILE: /run/secrets/knowledge-id-key
       AEGIS_KNOWLEDGE_MCP_FOLDER_UIDS: ${AEGIS_KNOWLEDGE_MCP_FOLDER_UIDS:-infra,payment}
