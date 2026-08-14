@@ -35,16 +35,28 @@ services:
       context: .
       dockerfile: deploy/control-plane/Dockerfile
     environment:
+      AEGIS_AGENT_ID_KEY_FILE: /run/secrets/agent-id-key
+      AEGIS_AGENT_ORG_ID: "1"
+      AEGIS_AGENT_PROVIDER: opencode
+      AEGIS_AGENT_TENANT_ID: default
+      AEGIS_AGENT_URL: http://opencode:4096
+      AEGIS_AGENT_USER_ID: grafana:default:admin
       AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE: /run/secrets/dagu-basic-password
       AEGIS_DAGU_BASIC_AUTH_USERNAME: aegis-control-plane
       AEGIS_DAGU_URL: http://dagu:8080
       AEGIS_HTTP_ADDRESS: :8080
+      AEGIS_OPENCODE_PASSWORD_FILE: /run/secrets/opencode-server-password
+      AEGIS_OPENCODE_USERNAME: opencode
       AEGIS_PLUGIN_TOKEN_FILE: /run/secrets/aegis-plugin-token
     volumes:
+      - ./deploy/local/secrets/agent-id-key:/run/secrets/agent-id-key:ro
       - ./deploy/local/secrets/dagu-basic-password:/run/secrets/dagu-basic-password:ro
+      - ./deploy/local/secrets/opencode-server-password:/run/secrets/opencode-server-password:ro
       - ./deploy/local/secrets/plugin-token:/run/secrets/aegis-plugin-token:ro
     depends_on:
       dagu:
+        condition: service_healthy
+      opencode:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/health/ready"]
@@ -55,6 +67,34 @@ services:
     restart: unless-stopped
     security_opt: [no-new-privileges:true]
     networks: [aegis-app]
+
+  opencode:
+    build:
+      context: ./deploy/agents/opencode
+      args:
+        OPENCODE_VERSION: 1.18.18
+    environment:
+      OPENCODE_DISABLE_AUTOUPDATE: "true"
+    volumes:
+      - opencode-data:/var/lib/opencode
+      - ./deploy/local/secrets/deepseek-api-key:/run/secrets/deepseek-api-key:ro
+      - ./deploy/local/secrets/grafana-mcp-caller-token:/run/secrets/grafana-mcp-caller-token:ro
+      - ./deploy/local/secrets/opencode-server-password:/run/secrets/opencode-server-password:ro
+    depends_on:
+      grafana-mcp-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "/usr/local/bin/opencode-healthcheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /workspace:uid=1000,gid=1000,mode=0700
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    networks: [aegis-app, aegis-mcp]
 
   dagu:
     build:
@@ -162,3 +202,4 @@ volumes:
   dagu-data:
   grafana-data:
   grafana-mcp-secrets:
+  opencode-data:

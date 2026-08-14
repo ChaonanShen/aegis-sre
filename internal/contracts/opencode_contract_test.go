@@ -107,6 +107,26 @@ func TestPinnedOpenCodeV1UpdateExposesArchiveTimestamp(t *testing.T) {
 	}
 }
 
+func TestOpenCodeDeploymentPinsRuntimeAndModelWithoutSecrets(t *testing.T) {
+	dockerfile, err := os.ReadFile("../../deploy/agents/opencode/Dockerfile")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(dockerfile), `ARG OPENCODE_VERSION=1.18.18`) || !strings.Contains(string(dockerfile), `opencode-ai@${OPENCODE_VERSION}`) {
+		t.Fatal("OpenCode image must install the pinned runtime version")
+	}
+	config, err := os.ReadFile("../../deploy/agents/opencode/opencode.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(config), `"model": "deepseek/deepseek-v4-flash"`) {
+		t.Fatal("OpenCode deployment must select DeepSeek V4 Flash")
+	}
+	if strings.Contains(strings.ToLower(string(config)), "sk-") {
+		t.Fatal("OpenCode configuration must not contain an API key")
+	}
+}
+
 func nestedMap(t *testing.T, root map[string]any, path ...string) map[string]any {
 	t.Helper()
 	current := root
