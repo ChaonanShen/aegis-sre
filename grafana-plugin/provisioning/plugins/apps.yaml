@@ -4,5 +4,6 @@ apps:
   - type: grafana-plugin-app
     org_id: 1
     disabled: false
-    # 默认部署必须走真实 Resource API；fixture 仅允许由前端测试显式注入。
-    jsonData: {}
+    # 显式覆盖数据卷中可能残留的 fixture 配置；fixture 仅允许由前端测试注入。
+    jsonData:
+      workbenchMode: real

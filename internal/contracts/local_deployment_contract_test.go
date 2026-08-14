@@ -14,7 +14,7 @@ func TestLocalPluginProvisioningUsesRealRuntime(t *testing.T) {
 	if strings.Contains(string(content), "workbenchMode: fixture") {
 		t.Fatal("local Grafana provisioning must not enable fixture runtime")
 	}
-	if !strings.Contains(string(content), "jsonData: {}") {
-		t.Fatal("local Grafana provisioning must explicitly clear stale plugin jsonData")
+	if !strings.Contains(string(content), "workbenchMode: real") {
+		t.Fatal("local Grafana provisioning must explicitly overwrite stale fixture mode")
 	}
 }
