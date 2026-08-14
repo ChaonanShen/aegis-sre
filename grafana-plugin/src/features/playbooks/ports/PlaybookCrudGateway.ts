@@ -2,6 +2,9 @@ import {
   CreatePlaybookInput,
   PlaybookDocument,
   PlaybookRunRecord,
+  PlaybookArtifact,
+  PlaybookArtifactPreview,
+  PlaybookApprovalDecision,
   PlaybookSummary,
   PlaybookValidationResult,
   StartPlaybookRunInput,
@@ -20,4 +23,10 @@ export interface PlaybookCrudGateway {
   getRun(runId: string, signal?: AbortSignal): Promise<PlaybookRunRecord>;
   cancelRun(runId: string, signal?: AbortSignal): Promise<void>;
   retryRun(runId: string, idempotencyKey: string, signal?: AbortSignal): Promise<PlaybookRunRecord>;
+  streamRun(runId: string, afterSequence: number, signal?: AbortSignal): AsyncIterable<PlaybookRunRecord>;
+  completeHumanTask(runId: string, stepId: string, input: Record<string, unknown>, idempotencyKey: string, signal?: AbortSignal): Promise<void>;
+  resolveApproval(runId: string, stepId: string, decision: PlaybookApprovalDecision, inputs: Record<string, string>, idempotencyKey: string, signal?: AbortSignal): Promise<void>;
+  listArtifacts(runId: string, signal?: AbortSignal): Promise<PlaybookArtifact[]>;
+  previewArtifact(runId: string, path: string, signal?: AbortSignal): Promise<PlaybookArtifactPreview>;
+  artifactDownloadUrl(runId: string, path: string): string;
 }

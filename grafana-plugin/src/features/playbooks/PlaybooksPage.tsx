@@ -156,7 +156,7 @@ function PlaybookDetail({ gateway, playbook }: { gateway: PlaybookCrudGateway; p
       </div>
       {tab === 'dag' && <section className="playbook-panel">{projection ? <PlaybookDag steps={projection.steps} /> : <div className="playbook-empty compact">当前 YAML 无法生成简化 DAG 预览，请查看原生源码。</div>}</section>}
       {tab === 'yaml' && <section className="playbook-panel"><pre aria-label="Playbook YAML">{playbook.source}</pre></section>}
-      {tab === 'runs' && <PlaybookRunsPanel gateway={gateway} playbookId={playbook.id} />}
+      {tab === 'runs' && <PlaybookRunsPanel gateway={gateway} playbookId={playbook.id} parameters={projection?.parameters} />}
     </main>
   );
 }

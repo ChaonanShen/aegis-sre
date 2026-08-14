@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PlaybookRunRecord } from '../crudModel';
+import { PlaybookParameter } from '../model';
 import { PlaybookCrudGateway } from '../ports/PlaybookCrudGateway';
 
-const POLL_INTERVAL_MS = 1500;
-
-export function PlaybookRunsPanel({ gateway, playbookId }: { gateway: PlaybookCrudGateway; playbookId: string }) {
+export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { gateway: PlaybookCrudGateway; playbookId: string; parameters?: PlaybookParameter[] }) {
   const [runs, setRuns] = useState<PlaybookRunRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(parameters.map((item) => [item.name, item.defaultValue])));
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -42,29 +42,27 @@ export function PlaybookRunsPanel({ gateway, playbookId }: { gateway: PlaybookCr
       return;
     }
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
       try {
-        const next = await gateway.getRun(activeRunId, controller.signal);
-        if (!mounted.current) {
-          return;
-        }
-        setRuns((current) => upsertRun(current, next));
-        if (!terminal(next.status)) {
-          timer = setTimeout(() => void poll(), POLL_INTERVAL_MS);
+        for await (const next of gateway.streamRun(activeRunId, 0, controller.signal)) {
+          if (!mounted.current) return;
+          setRuns((current) => upsertRun(current, next));
+          if (terminal(next.status)) return;
         }
       } catch (reason) {
         if (mounted.current && !isAbortError(reason)) {
-          setError(toError(reason).message);
+          try {
+            const next = await gateway.getRun(activeRunId, controller.signal);
+            setRuns((current) => upsertRun(current, next));
+          } catch (fallbackReason) {
+            if (!isAbortError(fallbackReason)) setError(toError(reason).message);
+          }
         }
       }
     };
     void poll();
     return () => {
       controller.abort();
-      if (timer) {
-        clearTimeout(timer);
-      }
     };
   }, [activeRunId, gateway]);
 
@@ -75,7 +73,7 @@ export function PlaybookRunsPanel({ gateway, playbookId }: { gateway: PlaybookCr
     setBusy(true);
     setError('');
     try {
-      const run = await gateway.startRun(playbookId, { idempotencyKey: `run-${crypto.randomUUID()}` });
+      const run = await gateway.startRun(playbookId, { parameters: values, idempotencyKey: `run-${crypto.randomUUID()}` });
       if (mounted.current) {
         setRuns((current) => upsertRun(current, run));
       }
@@ -88,7 +86,7 @@ export function PlaybookRunsPanel({ gateway, playbookId }: { gateway: PlaybookCr
         setBusy(false);
       }
     }
-  }, [activeRun, busy, gateway, playbookId]);
+  }, [activeRun, busy, gateway, playbookId, values]);
 
   const cancel = useCallback(async () => {
     if (!activeRun || busy) {
@@ -150,6 +148,16 @@ export function PlaybookRunsPanel({ gateway, playbookId }: { gateway: PlaybookCr
           <button className="playbook-button primary" disabled={busy} onClick={() => void start()} type="button">{busy ? '启动中…' : '运行 Playbook'}</button>
         )}
       </header>
+      {parameters.length > 0 && !activeRun && (
+        <div className="playbook-run-params">
+          {parameters.map((parameter) => (
+            <label key={parameter.name}>
+              {parameter.name}{parameter.required ? ' *' : ''}
+              <input aria-label={`运行参数 ${parameter.name}`} onChange={(event) => setValues((current) => ({ ...current, [parameter.name]: event.currentTarget.value }))} value={values[parameter.name] ?? ''} />
+            </label>
+          ))}
+        </div>
+      )}
       {error && <div className="playbook-editor-error" role="alert">{error}</div>}
       {loading ? <div className="playbook-loading">正在加载运行记录…</div> : runs.length === 0 ? (
         <div className="playbook-empty compact">还没有运行记录。</div>

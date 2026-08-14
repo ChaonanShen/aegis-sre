@@ -47,6 +47,8 @@ export interface PlaybookRunStep {
   status: PlaybookRunStatus;
   startedAt?: string;
   endedAt?: string;
+  humanTask?: Record<string, unknown>;
+  approval?: Record<string, unknown>;
 }
 
 export interface PlaybookRunRecord {
@@ -64,3 +66,17 @@ export interface StartPlaybookRunInput {
   /** 同一次用户执行操作和网络重试必须复用同一个键。 */
   idempotencyKey: string;
 }
+
+export interface PlaybookArtifact {
+  name: string;
+  path: string;
+  mediaType: string;
+  size: number;
+}
+
+export interface PlaybookArtifactPreview extends PlaybookArtifact {
+  text: string;
+  truncated: boolean;
+}
+
+export type PlaybookApprovalDecision = 'approve' | 'reject' | 'rewind';

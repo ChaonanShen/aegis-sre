@@ -1,7 +1,8 @@
-import { BackendSrv, getBackendSrv } from '@grafana/runtime';
+import { BackendSrv, BackendSrvRequest, getBackendSrv } from '@grafana/runtime';
+import { Observable } from 'rxjs';
 import type { components } from '../../../api/generated/controlPlane';
 import { ResourceClient, ResourceClientError } from '../../../adapters/resourcesdk/resourceClient';
-import { PlaybookDocument, PlaybookRunRecord, PlaybookSummary } from '../crudModel';
+import { PlaybookArtifact, PlaybookArtifactPreview, PlaybookApprovalDecision, PlaybookDocument, PlaybookRunRecord, PlaybookSummary } from '../crudModel';
 import { PlaybookCrudGateway } from '../ports/PlaybookCrudGateway';
 
 type ContractPlaybook = components['schemas']['Playbook'];
@@ -10,6 +11,8 @@ type ContractPage = components['schemas']['PlaybookPage'];
 type ContractValidation = components['schemas']['ValidationResult'];
 type ContractRun = components['schemas']['PlaybookRun'];
 type ContractRunPage = components['schemas']['PlaybookRunPage'];
+type ContractArtifact = components['schemas']['Artifact'];
+type ContractArtifactPreview = components['schemas']['ArtifactPreview'];
 
 export function createResourcePlaybookCrudGateway(
   options: { backendSrv?: BackendSrv; resourceClient?: ResourceClient } = {}
@@ -106,7 +109,35 @@ export function createResourcePlaybookCrudGateway(
         signal,
       }));
     },
+    streamRun(runId, afterSequence, signal) {
+      return streamRun(clientBackend(), runId, afterSequence, signal);
+    },
+    async completeHumanTask(runId, stepId, input, idempotencyKey, signal) {
+      await client().requestVoid(`${runPath(runId)}/human-tasks/${encodeURIComponent(stepId)}:complete`, {
+        method: 'POST', data: input, headers: { 'Idempotency-Key': idempotencyKey }, signal,
+      });
+    },
+    async resolveApproval(runId, stepId, decision, inputs, idempotencyKey, signal) {
+      await client().requestVoid(`${runPath(runId)}/approvals/${encodeURIComponent(stepId)}:resolve`, {
+        method: 'POST', data: { decision, inputs }, headers: { 'Idempotency-Key': idempotencyKey }, signal,
+      });
+    },
+    async listArtifacts(runId, signal) {
+      const value = await client().request(`${runPath(runId)}/artifacts`, isArtifactPage, { signal });
+      return value.items.map(toArtifact);
+    },
+    async previewArtifact(runId, path, signal) {
+      const query = `?path=${encodeURIComponent(path)}`;
+      return toArtifactPreview(await client().request(`${runPath(runId)}/artifacts/preview${query}`, isArtifactPreview, { signal }));
+    },
+    artifactDownloadUrl(runId, path) {
+      return `${runPath(runId)}/artifacts/download?path=${encodeURIComponent(path)}`;
+    },
   };
+
+  function clientBackend() {
+    return options.backendSrv ?? getBackendSrv();
+  }
 }
 
 function requireNativeSource(source: string) {
@@ -137,8 +168,18 @@ function toRun(value: ContractRun): PlaybookRunRecord {
       status: step.status,
       startedAt: step.started_at,
       endedAt: step.ended_at,
+      humanTask: step.human_task,
+      approval: step.approval,
     })),
   };
+}
+
+function toArtifact(value: ContractArtifact): PlaybookArtifact {
+  return { name: value.name, path: value.path, mediaType: value.media_type, size: value.size };
+}
+
+function toArtifactPreview(value: ContractArtifactPreview): PlaybookArtifactPreview {
+  return { ...toArtifact(value), text: value.text, truncated: value.truncated };
 }
 
 function isPlaybook(value: unknown): value is ContractPlaybook {
@@ -202,6 +243,21 @@ function isRunPage(value: unknown): value is ContractRunPage {
   return Boolean(page && Array.isArray(page.items) && page.items.every(isRun) && typeof page.has_more === 'boolean');
 }
 
+function isArtifactPage(value: unknown): value is { items: ContractArtifact[] } {
+  const page = record(value);
+  return Boolean(page && Array.isArray(page.items) && page.items.every(isArtifact));
+}
+
+function isArtifact(value: unknown): value is ContractArtifact {
+  const item = record(value);
+  return Boolean(item && typeof item.name === 'string' && typeof item.path === 'string' && typeof item.media_type === 'string' && typeof item.size === 'number');
+}
+
+function isArtifactPreview(value: unknown): value is ContractArtifactPreview {
+  const item = record(value);
+  return Boolean(item && isArtifact(item) && typeof item.text === 'string' && typeof item.truncated === 'boolean');
+}
+
 function isRunStatus(value: unknown): boolean {
   return (
     typeof value === 'string' &&
@@ -221,4 +277,54 @@ function playbookPath(id: string) {
 
 function runPath(id: string) {
   return `/api/v1/runs/${encodeURIComponent(id)}`;
+}
+
+async function* streamRun(backend: BackendSrv, runId: string, afterSequence: number, signal?: AbortSignal): AsyncGenerator<PlaybookRunRecord> {
+  const request: BackendSrvRequest = {
+    url: `/api/v1/runs/${encodeURIComponent(runId)}/events?after_sequence=${afterSequence}`,
+    method: 'GET', abortSignal: signal, showErrorAlert: false, validatePath: true,
+  };
+  const decoder = new SSEDecoder();
+  for await (const response of observableValues(backend.chunked(request), signal)) {
+    if (response.status < 200 || response.status >= 300) {
+      throw new ResourceClientError(response.status, response.status, 'Playbook 事件流请求失败。');
+    }
+    for (const data of decoder.push(response.data)) {
+      const event = JSON.parse(data) as { event_type?: string; payload?: unknown };
+      if (event.event_type !== 'run.updated' || !isRun(event.payload)) {
+        continue;
+      }
+      yield toRun(event.payload);
+    }
+  }
+  decoder.finish();
+}
+
+function observableValues<T>(observable: Observable<T>, signal?: AbortSignal): AsyncIterable<T> {
+  const queue: T[] = [];
+  let done = false;
+  let failure: unknown;
+  let wake: (() => void) | undefined;
+  const subscription = observable.subscribe({ next: (value) => { queue.push(value); wake?.(); wake = undefined; }, error: (error) => { failure = error; done = true; wake?.(); wake = undefined; }, complete: () => { done = true; wake?.(); wake = undefined; } });
+  signal?.addEventListener('abort', () => subscription.unsubscribe(), { once: true });
+  return { [Symbol.asyncIterator]: async function* () { try { while (!done || queue.length) { if (!queue.length) await new Promise<void>((resolve) => { wake = resolve; }); while (queue.length) yield queue.shift()!; } if (failure) throw failure; } finally { subscription.unsubscribe(); } } };
+}
+
+class SSEDecoder {
+  private buffer = '';
+  private readonly decoder = new TextDecoder();
+  push(chunk?: Uint8Array): string[] {
+    this.buffer += chunk ? this.decoder.decode(chunk, { stream: true }).replaceAll('\r\n', '\n') : '';
+    const events: string[] = [];
+    let boundary = this.buffer.indexOf('\n\n');
+    while (boundary >= 0) {
+      const block = this.buffer.slice(0, boundary);
+      this.buffer = this.buffer.slice(boundary + 2);
+      const data = block.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
+      if (data) events.push(data);
+      boundary = this.buffer.indexOf('\n\n');
+    }
+    return events;
+  }
+  finish() { this.push(); if (this.buffer.trim()) throw new ResourceClientError(502, 'provider_unavailable', 'Playbook 事件流以不完整事件结束。'); }
 }

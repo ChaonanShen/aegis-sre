@@ -96,6 +96,24 @@ describe('Control Plane Playbook CRUD gateway', () => {
       expect.objectContaining({ method: 'POST', headers: { 'Idempotency-Key': 'retry-operation-123' }, url: expect.stringContaining('/runs/run_abcdefgh:retry') }),
     ]);
   });
+
+  test('completes human tasks, resolves approvals and projects artifacts', async () => {
+    const backend = fakeBackend([
+      undefined,
+      undefined,
+      { items: [{ name: 'report.md', path: 'reports/report.md', media_type: 'text/markdown', size: 12 }] },
+      { name: 'report.md', path: 'reports/report.md', media_type: 'text/markdown', size: 12, text: 'done', truncated: false },
+    ]);
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+    await gateway.completeHumanTask('run_abcdefgh', 'approve', { answer: 'yes' }, 'human-operation-123');
+    await gateway.resolveApproval('run_abcdefgh', 'approve', 'approve', { reason: 'ok' }, 'approval-operation-123');
+    await expect(gateway.listArtifacts('run_abcdefgh')).resolves.toEqual([{ name: 'report.md', path: 'reports/report.md', mediaType: 'text/markdown', size: 12 }]);
+    await expect(gateway.previewArtifact('run_abcdefgh', 'reports/report.md')).resolves.toMatchObject({ text: 'done', truncated: false });
+    expect(gateway.artifactDownloadUrl('run_abcdefgh', 'reports/report.md')).toContain('artifacts/download?path=reports%2Freport.md');
+    const requests = (backend.fetch as jest.Mock).mock.calls.map(([request]) => request as BackendSrvRequest);
+    expect(requests[0]).toEqual(expect.objectContaining({ method: 'POST', headers: { 'Idempotency-Key': 'human-operation-123' } }));
+    expect(requests[1]).toEqual(expect.objectContaining({ method: 'POST', data: { decision: 'approve', inputs: { reason: 'ok' } } }));
+  });
 });
 
 function fakeBackend(values: unknown[]): BackendSrv {
