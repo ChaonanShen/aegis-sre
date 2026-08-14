@@ -127,12 +127,6 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
       return streamResume(backendSrv(), input, signal);
     },
 
-
-    async updateCanvas(_sessionId: string, canvas: CanvasPreview, signal?: AbortSignal) {
-      // 当前真实边界尚未接入 Canvas 更新，布局仅保留在本页视图状态中。
-      throwIfAborted(signal);
-      return canvas;
-    },
   };
 }
 

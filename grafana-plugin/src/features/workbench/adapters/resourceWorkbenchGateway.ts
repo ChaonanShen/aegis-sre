@@ -94,10 +94,6 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
         signal
       );
     },
-    async updateCanvas(_sessionId, canvas, signal) {
-      throwIfAborted(signal);
-      return canvas;
-    },
   };
 }
 
