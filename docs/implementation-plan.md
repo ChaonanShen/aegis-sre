@@ -312,7 +312,7 @@ Provider 数据归属与标识策略复核：
 
 ## 9. 阶段 6：Codex 与 OpenCode Agent Provider
 
-状态：**执行中。OpenCode + DeepSeek 的本地核心会话闭环已完成真实冒烟；Knowledge MCP 已按阶段 8 的边界接入 OpenCode 和 Dagu，Grafana Read MCP 保持不变。Codex 进程启动早于 Control Plane HTTP 监听，不能把 Control Plane 自身的 Knowledge endpoint 配成 required MCP 形成启动环；该启动时序重构、审批续流和双 Provider 合同验收仍待完成。**
+状态：**执行中。默认链路已冻结为 Grafana Read + Aegis Playbook MCP；Knowledge/RAGFlow 代码保留但默认 disabled。OpenCode + DeepSeek 的本地核心会话闭环已完成真实冒烟；Playbook MCP facade、配置和真实 Run retry 已接入，Agent 组合 E2E、SSE/Human Task/Artifact 以及双 Provider 合同验收仍待完成。**
 
 目标：Codex 作为默认 Provider，同时用 OpenCode 证明抽象没有泄漏。Grafana 插件的 Workbench 是唯一会话入口，不增加 Codex 或 OpenCode 独立聊天页面。Session、Turn、消息、审批和历史全部由 Agent Provider 持久化；Aegis 只提供无状态的公共契约、授权收敛、进程监管和协议适配。
 
@@ -422,9 +422,9 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 
 ## 11. 阶段 8：RAGFlow 与 Knowledge 最终垂直切片
 
-状态：**实现完成、真实数据验收待执行。RAGFlow、前端、MCP、OpenCode 与 Dagu 已按 ADR 0004 接通；尚需由真实 RAGFlow 租户提供 API Key，并导入至少 30 份真实运维文档运行质量门禁。Codex 注册因 Control Plane/App Server 启动时序存在自依赖，保留在阶段 6 重构，不虚报完成。**
+状态：**暂停。RAGFlow、Knowledge 前端、adapter 和测试代码保留，但默认配置不装配、不启动、不注册 Knowledge MCP；真实租户质量门禁和 Knowledge Agent 接入不属于当前 Agent + Playbook 链路。**
 
-目标：完成 `Grafana Plugin → Control Plane → RAGFlow` 的真实知识链路，并把受限 Knowledge MCP 注册给 OpenCode 与 Dagu。
+目标：未来在轻量替代方案确定后恢复 Knowledge 垂直切片；当前不启动 RAGFlow，也不把 Knowledge 注册给 OpenCode、Codex 或 Dagu。
 
 ### 8.0 Runbook、文档与 Playbook 的语义边界
 

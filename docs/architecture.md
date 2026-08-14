@@ -32,13 +32,14 @@ flowchart LR
     PlaybookPort --> Dagu["Dagu REST API"]
 
     Codex --> GrafanaMCP["Grafana MCP"]
-    Codex --> KnowledgeMCP["Aegis Knowledge MCP"]
-    Codex --> DaguMCP["Dagu MCP"]
+    Codex -. "可选" .-> KnowledgeMCP["Aegis Knowledge MCP"]
+    Codex --> DaguMCP["Aegis Playbook MCP"]
     OpenCode --> GrafanaMCP
-    OpenCode --> KnowledgeMCP
+    OpenCode -. "可选" .-> KnowledgeMCP
     OpenCode --> DaguMCP
 
     KnowledgeMCP --> CP
+    DaguMCP --> CP
     Dagu --> MCPCall["mcp.call Action"]
     MCPCall --> MCPGateway["MCP Auth Gateway"]
     MCPGateway --> GrafanaMCP
@@ -152,6 +153,10 @@ Actor fail-closed。该限制用于在不建立影子表的前提下形成真实
 
 ### 3.5 Knowledge Provider 与 Knowledge MCP
 
+Knowledge/RAGFlow 代码保留，但默认通过 `AEGIS_KNOWLEDGE_ENABLED=false` fail-closed；未显式
+启用时不装配 RAGFlow Provider、不注册 Knowledge MCP，也不启动任何 RAGFlow 组件。Knowledge
+只在独立的可选部署叠加文件中启用，不能成为 Agent 或 Playbook 的启动依赖。
+
 RAGFlow REST API 负责管理面：
 
 - Dataset CRUD。
@@ -187,9 +192,12 @@ Dagu 是 Playbook 定义和运行的唯一事实来源：
 - 调度、并发、重试、人工任务和审批。
 - Run、Step 状态、日志和 Artifact。
 
-Dagu 内置 MCP 服务于 `Agent → Dagu`，让 Agent 读取、修改和执行工作流。
+固定 Dagu `2.13.0` 没有供 Agent 直接使用的原生 MCP Server。Aegis 通过 Control Plane 的
+`/mcp/playbooks` 提供薄 facade，把 `playbook.list`、`playbook.validate`、`playbook.start` 和
+`playbook.get_run` 映射到 `PlaybookProvider`；它不实现调度、重试或 YAML DSL。插件的完整
+Run 运维操作继续使用 Control Plane REST/SSE。
 
-`mcp.call` Action 服务于 `Dagu → 外部 MCP`，让工作流中的节点调用允许的 Grafana 或 Knowledge 工具。它必须有 Server 白名单、Tool 白名单、超时、结果大小限制、TLS 配置和 Artifact 归档，并禁止调用 Dagu 自身的执行工具形成递归运行。
+`mcp.call` Action 服务于 `Dagu → 外部 MCP`，让工作流中的节点调用允许的 Grafana 工具。它必须有 Server 白名单、Tool 白名单、超时、结果大小限制、TLS 配置和 Artifact 归档，并禁止调用 Dagu 自身或 `/mcp/playbooks` 形成递归运行。
 
 Dagu REST API 必须启用独立服务凭据。Control Plane 从只读挂载的凭据文件读取并在每次请求时重新加载，避免凭据进入镜像、命令行或前端契约。
 
