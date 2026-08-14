@@ -34,6 +34,11 @@ const (
 	EnvKnowledgeIDKeyFile   = "AEGIS_KNOWLEDGE_ID_KEY_FILE"
 	EnvKnowledgeEmbedding   = "AEGIS_KNOWLEDGE_EMBEDDING_MODEL"
 	EnvRAGFlowTimeout       = "AEGIS_RAGFLOW_TIMEOUT"
+	EnvKnowledgeMCPToken    = "AEGIS_KNOWLEDGE_MCP_TOKEN_FILE"
+	EnvKnowledgeMCPTenant   = "AEGIS_KNOWLEDGE_MCP_TENANT_ID"
+	EnvKnowledgeMCPOrg      = "AEGIS_KNOWLEDGE_MCP_ORG_ID"
+	EnvKnowledgeMCPUser     = "AEGIS_KNOWLEDGE_MCP_USER_ID"
+	EnvKnowledgeMCPFolders  = "AEGIS_KNOWLEDGE_MCP_FOLDER_UIDS"
 	EnvGrafanaMCPURL        = "AEGIS_GRAFANA_MCP_URL"
 	EnvPluginTokenFile      = "AEGIS_PLUGIN_TOKEN_FILE"
 )
@@ -50,27 +55,32 @@ const (
 )
 
 type Config struct {
-	HTTPAddress          string
-	ShutdownTimeout      time.Duration
-	Endpoints            map[Capability]string
-	PluginToken          string
-	DaguTokenFile        string
-	DaguBasicUser        string
-	DaguBasicPass        string
-	AgentProvider        string
-	AgentTenantID        string
-	AgentOrgID           string
-	AgentUserID          string
-	AgentIDKeyFile       string
-	AgentWorkDir         string
-	CodexCommand         string
-	CodexInitTimeout     time.Duration
-	OpenCodeUsername     string
-	OpenCodePasswordFile string
-	RAGFlowAPIKeyFile    string
-	KnowledgeIDKeyFile   string
-	KnowledgeEmbedding   string
-	RAGFlowTimeout       time.Duration
+	HTTPAddress           string
+	ShutdownTimeout       time.Duration
+	Endpoints             map[Capability]string
+	PluginToken           string
+	DaguTokenFile         string
+	DaguBasicUser         string
+	DaguBasicPass         string
+	AgentProvider         string
+	AgentTenantID         string
+	AgentOrgID            string
+	AgentUserID           string
+	AgentIDKeyFile        string
+	AgentWorkDir          string
+	CodexCommand          string
+	CodexInitTimeout      time.Duration
+	OpenCodeUsername      string
+	OpenCodePasswordFile  string
+	RAGFlowAPIKeyFile     string
+	KnowledgeIDKeyFile    string
+	KnowledgeEmbedding    string
+	RAGFlowTimeout        time.Duration
+	KnowledgeMCPTokenFile string
+	KnowledgeMCPTenantID  string
+	KnowledgeMCPOrgID     string
+	KnowledgeMCPUserID    string
+	KnowledgeMCPFolders   []string
 }
 
 func Load(getenv func(string) string) (Config, error) {
@@ -241,7 +251,45 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("%w: %s is required when Knowledge credentials are configured", ErrInvalid, EnvRAGFlowURL)
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, RAGFlowAPIKeyFile: ragFlowAPIKeyFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, RAGFlowTimeout: ragFlowTimeout}, nil
+	knowledgeMCPTokenFile := strings.TrimSpace(getenv(EnvKnowledgeMCPToken))
+	knowledgeMCPTenantID := strings.TrimSpace(getenv(EnvKnowledgeMCPTenant))
+	knowledgeMCPOrgID := strings.TrimSpace(getenv(EnvKnowledgeMCPOrg))
+	knowledgeMCPUserID := strings.TrimSpace(getenv(EnvKnowledgeMCPUser))
+	knowledgeMCPFolders, folderErr := parseKnowledgeMCPFolders(getenv(EnvKnowledgeMCPFolders))
+	mcpConfigured := knowledgeMCPTokenFile != "" || knowledgeMCPTenantID != "" || knowledgeMCPOrgID != "" || knowledgeMCPUserID != "" || len(knowledgeMCPFolders) > 0
+	if mcpConfigured {
+		if endpoints[CapabilityKnowledge] == "" {
+			return Config{}, fmt.Errorf("%w: %s is required when Knowledge MCP is configured", ErrInvalid, EnvRAGFlowURL)
+		}
+		if err := requireRegularFile(knowledgeMCPTokenFile, EnvKnowledgeMCPToken); err != nil {
+			return Config{}, err
+		}
+		if folderErr != nil || !validAgentConfigValue(knowledgeMCPTenantID) || !validAgentConfigValue(knowledgeMCPOrgID) || !validAgentConfigValue(knowledgeMCPUserID) || len(knowledgeMCPFolders) == 0 {
+			return Config{}, fmt.Errorf("%w: Knowledge MCP actor and Folder allowlist must be complete and valid", ErrInvalid)
+		}
+	}
+
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, RAGFlowAPIKeyFile: ragFlowAPIKeyFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, RAGFlowTimeout: ragFlowTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders}, nil
+}
+
+func parseKnowledgeMCPFolders(raw string) ([]string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	seen := map[string]struct{}{}
+	result := make([]string, 0)
+	for _, item := range strings.Split(raw, ",") {
+		uid := strings.TrimSpace(item)
+		if !validAgentConfigValue(uid) {
+			return nil, ErrInvalid
+		}
+		if _, exists := seen[uid]; exists {
+			continue
+		}
+		seen[uid] = struct{}{}
+		result = append(result, uid)
+	}
+	return result, nil
 }
 
 func validAgentConfigValue(value string) bool {

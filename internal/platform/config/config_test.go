@@ -191,6 +191,40 @@ func TestLoadRejectsIncompleteKnowledgeConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadBindsKnowledgeMCPTokenToActorAndFolderAllowlist(t *testing.T) {
+	directory := t.TempDir()
+	files := map[string]string{
+		EnvRAGFlowAPIKeyFile: "ragflow-secret", EnvKnowledgeIDKeyFile: "01234567890123456789012345678901",
+		EnvPluginTokenFile: "plugin-secret", EnvKnowledgeMCPToken: "mcp-secret",
+	}
+	values := map[string]string{
+		EnvRAGFlowURL: "https://ragflow.internal", EnvKnowledgeEmbedding: "model@factory",
+		EnvKnowledgeMCPTenant: "tenant", EnvKnowledgeMCPOrg: "org", EnvKnowledgeMCPUser: "knowledge-agent",
+		EnvKnowledgeMCPFolders: "ops, payments,ops",
+	}
+	for envName, content := range files {
+		path := filepath.Join(directory, envName)
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		values[envName] = path
+	}
+	cfg, err := Load(func(key string) string { return values[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.KnowledgeMCPTokenFile != values[EnvKnowledgeMCPToken] || cfg.KnowledgeMCPUserID != "knowledge-agent" || len(cfg.KnowledgeMCPFolders) != 2 {
+		t.Fatalf("config = %+v", cfg)
+	}
+}
+
+func TestLoadRejectsPartialKnowledgeMCPBinding(t *testing.T) {
+	values := map[string]string{EnvKnowledgeMCPFolders: "ops"}
+	if _, err := Load(func(key string) string { return values[key] }); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error = %v", err)
+	}
+}
+
 func mergeAgentConfig(base, override map[string]string) map[string]string {
 	result := make(map[string]string, len(base)+len(override))
 	for key, value := range base {
