@@ -80,3 +80,30 @@ func TestOpenCodeRegistersKnowledgeMCPOnlyFromRuntimeSecret(t *testing.T) {
 		t.Fatal("base OpenCode config must not claim Knowledge when the endpoint is disabled")
 	}
 }
+
+func TestKnowledgeBootstrapExposesOnlyLoopbackAndSteadyStateHasNoHostPort(t *testing.T) {
+	bootstrap, err := os.ReadFile("../../compose.knowledge-bootstrap.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrapText := string(bootstrap)
+	if !strings.Contains(bootstrapText, "127.0.0.1:${RAGFLOW_BOOTSTRAP_PORT:-9388}:80") {
+		t.Fatalf("bootstrap port is not loopback-only: %s", bootstrapText)
+	}
+
+	steadyState, err := os.ReadFile("../../compose.knowledge.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Services map[string]struct {
+			Ports []any `yaml:"ports"`
+		} `yaml:"services"`
+	}
+	if err := yaml.Unmarshal(steadyState, &config); err != nil {
+		t.Fatal(err)
+	}
+	if ports := config.Services["ragflow"].Ports; len(ports) != 0 {
+		t.Fatalf("steady-state RAGFlow must not publish host ports: %v", ports)
+	}
+}

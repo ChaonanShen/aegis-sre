@@ -1,0 +1,5 @@
+services:
+  ragflow:
+    ports:
+      # 仅用于本机首次创建租户和 API Key；稳态启动不得加载本文件。
+      - "127.0.0.1:${RAGFLOW_BOOTSTRAP_PORT:-9388}:80"

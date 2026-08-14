@@ -5,8 +5,8 @@
 ## Bootstrap
 
 1. Run `AEGIS_INIT_KNOWLEDGE_SECRETS=1 scripts/init-local-secrets.sh`. The script creates the Aegis identity key, MCP caller token, and dependency passwords. It never invents a RAGFlow API key because that key must belong to an actual RAGFlow tenant.
-2. Start the Knowledge dependency services once with `docker compose -f compose.yaml -f compose.knowledge.yaml up -d ragflow`.
-3. Open the RAGFlow UI through a temporary, loopback-only debug port or an approved administrative ingress, create the service tenant and API key, then write only the key to `deploy/local/secrets/ragflow-api-key`. Do not commit it. Registration remains disabled in the steady-state Compose.
+2. Start the Knowledge dependency services and the loopback-only bootstrap UI once with `docker compose -f compose.yaml -f compose.knowledge.yaml -f compose.knowledge-bootstrap.yaml up -d ragflow`.
+3. Open `http://127.0.0.1:9388` (or the loopback port selected by `RAGFLOW_BOOTSTRAP_PORT`), create the service tenant and API key, then write only the key to `deploy/local/secrets/ragflow-api-key`. Do not commit it. Remove the bootstrap override immediately afterward with `docker compose -f compose.yaml -f compose.knowledge.yaml -f compose.knowledge-bootstrap.yaml down`, then restart without that file. Registration and host ports remain disabled in steady state.
 4. Start the complete stack with `docker compose -f compose.yaml -f compose.knowledge.yaml up -d --build`.
 5. Restart Grafana after the Phase 8 `plugin.json` IAM changes. OpenCode performs `mcp list` before serving and fails startup if the authenticated Knowledge MCP handshake fails.
 
