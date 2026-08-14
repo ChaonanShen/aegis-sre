@@ -28,7 +28,7 @@ function App(props: AppRootProps) {
           <AppShell>
             <Routes>
               <Route path={`${ROUTES.Workbench}/:sessionId?`} element={<WorkbenchPage />} />
-              <Route path={ROUTES.Knowledge} element={realOnlyUnavailable('知识库', <KnowledgePage />)} />
+              <Route path={ROUTES.Knowledge} element={<KnowledgePage />} />
               <Route path={ROUTES.Playbooks} element={<PlaybooksPage />} />
               <Route path={`${ROUTES.Playbooks}/*`} element={<PlaybooksPage />} />
               <Route path={ROUTES.Skills} element={realOnlyUnavailable('Skills', <SkillsPage />)} />

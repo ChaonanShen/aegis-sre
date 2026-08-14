@@ -26,9 +26,10 @@ import {
   ServiceEntry,
   UpdateDocumentInput,
 } from './model';
+import RealKnowledgePage from './RealKnowledgePage';
 import './knowledge.css';
 
-export default function KnowledgePage() {
+export function LegacyKnowledgePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { knowledgeGateway } = useAppServices();
   const { activeFolder, folders, refreshFolders, setActiveFolder } = useAppShell();
@@ -451,6 +452,14 @@ export default function KnowledgePage() {
       {resultTask && <ImportResultModal onClose={() => setResultTask(undefined)} task={resultTask} />}
     </main>
   );
+}
+
+export default function KnowledgePage() {
+  const { knowledgeManagementGateway } = useAppServices();
+  if (knowledgeManagementGateway) {
+    return <RealKnowledgePage gateway={knowledgeManagementGateway} />;
+  }
+  return <LegacyKnowledgePage />;
 }
 
 async function fileDescriptor(file: File, index: number): Promise<ImportFileDescriptor> {

@@ -67,7 +67,9 @@ export function AppServicesProvider({
       auditGateway: runtimeMode === 'fixture' ? fixtureServices.auditGateway : unavailableAuditGateway,
       alertGateway: runtimeMode === 'fixture' ? fixtureServices.alertGateway : unavailableAlertGateway,
       approvalGateway: runtimeMode === 'fixture' ? fixtureServices.approvalGateway : unavailableApprovalGateway,
-      folderGateway: runtimeMode === 'fixture' ? fixtureServices.folderGateway : createGrafanaFolderGateway(),
+      folderGateway:
+        services?.folderGateway ??
+        (runtimeMode === 'fixture' ? fixtureServices.folderGateway : createGrafanaFolderGateway()),
       knowledgeGateway: runtimeMode === 'fixture' ? fixtureServices.knowledgeGateway : unavailableKnowledgeGateway,
       knowledgeManagementGateway:
         runtimeMode === 'real' && !services?.knowledgeGateway ? createResourceKnowledgeManagementGateway() : undefined,

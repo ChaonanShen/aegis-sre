@@ -68,8 +68,12 @@ export function createResourceKnowledgeManagementGateway(
     uploadDocument(folderUid, knowledgeBaseId, input, signal) {
       const form = new FormData();
       form.append('file', input.file);
-      if (input.service) form.append('service', input.service);
-      for (const tag of input.tags ?? []) form.append('tags', tag);
+      if (input.service) {
+        form.append('service', input.service);
+      }
+      for (const tag of input.tags ?? []) {
+        form.append('tags', tag);
+      }
       return client().request(`${kbPath(knowledgeBaseId)}/documents`, isDocument, {
         method: 'POST',
         data: form,
@@ -174,7 +178,9 @@ function pageQuery(cursor: string): string {
   return cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
 }
 function requireFolder(folderUid: string): string {
-  if (!folderUid.trim()) throw new ResourceClientError(0, 'invalid_argument', '必须选择 Folder。');
+  if (!folderUid.trim()) {
+    throw new ResourceClientError(0, 'invalid_argument', '必须选择 Folder。');
+  }
   return folderUid;
 }
 

@@ -2,11 +2,26 @@ import React, { Suspense } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { AppRootProps, PluginType } from '@grafana/data';
 import { render, screen } from '@testing-library/react';
+import { of } from 'rxjs';
 import { PRODUCT_BRAND } from '../../app/brand';
 import App from './App';
 
 jest.mock('@grafana/runtime', () => ({
   PluginPage: ({ children }: React.PropsWithChildren) => <>{children}</>,
+  getBackendSrv: () => ({
+    fetch: jest.fn((request: { url: string }) =>
+      of({
+        data:
+          request.url === '/api/search'
+            ? [{ uid: 'ops', title: 'Operations', type: 'dash-folder' }]
+            : { items: [], has_more: false },
+        status: 200,
+        headers: new Headers(),
+        config: request,
+      })
+    ),
+  }),
+  isFetchError: () => false,
 }));
 
 describe('Components/App', () => {
@@ -44,7 +59,7 @@ describe('Components/App', () => {
     expect(screen.getByText(PRODUCT_BRAND.tagline)).toBeInTheDocument();
   });
 
-  test('hides fixture-backed pages in real mode', async () => {
+  test('mounts the real Knowledge page without fixture records', async () => {
     render(
       <MemoryRouter initialEntries={['/knowledge']}>
         <Suspense fallback={null}>
@@ -53,7 +68,8 @@ describe('Components/App', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByTestId('feature-pending')).toBeInTheDocument();
-    expect(screen.getByText('真实模式尚未接通，演示数据已隐藏。')).toBeInTheDocument();
+    expect(await screen.findByText('此 Folder 尚无知识库。')).toBeInTheDocument();
+    expect(screen.getByText('创建或选择一个知识库后开始管理文档。')).toBeInTheDocument();
+    expect(screen.queryByTestId('feature-pending')).not.toBeInTheDocument();
   });
 });
