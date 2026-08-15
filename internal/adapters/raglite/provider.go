@@ -234,8 +234,10 @@ func (p *Provider) Retrieve(ctx context.Context, actor domain.ActorContext, inpu
 		return nil, invalidArgument(errors.New("invalid knowledge retrieval input"))
 	}
 	collections := make([]string, len(input.Collections))
+	allowedCollections := make(map[string]domain.ID, len(input.Collections))
 	for i, ref := range input.Collections {
 		collections[i] = string(ref.ID)
+		allowedCollections[string(ref.ID)] = ref.ID
 	}
 	hits, err := p.client.Search(ctx, scope, input.Query, collections, input.Service, input.Limit, input.Threshold)
 	if err != nil {
@@ -247,8 +249,12 @@ func (p *Provider) Retrieve(ctx context.Context, actor domain.ActorContext, inpu
 		if !documentID.Valid() || !strings.HasPrefix(string(documentID), "doc_") {
 			return nil, resultUnknown(errors.New("retrieval document ID is invalid"))
 		}
+		collectionID, allowed := allowedCollections[hit.Chunk.CollectionID]
+		if !allowed {
+			return nil, resultUnknown(errors.New("retrieval collection is outside the request"))
+		}
 		mapped = append(mapped, ports.RetrievalHit{
-			Document: ports.KnowledgeDocumentRef{ID: documentID}, SourceName: hit.Chunk.SourceName,
+			Document: ports.KnowledgeDocumentRef{ID: documentID, CollectionID: collectionID}, SourceName: hit.Chunk.SourceName,
 			Text: hit.Chunk.Text, Score: hit.Score, Position: hit.Chunk.Position, PageNumber: hit.Chunk.PageNumber,
 		})
 	}

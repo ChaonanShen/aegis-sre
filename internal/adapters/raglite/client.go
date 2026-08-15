@@ -90,10 +90,19 @@ func (c *Client) GetDocument(ctx context.Context, scope, id string) (Document, e
 func (c *Client) UploadDocument(ctx context.Context, scope, collectionID, documentID, name, mediaType, service string, tags []string, content io.Reader) (Document, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
-	_ = writer.WriteField("id", documentID)
-	_ = writer.WriteField("service", service)
-	encodedTags, _ := json.Marshal(tags)
-	_ = writer.WriteField("tags", string(encodedTags))
+	if err := writer.WriteField("id", documentID); err != nil {
+		return Document{}, err
+	}
+	if err := writer.WriteField("service", service); err != nil {
+		return Document{}, err
+	}
+	encodedTags, err := json.Marshal(tags)
+	if err != nil {
+		return Document{}, err
+	}
+	if err := writer.WriteField("tags", string(encodedTags)); err != nil {
+		return Document{}, err
+	}
 	header := make(textproto.MIMEHeader)
 	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="file"; filename="%s"`, escapeQuotes(name)))
 	header.Set("Content-Type", mediaType)

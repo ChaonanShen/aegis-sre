@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from fakes import FakeBackend
 
+from aegis_raglite_provider.backend import Chunk
 from aegis_raglite_provider.original_store import OriginalStore
 from aegis_raglite_provider.repository import Repository
 from aegis_raglite_provider.service import CapabilityError, KnowledgeService
@@ -77,6 +78,7 @@ def test_search_forces_scope_collection_and_service_filters(tmp_path: Path) -> N
     )
 
     assert len(hits) == 1
+    assert hits[0].chunk.collection_id == "kbs_abcdefgh"
     assert backend.search_calls == [
         {
             "query": "restart",
@@ -86,6 +88,30 @@ def test_search_forces_scope_collection_and_service_filters(tmp_path: Path) -> N
             "limit": 5,
         }
     ]
+
+
+def test_search_rejects_backend_hit_from_unrequested_collection(tmp_path: Path) -> None:
+    service, backend = new_service(tmp_path)
+    backend.chunks["doc_abcdefgh"] = [
+        Chunk(
+            id="chunk-internal-1",
+            document_id="doc_abcdefgh",
+            collection_id="kbs_other0000",
+            source_name="runbook.md",
+            text="restart",
+            position="0",
+        )
+    ]
+
+    with pytest.raises(RuntimeError, match="outside the requested collections"):
+        service.search(
+            query="restart",
+            collection_ids=["kbs_abcdefgh"],
+            scope="scope-a",
+            service="",
+            limit=5,
+            threshold=0,
+        )
 
 
 def test_search_rejects_nonzero_hybrid_threshold(tmp_path: Path) -> None:

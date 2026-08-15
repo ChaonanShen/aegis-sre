@@ -57,7 +57,7 @@ func TestProviderCollectionAndDocumentRoundTrip(t *testing.T) {
 
 func TestProviderDerivesChunkIDsAndMapsSearch(t *testing.T) {
 	provider, fake, _, actor := testProvider(t)
-	fake.chunks = []Chunk{{ID: "internal-chunk", DocumentID: "doc_abcdefgh", SourceName: "runbook.md", Text: "restart", Position: "0"}}
+	fake.chunks = []Chunk{{ID: "internal-chunk", DocumentID: "doc_abcdefgh", CollectionID: "kbs_abcdefgh", SourceName: "runbook.md", Text: "restart", Position: "0"}}
 	ref := ports.KnowledgeDocumentRef{ID: "doc_abcdefgh", CollectionID: "kbs_abcdefgh"}
 	page, err := provider.ListChunks(context.Background(), actor, ref, domain.PageRequest{Limit: 20})
 	if err != nil || len(page.Items) != 1 || !strings.HasPrefix(page.Items[0].ID, "chk_") || strings.Contains(page.Items[0].ID, "internal") {
@@ -67,9 +67,22 @@ func TestProviderDerivesChunkIDsAndMapsSearch(t *testing.T) {
 	hits, err := provider.Retrieve(context.Background(), actor, ports.RetrievalInput{
 		Query: "restart", Collections: []ports.KnowledgeCollectionRef{{ID: "kbs_abcdefgh"}}, Limit: 5,
 	})
-	if err != nil || len(hits) != 1 || hits[0].Document.ID != "doc_abcdefgh" {
+	if err != nil || len(hits) != 1 || hits[0].Document.ID != "doc_abcdefgh" || hits[0].Document.CollectionID != "kbs_abcdefgh" {
 		t.Fatalf("search mapping failed: %+v %v", hits, err)
 	}
+}
+
+func TestProviderRejectsSearchHitOutsideRequestedCollections(t *testing.T) {
+	provider, fake, _, actor := testProvider(t)
+	fake.hits = []SearchHit{{Chunk: Chunk{
+		ID: "internal-chunk", DocumentID: "doc_abcdefgh", CollectionID: "kbs_other0000",
+		SourceName: "runbook.md", Text: "restart", Position: "0",
+	}, Score: 0.5}}
+
+	_, err := provider.Retrieve(context.Background(), actor, ports.RetrievalInput{
+		Query: "restart", Collections: []ports.KnowledgeCollectionRef{{ID: "kbs_abcdefgh"}}, Limit: 5,
+	})
+	assertCode(t, err, domain.ErrorProviderResultUnknown)
 }
 
 func TestProviderRejectsDigestMismatchAndScopeMismatch(t *testing.T) {

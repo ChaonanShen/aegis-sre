@@ -79,6 +79,7 @@ def test_collection_upload_index_search_and_download(tmp_path: Path) -> None:
     )
     assert response.status_code == 200
     assert response.json()["hits"][0]["chunk"]["document_id"] == "doc_abcdefgh"
+    assert response.json()["hits"][0]["chunk"]["collection_id"] == "kbs_abcdefgh"
 
     response = client.get("/v1/documents/doc_abcdefgh/content", headers=headers())
     assert response.status_code == 200

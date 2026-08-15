@@ -212,13 +212,17 @@ class KnowledgeService:
             raise CapabilityError("hybrid retrieval does not support similarity threshold")
         for collection_id in collection_ids:
             self.repository.get_collection(collection_id, scope)
-        return self.backend.search(
+        hits = self.backend.search(
             query.strip(),
             collection_ids=collection_ids,
             scope=scope,
             service=service.strip(),
             limit=limit,
         )
+        allowed_collections = set(collection_ids)
+        if any(hit.chunk.collection_id not in allowed_collections for hit in hits):
+            raise RuntimeError("backend returned a chunk outside the requested collections")
+        return hits
 
     def run_once(self) -> bool:
         job = self.repository.claim_next_job()

@@ -25,6 +25,7 @@ class FakeBackend:
             Chunk(
                 id="chunk-internal-1",
                 document_id=document.id,
+                collection_id=collection.id,
                 source_name=document.name,
                 text="restart the checkout deployment",
                 position="0",

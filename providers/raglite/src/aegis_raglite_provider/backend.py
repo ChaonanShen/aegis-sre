@@ -13,6 +13,7 @@ from aegis_raglite_provider.models import Collection, Document
 class Chunk:
     id: str
     document_id: str
+    collection_id: str
     source_name: str
     text: str
     position: str
@@ -108,6 +109,9 @@ class RAGLiteBackend:
             Chunk(
                 id=str(chunk.id),
                 document_id=str(chunk.document_id),
+                collection_id=_required_metadata_string(
+                    chunk.document.metadata_, "aegis_collection_id"
+                ),
                 source_name=chunk.document.filename,
                 text=chunk.body,
                 position=str(chunk.index),
@@ -144,6 +148,9 @@ class RAGLiteBackend:
                 chunk=Chunk(
                     id=str(chunk.id),
                     document_id=str(chunk.document_id),
+                    collection_id=_required_metadata_string(
+                        chunk.document.metadata_, "aegis_collection_id"
+                    ),
                     source_name=chunk.document.filename,
                     text=chunk.body,
                     position=str(chunk.index),
@@ -152,3 +159,14 @@ class RAGLiteBackend:
             )
             for chunk, score in zip(chunks, scores, strict=True)
         ]
+
+
+def _required_metadata_string(metadata: dict[str, object], key: str) -> str:
+    """读取 RAGLite 规范化后的单值元数据，缺失或畸形时拒绝生成跨边界结果。"""
+    value = metadata.get(key)
+    if not isinstance(value, list) or len(value) != 1 or not isinstance(value[0], str):
+        raise RuntimeError(f"RAGLite document metadata {key!r} is invalid")
+    normalized = value[0].strip()
+    if not normalized:
+        raise RuntimeError(f"RAGLite document metadata {key!r} is invalid")
+    return normalized

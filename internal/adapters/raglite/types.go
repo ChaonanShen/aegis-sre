@@ -34,12 +34,13 @@ type Job struct {
 }
 
 type Chunk struct {
-	ID         string `json:"id"`
-	DocumentID string `json:"document_id"`
-	SourceName string `json:"source_name"`
-	Text       string `json:"text"`
-	Position   string `json:"position"`
-	PageNumber int    `json:"page_number"`
+	ID           string `json:"id"`
+	DocumentID   string `json:"document_id"`
+	CollectionID string `json:"collection_id"`
+	SourceName   string `json:"source_name"`
+	Text         string `json:"text"`
+	Position     string `json:"position"`
+	PageNumber   int    `json:"page_number"`
 }
 
 type SearchHit struct {
