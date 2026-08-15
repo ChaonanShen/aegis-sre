@@ -23,7 +23,12 @@ type canvasDeleter interface {
 	Delete(context.Context, domain.ActorContext, domain.ID) error
 }
 
-func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, canvas canvasDeleter) {
+type canvasIntegration interface {
+	canvasDeleter
+	Subscribe(context.Context, domain.ActorContext, domain.ID) (<-chan domain.Event, func(), error)
+}
+
+func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, canvas canvasIntegration) {
 	if provider == nil {
 		return
 	}
@@ -186,7 +191,7 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, can
 			return
 		}
 		started := domain.Event{ID: stableAgentEventID(ref.ID, turn.ID, key), Type: domain.EventTurnStarted, SessionID: ref.ID, TurnID: turn.ID, Sequence: 0, OccurredAt: time.Now().UTC(), Payload: json.RawMessage(`{"status":"running"}`)}
-		streamSSE(w, request, &prefixedEventStream{first: started, stream: stream})
+		streamSSE(w, request, &prefixedEventStream{first: started, stream: stream}, canvas)
 	})
 	// net/http 的路径变量必须占满整个 segment，因此把公开契约中的 :cancel 后缀一并解析。
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/turns/{turn_action}", func(w http.ResponseWriter, request *http.Request) {

@@ -541,7 +541,7 @@ func artifactPreviewJSON(preview ports.ArtifactPreview) map[string]any {
 	return value
 }
 
-func streamSSE(w http.ResponseWriter, request *http.Request, stream ports.EventStream) {
+func streamSSE(w http.ResponseWriter, request *http.Request, stream ports.EventStream, canvas ...canvasIntegration) {
 	if stream == nil {
 		writeAPIProblem(w, request, http.StatusBadGateway, "provider_result_unknown", "provider returned no event stream", false)
 		return
@@ -555,28 +555,79 @@ func streamSSE(w http.ResponseWriter, request *http.Request, stream ports.EventS
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Accel-Buffering", "no")
+	var canvasEvents <-chan domain.Event
+	var cancelCanvas func()
+	if len(canvas) > 0 && canvas[0] != nil {
+		canvasEvents, cancelCanvas, _ = canvas[0].Subscribe(request.Context(), actorFromRequest(request), domain.ID(request.PathValue("session_id")))
+		if cancelCanvas != nil {
+			defer cancelCanvas()
+		}
+	}
+	providerEvents := make(chan streamResult, 1)
+	go func() {
+		defer close(providerEvents)
+		for {
+			event, err := stream.Next(request.Context())
+			select {
+			case providerEvents <- streamResult{event: event, err: err}:
+			case <-request.Context().Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
 	for {
-		event, err := stream.Next(request.Context())
+		var result streamResult
+		var ok bool
+		if canvasEvents == nil {
+			result, ok = <-providerEvents
+		} else {
+			select {
+			case event, eventOK := <-canvasEvents:
+				if !eventOK {
+					canvasEvents = nil
+					continue
+				}
+				writeSSEEvent(w, flusher, event)
+				continue
+			case result, ok = <-providerEvents:
+			}
+		}
+		if !ok {
+			return
+		}
+		event, err := result.event, result.err
 		if errors.Is(err, io.EOF) || errors.Is(err, context.Canceled) {
 			return
 		}
 		if err != nil {
 			return
 		}
-		envelope := map[string]any{"event_id": event.ID, "event_type": event.Type, "sequence": event.Sequence, "occurred_at": event.OccurredAt, "payload": json.RawMessage(event.Payload)}
-		if event.RunID != "" {
-			envelope["run_id"] = event.RunID
-		}
-		if event.SessionID != "" {
-			envelope["session_id"] = event.SessionID
-		}
-		if event.TurnID != "" {
-			envelope["turn_id"] = event.TurnID
-		}
-		content, _ := json.Marshal(envelope)
-		_, _ = fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", event.Sequence, event.Type, content)
-		flusher.Flush()
+		writeSSEEvent(w, flusher, event)
 	}
+}
+
+type streamResult struct {
+	event domain.Event
+	err   error
+}
+
+func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, event domain.Event) {
+	envelope := map[string]any{"event_id": event.ID, "event_type": event.Type, "sequence": event.Sequence, "occurred_at": event.OccurredAt, "payload": json.RawMessage(event.Payload)}
+	if event.RunID != "" {
+		envelope["run_id"] = event.RunID
+	}
+	if event.SessionID != "" {
+		envelope["session_id"] = event.SessionID
+	}
+	if event.TurnID != "" {
+		envelope["turn_id"] = event.TurnID
+	}
+	content, _ := json.Marshal(envelope)
+	_, _ = fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", event.Sequence, event.Type, content)
+	flusher.Flush()
 }
 
 type providerHTTPError interface {

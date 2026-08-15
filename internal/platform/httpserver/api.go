@@ -48,7 +48,7 @@ func apiHandler(cfg config.Config, deps dependencies) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"items": items})
 	})
-	var canvas canvasDeleter
+	var canvas canvasIntegration
 	if deps.canvas != nil {
 		canvas = deps.canvas
 	}
