@@ -268,8 +268,11 @@ Provider 数据归属与标识策略复核：
 - [x] 删除真实模式下的 Playbook fixture fallback。
 - [x] 通过真实 Dagu Run 验证多个 `mcp.call` 查询节点和汇总 Artifact。
 - [x] 历史 Run 不阻止再次执行；`run.updated` 作为快照失效通知驱动完整 Run 刷新，终态无需手动刷新页面。
+- [x] 新 Run 使用原生 Dagu YAML 的 `name` 展示在 Dagu executions；Aegis 通过 adapter 私有标签保留稳定 Playbook 关联，并兼容旧的 `pbk_*` Run 名称。
 
 本轮保证 Playbook 可以从 Grafana 插件执行并处理人工交互；不把 Dagu UI 当作最终产品界面。日志展示仍因缺少稳定的 provider-neutral API 暂缓，不能把 Provider 私有日志协议直接泄漏到前端。
+
+Dagu 2.13.0 没有重命名历史 DAG Run 的稳定接口，因此 Playbook 改名只影响之后创建的新 execution；已有 execution 保留当时的名称，但仍通过兼容查询出现在同一 Playbook 的运行记录中。
 
 验收标准：
 
