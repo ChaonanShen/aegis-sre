@@ -432,21 +432,21 @@ DataSourceApi 查询并用原生 PanelRenderer 绘制；刷新后该临时投影
 
 #### 7.1.2 阶段 1：SQLite 基础设施与部署
 
-- [ ] 固定纯 Go 驱动 `modernc.org/sqlite v1.56.0`，保持现有 `CGO_ENABLED=0` 构建；不引入 ORM。
-- [ ] 增加显式配置：`AEGIS_CANVAS_ENABLED`、`AEGIS_CANVAS_DB_PATH` 和
+- [x] 固定纯 Go 驱动 `modernc.org/sqlite v1.56.0`，保持现有 `CGO_ENABLED=0` 构建；不引入 ORM。
+- [x] 增加显式配置：`AEGIS_CANVAS_ENABLED`、`AEGIS_CANVAS_DB_PATH` 和
   `AEGIS_CANVAS_MCP_TOKEN_FILE`。启用时 DB path 必须是绝对路径、父目录可写、Token 必须是只读
   普通文件；缺少或错误配置时启动失败。未启用时能力明确返回 unavailable，不使用内存或 fixture
   回退。开发默认路径为 `/var/lib/aegis/canvas/canvas.db`；capabilities 和 readiness 增加独立
   `canvas` 状态，不能用 Agent available 掩盖 Canvas Store 不可用。
-- [ ] `compose.yaml` 为 Control Plane 增加 `control-plane-data` named volume，只将
+- [x] `compose.yaml` 为 Control Plane 增加 `control-plane-data` named volume，只将
   `/var/lib/aegis/canvas` 设为可写，继续保持容器根文件系统 `read_only: true`；镜像创建目录并保证
   运行用户可写。Canvas MCP 使用独立 secret，不复用 Plugin、Grafana MCP 或 Playbook MCP Token。
-- [ ] 打开数据库后固定执行并校验 `foreign_keys=ON`、`journal_mode=WAL`、`synchronous=FULL`、
+- [x] 打开数据库后固定执行并校验 `foreign_keys=ON`、`journal_mode=WAL`、`synchronous=FULL`、
   `busy_timeout=5000`；连接池 `MaxOpenConns=1`、`MaxIdleConns=1`，所有写入使用显式事务。
-- [ ] 迁移 SQL 使用 `go:embed` 随二进制发布，建立带 checksum 的 `schema_migrations`。启动时在提供
+- [x] 迁移 SQL 使用 `go:embed` 随二进制发布，建立带 checksum 的 `schema_migrations`。启动时在提供
   HTTP 服务前串行迁移；未知新版本、checksum 漂移或迁移失败必须 fail-closed，不得跳过迁移继续
   运行。数据库目录权限目标为 `0700`、文件为 `0600`。
-- [ ] readiness 增加 SQLite `SELECT 1` 和当前 migration version 检查；关闭时停止接收新写请求、
+- [x] readiness 增加 SQLite `SELECT 1` 和当前 migration version 检查；关闭时停止接收新写请求、
   等待事务完成、执行受限 WAL checkpoint 并关闭连接。
 - [ ] 提供运维文档和脚本：备份使用 SQLite backup API 或停写后的 checkpoint + 一致快照，不允许只
   复制运行中的主 `.db` 文件而遗漏 `-wal/-shm`；恢复必须在临时目录完成 `integrity_check` 后原子替换。
@@ -467,23 +467,23 @@ SQLite 只包含下列 Canvas 聚合数据，不建立 `sessions`、`turns`、`m
 | `charts` | Actor scope + `session_id/chart_id`；同 Session 内 `publish_operation_id` 唯一 | Query/version 引用、title、description、visualization、规范化 VizConfig、request hash、revision、创建/更新时间 |
 | `canvas_items` | Actor scope + `session_id/chart_id`；`position` 唯一 | Canvas 成员和当前 UI 使用的稳定排序 |
 
-- [ ] 数据库外键只连接上述产品投影内部记录；`session_id` 是经过校验的公开 Session 引用，不对
+- [x] 数据库外键只连接上述产品投影内部记录；`session_id` 是经过校验的公开 Session 引用，不对
   不存在的 Aegis Session 表建立外键。所有查询条件必须包含完整可信 Actor scope 和 Session ID。
-- [ ] 在 `internal/ports` 增加独立 `CanvasStore`，至少提供 `Get`、`PublishQueryChart`、
+- [x] 在 `internal/ports` 增加独立 `CanvasStore`，至少提供 `Get`、`PublishQueryChart`、
   `UpdateLayout`、`Delete` 和 `Check`；在应用层增加 Canvas Service，先通过 `AgentProvider.ReadSession`
   校验会话存在、Actor 有权且状态允许，再调用 Store。Store 本身不依赖 Agent Provider。
-- [ ] `PublishQueryChart` 在一个 `BEGIN IMMEDIATE` 事务内创建/读取 Canvas、写 immutable Query
+- [x] `PublishQueryChart` 在一个 `BEGIN IMMEDIATE` 事务内创建/读取 Canvas、写 immutable Query
   version、写 Chart、追加 Canvas item 并递增 Canvas revision。任何一步失败必须整体回滚。
-- [ ] 发布请求要求 8-128 字节稳定 idempotency key；保存 canonical request hash。同 key 同 payload
+- [x] 发布请求要求 8-128 字节稳定 idempotency key；保存 canonical request hash。同 key 同 payload
   返回原 Chart 和 revision，同 key 不同 payload 返回 `idempotency_conflict`，不得覆盖已有定义。
-- [ ] `UpdateLayout` 只接受 `visible/layout/active_chart_id/ordered_chart_ids` 和期望 revision。客户端不能
+- [x] `UpdateLayout` 只接受 `visible/layout/active_chart_id/ordered_chart_ids` 和期望 revision。客户端不能
   修改 Query、VizConfig 或伪造新 Chart ID；成员删除在同一事务中删除 Chart，并删除已无引用的 Query。
   revision 不一致返回 `canvas_revision_conflict` 和当前 revision，不做 last-write-wins。
-- [ ] 首版上限：每 Canvas 20 个 Chart、datasource UID 512 bytes、PromQL 16 KiB、title 1 KiB、
+- [x] 首版上限：每 Canvas 20 个 Chart、datasource UID 512 bytes、PromQL 16 KiB、title 1 KiB、
   description 4 KiB、VizConfig 128 KiB/深度 12/节点 2048；只接受绝对 UTC 且递增的时间范围、正 step、
   最多 31 天范围和最多 11000 个预估数据点。VizConfig 只允许 Dashboard v2 `VizConfig` envelope，
   禁止 targets、原始 frames/series/samples、URL、凭据和任意 HTML。
-- [ ] ID 使用公共前缀 `qry_`、`cht_`，由服务端生成；时间由服务端 UTC clock 生成。所有 SQLite
+- [x] ID 使用公共前缀 `qry_`、`cht_`，由服务端生成；时间由服务端 UTC clock 生成。所有 SQLite
   错误映射为稳定领域错误，响应和日志不得包含 DB path、SQL、PromQL 全文或 datasource 凭据。
 
 完成门禁：文件数据库关闭重开后逐字段一致；事务回滚、外键、幂等、并发 revision、Actor 隔离、
@@ -491,17 +491,17 @@ SQLite 只包含下列 Canvas 聚合数据，不建立 `sessions`、`turns`、`m
 
 #### 7.1.4 阶段 3：公共 HTTP 契约
 
-- [ ] 在 `api/openapi.yaml` 增加 Provider-neutral 的 `QueryDefinition`、`ChartDefinition`、
+- [x] 在 `api/openapi.yaml` 增加 Provider-neutral 的 `QueryDefinition`、`ChartDefinition`、
   `CanvasProjection`、`CanvasItem` 和 `UpdateCanvasRequest`，运行现有 Go/TypeScript 契约生成器；不得
   直接复活 `pluginBackend.ts` 迁移兼容契约。
-- [ ] 增加 `GET /api/v1/sessions/{session_id}/canvas`：先用 Agent Provider 验证会话和权限，再读取
+- [x] 增加 `GET /api/v1/sessions/{session_id}/canvas`：先用 Agent Provider 验证会话和权限，再读取
   Canvas。尚未创建时返回 `200` 的空投影和 revision 0；Store 故障返回受控 5xx，不能伪装成空投影。
-- [ ] 增加 `PUT /api/v1/sessions/{session_id}/canvas`：要求 `If-Match`/expected revision，只更新显示、
+- [x] 增加 `PUT /api/v1/sessions/{session_id}/canvas`：要求 `If-Match`/expected revision，只更新显示、
   布局、active chart 和顺序/删除。返回新 projection 与 ETag；冲突返回 409
   `canvas_revision_conflict`，越权使用 404/403 的现有资源隐藏策略。
-- [ ] 不把 Canvas 字段塞回 Agent `Session` 领域模型。Workbench Gateway 打开会话时并行读取
+- [x] 不把 Canvas 字段塞回 Agent `Session` 领域模型。Workbench Gateway 打开会话时并行读取
   SessionDetail 和 CanvasProjection，在前端应用层组装；任何真实依赖失败都显示对应错误。
-- [ ] archive/unarchive 保留 Canvas；归档会话可读取但禁止发布和布局编辑。Session delete 成功或
+- [x] archive/unarchive 保留 Canvas；归档会话可读取但禁止发布和布局编辑。Session delete 成功或
   幂等重试确认 Provider 已不存在后删除 Canvas 聚合；若 DB 删除失败，返回 retryable 错误，重复
   delete 必须继续完成清理。不得增加 Session 影子状态做对账。
 
@@ -510,17 +510,17 @@ SQLite 只包含下列 Canvas 聚合数据，不建立 `sessions`、`turns`、`m
 
 #### 7.1.5 阶段 4：Aegis Canvas MCP 与 Agent 工作流
 
-- [ ] 在 Control Plane 增加 `/mcp/canvas` 薄 facade 和唯一首版工具
+- [x] 在 Control Plane 增加 `/mcp/canvas` 薄 facade 和唯一首版工具
   `canvas.publish_query_chart`。输入只包含公开 Session ID、idempotency key、datasource UID、PromQL、
   绝对时间范围、step、title 和受限 visualization/VizConfig；禁止传查询结果或 Provider ID。
-- [ ] MCP 使用独立 bearer token，并在服务端绑定配置中的固定 Tenant/Org/User；忽略模型声明的
+- [x] MCP 使用独立 bearer token，并在服务端绑定配置中的固定 Tenant/Org/User；忽略模型声明的
   Actor。每次发布仍通过 Agent Provider 验证 Session 存在且 active，再调用同一个 Canvas Service，
   不复制持久化逻辑。
 - [ ] 通过 Provider-neutral 的 Turn context 把当前公开 Session ID 和发布规则提供给 Agent：先调用
   官方 Grafana MCP `query_prometheus` range，只有成功且用户意图需要图表时才调用 Canvas MCP；
   datasource、PromQL 和绝对范围必须与刚成功的查询一致。Codex/OpenCode adapter 只负责各自的
   context 投影，不各自实现 Canvas 协议。
-- [ ] 把 Canvas MCP 加入 Codex/OpenCode 的固定 MCP 清单和启动合同检查。工具返回稳定结构
+- [x] 把 Canvas MCP 加入 Codex/OpenCode 的固定 MCP 清单和启动合同检查。工具返回稳定结构
   `{chart_id, canvas_revision}`；失败查询、instant 查询、缺少绝对范围或未授权 Session 不得发布。
 - [ ] 先用固定 Provider 版本合同测试确认两者都能保留 Canvas MCP 的成功结果。随后增加
   `canvas.updated` 公共事件，payload 只含 Session ID、Chart ID、operation 和 revision；不得透传
@@ -531,15 +531,15 @@ SQLite 只包含下列 Canvas 聚合数据，不建立 `sessions`、`turns`、`m
 
 #### 7.1.6 阶段 5：Grafana Plugin 恢复与编辑
 
-- [ ] 将 Workbench 模型切换到当前 v1 生成契约，移除真实链路对旧 `pluginBackend.ts` Query 类型的
+- [x] 将 Workbench 模型切换到当前 v1 生成契约，移除真实链路对旧 `pluginBackend.ts` Query 类型的
   依赖。保留现有 DataSourceApi + PanelRenderer，不新增截图或样本缓存。
-- [ ] `openSession` 同时加载 Provider 消息和持久化 Canvas；Chart 使用持久化的 datasource UID、
+- [x] `openSession` 同时加载 Provider 消息和持久化 Canvas；Chart 使用持久化的 datasource UID、
   PromQL、绝对范围、step 和 VizConfig 重新查询。数据源不存在、失权、超时和查询错误显示可重试
   Chart 级错误，不能删除定义或回退 fixture。
 - [ ] 收到 `canvas.updated` 后按 revision 重新 GET Canvas，以服务端 projection 覆盖临时 Chart；
   现有 `query_prometheus` 参数解析只保留为流内 optimistic preview，并在持久化 projection 到达后按
   Chart ID/operation 合并，不能成为恢复事实来源。
-- [ ] 将 `updateCanvas` 改为异步真实写入：本地乐观显示，PUT 成功后采用服务端 projection；409 时
+- [x] 将 `updateCanvas` 改为异步真实写入：本地乐观显示，PUT 成功后采用服务端 projection；409 时
   重新读取并提示用户重试，网络失败回滚到最后确认 revision。真实模式启用布局切换、排序、删除、
   active chart 和显示/隐藏，fixture 模式仍与真实存储完全隔离。
 - [ ] 切换 Session、刷新、SSE 中断和组件卸载时取消旧请求；晚到响应必须按 Session ID + revision
