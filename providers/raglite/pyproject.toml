@@ -19,7 +19,15 @@ test = [
   "httpx==0.28.1",
   "pytest==8.4.1",
   "pytest-cov==6.2.1",
+  "ruff==0.12.4",
 ]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/aegis_raglite_provider"]
@@ -27,4 +35,3 @@ packages = ["src/aegis_raglite_provider"]
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers"
 testpaths = ["tests"]
-

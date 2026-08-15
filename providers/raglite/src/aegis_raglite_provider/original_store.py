@@ -6,6 +6,7 @@ import hashlib
 import os
 import re
 import tempfile
+import threading
 from pathlib import Path
 from typing import BinaryIO
 
@@ -20,6 +21,7 @@ class OriginalStore:
         self._tmp.mkdir(parents=True, exist_ok=True)
         self._originals.mkdir(parents=True, exist_ok=True)
         self._max_bytes = max_bytes
+        self._lock = threading.Lock()
 
     def save(
         self,
@@ -45,7 +47,11 @@ class OriginalStore:
                     output.write(chunk)
                 output.flush()
                 os.fsync(output.fileno())
-            os.replace(temp_name, target)
+            # sidecar 首版是单进程；进程内锁保证重复 ID 不会覆盖已存在的原文件。
+            with self._lock:
+                if target.exists():
+                    raise FileExistsError("document original already exists")
+                os.replace(temp_name, target)
             relative = target.relative_to(self._root).as_posix()
             return relative, size, digest.hexdigest()
         except Exception:

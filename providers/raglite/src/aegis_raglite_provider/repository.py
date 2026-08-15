@@ -208,6 +208,30 @@ class Repository:
             raise NotFoundError("document not found")
         return self._document(row)
 
+    def get_document_context(self, document_id: str) -> tuple[Document, Collection]:
+        with self._connect() as connection:
+            row = connection.execute(
+                """SELECT d.*, c.id AS c_id, c.name AS c_name,
+                          c.folder_uid AS c_folder_uid, c.scope AS c_scope,
+                          c.status AS c_status, c.created_at AS c_created_at,
+                          c.updated_at AS c_updated_at
+                   FROM documents d JOIN collections c ON c.id = d.collection_id
+                   WHERE d.id = ?""",
+                (document_id,),
+            ).fetchone()
+        if row is None:
+            raise NotFoundError("document not found")
+        collection = Collection(
+            id=row["c_id"],
+            name=row["c_name"],
+            folder_uid=row["c_folder_uid"],
+            scope=row["c_scope"],
+            status=row["c_status"],
+            created_at=row["c_created_at"],
+            updated_at=row["c_updated_at"],
+        )
+        return self._document(row), collection
+
     def update_document_metadata(
         self, document_id: str, scope: str, *, service: str, tags: tuple[str, ...]
     ) -> Document:
@@ -329,11 +353,19 @@ class Repository:
             ).fetchone()
         return self._job(row) if row else None
 
+    def get_job(self, job_id: str) -> Job:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM jobs WHERE id = ?", (job_id,)).fetchone()
+        if row is None:
+            raise NotFoundError("job not found")
+        return self._job(row)
+
     def recover_running_jobs(self) -> int:
         # 进程可能在 DuckDB 提交中退出，恢复时重新排队并由 worker 对账后重建。
         with self._lock, self._connect() as connection:
             cursor = connection.execute(
                 """UPDATE jobs SET status = 'queued', error = 'recovered after restart',
+                   operation = CASE WHEN operation = 'index' THEN 'reindex' ELSE operation END,
                    started_at = NULL WHERE status = 'running'"""
             )
         return cursor.rowcount
@@ -391,4 +423,3 @@ class Repository:
             started_at=row["started_at"],
             finished_at=row["finished_at"],
         )
-

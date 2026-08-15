@@ -55,4 +55,3 @@ class Job:
     created_at: str = field(default_factory=now_iso)
     started_at: str | None = None
     finished_at: str | None = None
-

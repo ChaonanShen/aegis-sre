@@ -90,7 +90,7 @@ def test_job_claim_cancel_and_restart_recovery(tmp_path: Path) -> None:
     repository.create_collection(collection())
     repository.create_document(document(), "scope-a")
 
-    first = repository.create_job("doc_abcdefgh", "index")
+    repository.create_job("doc_abcdefgh", "index")
     with pytest.raises(ConflictError):
         repository.create_job("doc_abcdefgh", "index")
     assert repository.cancel_queued_job("doc_abcdefgh")
@@ -109,6 +109,6 @@ def test_job_claim_cancel_and_restart_recovery(tmp_path: Path) -> None:
     assert recovered is not None
     assert recovered.id == second.id
     assert recovered.attempts == 2
+    assert recovered.operation == "reindex"
     repository.complete_job(recovered.id)
     assert repository.get_active_job("doc_abcdefgh") is None
-

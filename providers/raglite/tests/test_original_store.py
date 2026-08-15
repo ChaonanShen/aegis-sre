@@ -34,9 +34,19 @@ def test_save_rejects_oversize_without_leaving_partial_file(tmp_path: Path) -> N
     assert list((tmp_path / "originals").rglob("*")) == []
 
 
+def test_duplicate_target_does_not_overwrite_original(tmp_path: Path) -> None:
+    store = OriginalStore(tmp_path, max_bytes=1024)
+    relative, _, _ = store.save("kbs_abcdefgh", "doc_abcdefgh", "runbook.md", io.BytesIO(b"first"))
+
+    with pytest.raises(FileExistsError):
+        store.save("kbs_abcdefgh", "doc_abcdefgh", "runbook.md", io.BytesIO(b"second"))
+
+    with store.open(relative) as content:
+        assert content.read() == b"first"
+
+
 @pytest.mark.parametrize("path", ["../secret", "/etc/passwd", "originals/../../secret"])
 def test_resolve_rejects_path_traversal(tmp_path: Path, path: str) -> None:
     store = OriginalStore(tmp_path, max_bytes=1024)
     with pytest.raises(ValueError):
         store.resolve(path)
-
