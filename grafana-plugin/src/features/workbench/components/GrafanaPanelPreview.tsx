@@ -21,7 +21,7 @@ const supportedPanelPlugins = new Set(['timeseries', 'stat', 'gauge', 'barchart'
 
 // PanelRenderer 在当前锁定的 @grafana/runtime 13.0.2 中仍标记为 @internal。
 // 查询使用公开的 DataSourceApi；原生 panel 渲染目前没有无需引入 Scenes 的等价稳定入口。
-// 因此这里只接受 Grafana 13.x 的 VizConfig，升级 Grafana 主版本时必须重新做 canary 验证。
+// 因此这里只接受当前稳定的 Canvas v1 或 Grafana 13.x VizConfig，升级 Grafana 主版本时必须重新做 canary 验证。
 
 interface QueryTargetTemplate {
   refId: string;
@@ -294,7 +294,7 @@ export function parsePanelDefinition(
   const persistedVizConfig =
     chart.vizConfig === undefined || emptyVizConfig ? undefined : supportedVizConfig(chart.vizConfig);
   if (chart.vizConfig !== undefined && !emptyVizConfig && !persistedVizConfig) {
-    return { ok: false, error: '持久化 Chart.Spec 不是受支持的 Grafana 13.x VizConfig。' };
+    return { ok: false, error: '持久化 Chart.Spec 不是受支持的 Canvas/Grafana VizConfig。' };
   }
 
   return {
@@ -332,7 +332,7 @@ function supportedVizConfig(
     typeof vizConfig.group !== 'string' ||
     !supportedPanelPlugins.has(vizConfig.group) ||
     typeof vizConfig.version !== 'string' ||
-    majorVersion(vizConfig.version) !== supportedGrafanaMajor ||
+    !supportedVizConfigVersion(vizConfig.version) ||
     !spec ||
     !asRecord(spec.options) ||
     !isFieldConfig(spec.fieldConfig)
@@ -344,6 +344,10 @@ function supportedVizConfig(
     options: spec.options as Record<string, unknown>,
     fieldConfig: spec.fieldConfig as FieldConfigSource,
   };
+}
+
+function supportedVizConfigVersion(version: string): boolean {
+  return version === 'v1' || majorVersion(version) === supportedGrafanaMajor;
 }
 
 function fallbackPanelPlugin(visualization: SavedChartPreview['visualization']): string {

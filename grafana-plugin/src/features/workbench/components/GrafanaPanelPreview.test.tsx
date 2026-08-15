@@ -59,6 +59,27 @@ describe('GrafanaPanelPreview', () => {
     );
   });
 
+  test('兼容 Canvas v1 VizConfig 并使用 Grafana 原生渲染器', async () => {
+    const frame = toDataFrame({
+      refId: 'A',
+      fields: [
+        { name: 'Time', type: FieldType.time, values: [1784714950000, 1784714965000] },
+        { name: 'Value', type: FieldType.number, values: [1, 2] },
+      ],
+    });
+    const query = jest.fn((_request: DataQueryRequest) => of({ data: [frame], state: LoadingState.Done }));
+    mockedGetDataSourceSrv.mockReturnValue({
+      get: jest.fn(async () => ({ type: 'prometheus', query })),
+    } as unknown as ReturnType<typeof getDataSourceSrv>);
+    const chart = definitionChart();
+    chart.vizConfig = { ...(chart.vizConfig as Record<string, unknown>), version: 'v1' };
+
+    render(<ChartPreview chart={chart} />);
+
+    await waitFor(() => expect(mockedPanelRenderer).toHaveBeenCalled());
+    expect(mockedPanelRenderer.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ pluginId: 'timeseries' }));
+  });
+
   test('显式 fixture 图表仍使用本地预览，不会查询数据源', () => {
     const get = jest.fn();
     mockedGetDataSourceSrv.mockReturnValue({ get } as unknown as ReturnType<typeof getDataSourceSrv>);
