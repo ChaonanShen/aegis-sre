@@ -283,3 +283,36 @@ func TestProviderProjectsV1GlobalEventsForCurrentSession(t *testing.T) {
 		t.Fatalf("stream after terminal event = %v", err)
 	}
 }
+
+func TestOpenCodeV1RejectsForeignNestedOwnershipAndRequiresOwnershipEvidence(t *testing.T) {
+	t.Parallel()
+	frames := []string{
+		`{"id":"evt_other_assistant","type":"message.updated","properties":{"info":{"role":"assistant","id":"msg_other","parentID":"msg_v1","sessionID":"ses_other"}}}`,
+		`{"id":"evt_assistant","type":"message.updated","properties":{"info":{"role":"assistant","id":"msg_assistant","parentID":"msg_v1","sessionID":"ses_abcdefgh"}}}`,
+		`{"id":"evt_other_tool","type":"message.part.updated","properties":{"part":{"type":"tool","tool":"read","callID":"foreign-call","messageID":"msg_assistant","sessionID":"ses_other","state":{"status":"pending","input":{"path":"/other"}}}}}`,
+		`{"id":"evt_current_tool","type":"message.part.updated","properties":{"part":{"type":"tool","tool":"read","callID":"current-call","messageID":"msg_assistant","state":{"status":"pending","input":{"path":"/current"}}}}}`,
+		`{"id":"evt_stop","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"step-finish","reason":"stop","messageID":"msg_assistant"}}}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = w.Write([]byte("data: " + frame + "\n\n"))
+		}
+	}))
+	defer server.Close()
+	response, err := server.Client().Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	codec, _ := agentid.New([]byte("0123456789abcdef0123456789abcdef"))
+	stream := newOpenCodeV1EventStream(response.Body, codec, "ses_abcdefgh", "turn_abcdefgh", "msg_v1")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if event, err := stream.Next(ctx); err != nil || event.Type != domain.EventToolStarted || !strings.Contains(string(event.Payload), "/current") || strings.Contains(string(event.Payload), "/other") {
+		t.Fatalf("event = %#v, err = %v", event, err)
+	}
+	if event, err := stream.Next(ctx); err != nil || event.Type != domain.EventTurnCompleted {
+		t.Fatalf("terminal event = %#v, err = %v", event, err)
+	}
+}

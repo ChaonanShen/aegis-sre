@@ -432,7 +432,7 @@ func (stream *openCodeV1EventStream) project(raw json.RawMessage) (domain.Event,
 	if len(event.Properties) > 0 && json.Unmarshal(event.Properties, &properties) != nil {
 		return domain.Event{}, false, errors.New("invalid OpenCode V1 event properties")
 	}
-	if sessionID, _ := properties["sessionID"].(string); sessionID != "" && sessionID != string(stream.sessionID) {
+	if !stream.ownsV1Event(properties) {
 		return domain.Event{}, false, nil
 	}
 
@@ -502,6 +502,47 @@ func (stream *openCodeV1EventStream) project(raw json.RawMessage) (domain.Event,
 		}
 	}
 	return domain.Event{}, false, nil
+}
+
+// ownsV1Event 对全局事件流执行 fail-closed 归属判断。OpenCode 的真实事件
+// 可能只在 info/part 或 messageID 中携带 Session 线索，不能只依赖顶层字段；
+// 没有任何可验证归属的事件也必须丢弃，避免跨会话串线。
+func (stream *openCodeV1EventStream) ownsV1Event(properties map[string]any) bool {
+	owned := false
+	checkSession := func(value any) bool {
+		sessionID, ok := value.(string)
+		if !ok || sessionID == "" {
+			return true
+		}
+		owned = true
+		return sessionID == string(stream.sessionID)
+	}
+	if !checkSession(properties["sessionID"]) {
+		return false
+	}
+	if info, _ := properties["info"].(map[string]any); info != nil {
+		if !checkSession(info["sessionID"]) {
+			return false
+		}
+	}
+	if part, _ := properties["part"].(map[string]any); part != nil {
+		if !checkSession(part["sessionID"]) {
+			return false
+		}
+		if messageID, _ := part["messageID"].(string); messageID != "" {
+			owned = true
+			if !stream.isAssistantMessage(messageID) {
+				return false
+			}
+		}
+	}
+	if messageID, _ := properties["messageID"].(string); messageID != "" {
+		owned = true
+		if !stream.isAssistantMessage(messageID) {
+			return false
+		}
+	}
+	return owned
 }
 
 func (stream *openCodeV1EventStream) projectV1Tool(eventID string, part map[string]any) (domain.Event, bool, error) {
