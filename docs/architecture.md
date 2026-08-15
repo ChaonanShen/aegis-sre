@@ -7,8 +7,8 @@ Aegis SRE 保留原产品的总体形态：用户在 Grafana 插件中完成告�
 核心原则：
 
 1. **一个无状态产品控制面**：业务 API、授权收敛、协议归一化和 Provider 适配统一放在 Control Plane，不创建互相调用的小型自研服务群，也不预建产品影子数据库。
-2. **Provider 拥有运行数据**：Agent 对话、RAG 索引、DAG 运行分别由 Codex/OpenCode、RAGFlow、Dagu 保存。
-3. **公共契约不出现 Provider 类型**：前端不知道 RAGFlow Dataset ID、Dagu 文件路径或 Codex Thread ID。
+2. **Provider 拥有运行数据**：Agent 对话、RAG 索引、DAG 运行分别由 Codex/OpenCode、当前 Knowledge Provider、Dagu 保存。
+3. **公共契约不出现 Provider 类型**：前端不知道 RAGFlow/RAGLite 内部 ID、Dagu 文件路径或 Codex Thread ID。
 4. **MCP 用于工具访问，REST 用于产品管理**：Agent 调工具走 MCP；插件 CRUD、分页、状态管理走 Control Plane REST。
 5. **原生格式是事实来源**：Playbook 使用 Dagu YAML，不维护 Aegis 自有 DSL。
 6. **默认只读，写操作显式升级**：Grafana 和 Dagu 的写能力使用独立凭据、白名单和审批路径。
@@ -28,7 +28,9 @@ flowchart LR
 
     AgentPort --> Codex["Codex App Server"]
     AgentPort -. "替换" .-> OpenCode["OpenCode Server"]
-    KnowledgePort --> RAGFlow["RAGFlow REST API"]
+    KnowledgePort --> KnowledgeFactory["Knowledge Provider Factory"]
+    KnowledgeFactory --> RAGLite["RAGLite Provider REST"]
+    KnowledgeFactory -. "回退" .-> RAGFlow["RAGFlow REST API"]
     PlaybookPort --> Dagu["Dagu REST API"]
 
     Codex --> GrafanaMCP["Grafana MCP"]
@@ -60,9 +62,9 @@ flowchart LR
 
 不负责：
 
-- 直接连接 Codex/OpenCode、RAGFlow、Dagu 或 MCP Server。
+- 直接连接 Codex/OpenCode、RAGFlow/RAGLite、Dagu 或 MCP Server。
 - 保存 Provider 凭据。
-- 判断可访问的 RAGFlow Dataset。
+- 判断可访问的 Provider Dataset/Collection。
 - 解释 Codex/OpenCode 私有事件结构。
 
 ### 3.2 Plugin Backend
@@ -153,11 +155,13 @@ Actor fail-closed。该限制用于在不建立影子表的前提下形成真实
 
 ### 3.5 Knowledge Provider 与 Knowledge MCP
 
-Knowledge/RAGFlow 代码保留，但默认通过 `AEGIS_KNOWLEDGE_ENABLED=false` fail-closed；未显式
-启用时不装配 RAGFlow Provider、不注册 Knowledge MCP，也不启动任何 RAGFlow 组件。Knowledge
+Knowledge Provider 默认通过 `AEGIS_KNOWLEDGE_ENABLED=false` fail-closed；未显式启用时不装配
+任何 Provider、不注册 Knowledge MCP，也不启动任何 Knowledge 组件。Knowledge
 只在独立的可选部署叠加文件中启用，不能成为 Agent 或 Playbook 的启动依赖。
 
-RAGFlow REST API 负责管理面：
+首个迁移周期通过 `AEGIS_KNOWLEDGE_PROVIDER=raglite|ragflow` 在部署级选择单一实现；不按
+Collection 或 Document 动态混用。RAGLite 是默认目标，RAGFlow 在切换后保留一到两个发布周期的
+显式回退能力。两者通过 `KnowledgeProvider` 提供相同的产品管理面：
 
 - Dataset CRUD。
 - 文档上传、解析、停止和删除。
@@ -172,12 +176,14 @@ knowledge.get_document
 knowledge.list_sources
 ```
 
-Agent 传公共资源 ID、Service 或当前 Folder 上下文。Control Plane 完成范围收敛后，由 Knowledge Adapter 使用 RAGFlow 原生资源和 metadata 查询；Provider 内部 ID 不进入前端契约。RAGFlow 原生 MCP 可作为单租户开发调试工具，但不作为正式授权入口。
+Agent 传公共资源 ID、Service 或当前 Folder 上下文。Control Plane 完成范围收敛后，由当前
+Knowledge Adapter 使用 Provider 原生资源和 metadata 查询；Provider 内部 ID 不进入前端契约。
+Provider 原生 MCP 不作为正式授权入口。
 
 阶段 8 按 ADR 0004 使用确定性公共标识而不建立映射表：KnowledgeBase ID 由 Actor 范围、
-Folder UID 和幂等键派生，Document ID 由 KnowledgeBase ID 和幂等键派生。RAGFlow Dataset
-使用确定性名称，Document 的公共 ID、原始文件名、Service、标签和内容摘要保存在原生
-`meta_fields`。公共 ID 只用于定位，不是授权凭据；每次操作都重新校验可信 Actor 与 Folder 范围。
+Folder UID 和幂等键派生，Document ID 由 KnowledgeBase ID 和幂等键派生。公共 ID、原始文件名、
+Service、标签、内容摘要和 scope 保存在 Provider 原生 metadata。公共 ID 只用于定位，不是授权
+凭据；每次操作都重新校验可信 Actor 与 Folder 范围。
 
 Knowledge 所需的最小 Folder 授权从阶段 10 前置到阶段 8。Plugin Backend 丢弃浏览器提供的身份和
 Folder 转发头，使用 Grafana 后端身份校验 `folders:uid:<uid>` 权限后再注入可信上下文。Control
@@ -220,7 +226,7 @@ Dagu REST API 必须启用独立服务凭据。Control Plane 从只读挂载的�
 | --- | --- | --- |
 | Grafana Folder、Dashboard、告警、标签和权限 | Grafana | 按 Actor Context 查询和收敛，不复制 |
 | Agent Session、Turn、消息、工具调用和 Agent Approval | Codex/OpenCode | 直接 list/read/resume/archive/delete 与流转，不保存映射、状态、消息或事件历史 |
-| KnowledgeBase/Dataset、Document、解析状态、Chunk、Embedding 和索引 | RAGFlow | 直接适配与授权收敛，不建立影子资源 |
+| KnowledgeBase/Collection、Document、解析状态、Chunk、Embedding 和索引 | 当前 Knowledge Provider（目标 RAGLite，回退 RAGFlow） | 直接适配与授权收敛，不建立跨 Provider 影子资源 |
 | Playbook YAML、Run、Step、Human Task、Approval、日志和 Artifact | Dagu | 直接适配，不保存映射或摘要索引 |
 | request/trace ID | 请求上下文与可观测性后端 | 传播并写结构化日志，不作为业务记录保存 |
 | 幂等状态 | 对应 Provider | 适配 Provider 原生能力或调用方生成的稳定操作 ID |
@@ -285,7 +291,7 @@ Thread/Turn/Item 重建最终会话视图。若 Provider 不能重放断线期�
 Grafana + Aegis Plugin
 Aegis Control Plane
 Codex App Server 或 OpenCode Server
-RAGFlow 及其官方依赖
+RAGLite Provider（默认目标）或 RAGFlow（迁移期回退）
 Dagu Server / Scheduler / Worker
 Grafana MCP Read
 Grafana MCP Write（按需）

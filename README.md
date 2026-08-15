@@ -80,7 +80,9 @@ npm run build
 - [目标架构](docs/architecture.md)
 - [详细实施计划](docs/implementation-plan.md)
 - [迁移记录](docs/migration-notes.md)
-- [RAGFlow 替换调研](docs/research/knowledge-base-replacement-research.md)
+- [轻量 Knowledge Provider 替换调研](docs/research/lightweight-rag-replacement-research.md)
+- [RAGLite 接入详细调研](docs/research/raglite-integration-research.md)
+- [历史 RAGFlow 选型调研](docs/research/knowledge-base-replacement-research.md)
 
 ## 当前明确不做的事情
 
