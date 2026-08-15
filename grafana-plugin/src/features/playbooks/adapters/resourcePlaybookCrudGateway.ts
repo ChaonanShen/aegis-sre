@@ -111,7 +111,9 @@ export function createResourcePlaybookCrudGateway(
       }));
     },
     streamRun(runId, afterSequence, signal) {
-      return streamRun(clientBackend(), runId, afterSequence, signal);
+      return streamRunEvents(clientBackend(), runId, afterSequence, signal, async () =>
+        toRun(await client().request(runPath(runId), isRun, { signal }))
+      );
     },
     async completeHumanTask(runId, stepId, input, idempotencyKey, signal) {
       await client().requestVoid(`${runPath(runId)}/human-tasks/${encodeURIComponent(stepId)}:complete`, {
@@ -281,7 +283,13 @@ function runPath(id: string) {
   return `/api/v1/runs/${encodeURIComponent(id)}`;
 }
 
-async function* streamRun(backend: BackendSrv, runId: string, afterSequence: number, signal?: AbortSignal): AsyncGenerator<PlaybookRunRecord> {
+async function* streamRunEvents(
+  backend: BackendSrv,
+  runId: string,
+  afterSequence: number,
+  signal: AbortSignal | undefined,
+  readSnapshot: () => Promise<PlaybookRunRecord>
+): AsyncGenerator<PlaybookRunRecord> {
   const request: BackendSrvRequest = {
     url: `${PLUGIN_RESOURCE_BASE_URL}/api/v1/runs/${encodeURIComponent(runId)}/events?after_sequence=${afterSequence}`,
     method: 'GET', abortSignal: signal, showErrorAlert: false, validatePath: true,
@@ -293,10 +301,12 @@ async function* streamRun(backend: BackendSrv, runId: string, afterSequence: num
     }
     for (const data of decoder.push(response.data)) {
       const event = JSON.parse(data) as { event_type?: string; payload?: unknown };
-      if (event.event_type !== 'run.updated' || !isRun(event.payload)) {
+      const payload = record(event.payload);
+      if (event.event_type !== 'run.updated' || !isRunStatus(payload?.status)) {
         continue;
       }
-      yield toRun(event.payload);
+      // run.updated 只承诺轻量状态；完整 Step/时间信息始终从 Run 快照读取。
+      yield await readSnapshot();
     }
   }
   decoder.finish();

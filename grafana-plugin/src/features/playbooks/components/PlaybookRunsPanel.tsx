@@ -179,16 +179,16 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
     <section className="playbook-runs">
       <header>
         <div><h2>运行记录</h2><small>状态直接来自 Dagu，运行期间自动刷新。</small></div>
-        {activeRun || latestRun ? (
-          <div className="playbook-run-actions">
-            {latestRun && (latestRun.status === 'failed' || latestRun.status === 'cancelled') && (
-              <button className="playbook-button secondary" disabled={busy} onClick={() => void retry()} type="button">重试运行</button>
-            )}
-            {activeRun && <button className="playbook-button danger" disabled={busy} onClick={() => void cancel()} type="button">取消运行</button>}
-          </div>
-        ) : (
-          <button className="playbook-button primary" disabled={busy} onClick={() => void start()} type="button">{busy ? '启动中…' : '运行 Playbook'}</button>
-        )}
+        <div className="playbook-run-actions">
+          {latestRun && (latestRun.status === 'failed' || latestRun.status === 'cancelled') && (
+            <button className="playbook-button secondary" disabled={busy} onClick={() => void retry()} type="button">重试运行</button>
+          )}
+          {activeRun ? (
+            <button className="playbook-button danger" disabled={busy} onClick={() => void cancel()} type="button">取消运行</button>
+          ) : (
+            <button className="playbook-button primary" disabled={busy} onClick={() => void start()} type="button">{busy ? '启动中…' : '运行 Playbook'}</button>
+          )}
+        </div>
       </header>
       {parameters.length > 0 && !activeRun && (
         <div className="playbook-run-params">

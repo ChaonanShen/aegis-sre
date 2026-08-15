@@ -97,6 +97,22 @@ describe('Control Plane Playbook CRUD gateway', () => {
     ]);
   });
 
+  test('refreshes the full run snapshot for status-only SSE events', async () => {
+    const terminal = { ...run, status: 'succeeded', sequence: 2, ended_at: '2026-08-14T10:00:02Z' };
+    const event = new TextEncoder().encode('event: run.updated\ndata: {"event_type":"run.updated","payload":{"status":"succeeded"}}\n\n');
+    const backend = {
+      fetch: jest.fn(() => of(response(terminal))),
+      chunked: jest.fn(() => of(response(event))),
+    } as unknown as BackendSrv;
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+
+    const snapshots = [];
+    for await (const snapshot of gateway.streamRun!('run_abcdefgh', 0)) snapshots.push(snapshot);
+
+    expect(snapshots).toEqual([expect.objectContaining({ id: 'run_abcdefgh', status: 'succeeded' })]);
+    expect(backend.fetch).toHaveBeenCalledWith(expect.objectContaining({ url: expect.stringContaining('/runs/run_abcdefgh') }));
+  });
+
   test('completes human tasks, resolves approvals and projects artifacts', async () => {
     const backend = fakeBackend([
       undefined,

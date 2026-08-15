@@ -267,6 +267,7 @@ Provider 数据归属与标识策略复核：
 - [x] 展示 Run、Step、Human Task、Approval 和 Artifact（日志展示仍待补稳定契约）。
 - [x] 删除真实模式下的 Playbook fixture fallback。
 - [x] 通过真实 Dagu Run 验证多个 `mcp.call` 查询节点和汇总 Artifact。
+- [x] 历史 Run 不阻止再次执行；`run.updated` 作为快照失效通知驱动完整 Run 刷新，终态无需手动刷新页面。
 
 本轮保证 Playbook 可以从 Grafana 插件执行并处理人工交互；不把 Dagu UI 当作最终产品界面。日志展示仍因缺少稳定的 provider-neutral API 暂缓，不能把 Provider 私有日志协议直接泄漏到前端。
 
