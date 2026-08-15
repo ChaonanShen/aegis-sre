@@ -619,6 +619,10 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description Persisted user/assistant message count; null when the provider cannot supply it in a list operation. */
+            message_count?: number | null;
+            /** @description Latest user message preview; null when unavailable without loading session detail. */
+            preview?: string | null;
         };
         SessionPage: components["schemas"]["PageMetadata"] & {
             items: components["schemas"]["Session"][];

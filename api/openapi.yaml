@@ -913,6 +913,15 @@ components:
         updated_at:
           type: string
           format: date-time
+        message_count:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Persisted user/assistant message count; null when the provider cannot supply it in a list operation.
+        preview:
+          type: string
+          nullable: true
+          description: Latest user message preview; null when unavailable without loading session detail.
     SessionPage:
       allOf:
         - $ref: '#/components/schemas/PageMetadata'

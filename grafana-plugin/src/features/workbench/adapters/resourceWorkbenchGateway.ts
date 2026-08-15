@@ -354,6 +354,9 @@ function toCanvasPreview(projection: ContractCanvasProjection): OpenedSession['c
 }
 
 function toSessionSummary(session: ContractSession, messages: WorkbenchMessage[] = []): SessionSummary {
+  const enriched = session as ContractSession & { message_count?: number | null; preview?: string | null };
+  const messageCount = enriched.message_count ?? (messages.length ? messages.length : undefined);
+  const preview = enriched.preview ?? [...messages].reverse().find(({ role }) => role === 'user')?.content;
   return {
     id: session.id,
     title: session.title,
@@ -363,8 +366,8 @@ function toSessionSummary(session: ContractSession, messages: WorkbenchMessage[]
     status: session.status === 'archived' ? 'archived' : 'active',
     visibility: 'private',
     updatedAt: session.updated_at,
-    messageCount: messages.length,
-    preview: [...messages].reverse().find(({ role }) => role === 'user')?.content ?? '',
+    messageCount,
+    preview: preview ?? '',
   };
 }
 

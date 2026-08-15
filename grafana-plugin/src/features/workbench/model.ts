@@ -15,7 +15,7 @@ export interface SessionSummary {
   visibility: SessionVisibility;
   forkedFrom?: string;
   updatedAt: string;
-  messageCount: number;
+  messageCount?: number;
   preview: string;
 }
 

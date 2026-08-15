@@ -319,7 +319,19 @@ func (provider *Provider) projectThread(thread codexThread, archived bool) (port
 	} else if thread.Status.Type == "active" {
 		status = domain.SessionBusy
 	}
-	return ports.AgentSession{Ref: ports.AgentSessionRef{ID: id}, Title: title, Status: status, CreatedAt: time.Unix(thread.CreatedAt, 0).UTC(), UpdatedAt: time.Unix(thread.UpdatedAt, 0).UTC()}, nil
+	messageCount := 0
+	for _, turn := range thread.Turns {
+		for _, raw := range turn.Items {
+			var item struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(raw, &item) == nil && (item.Type == "userMessage" || item.Type == "agentMessage") {
+				messageCount++
+			}
+		}
+	}
+	preview := thread.Preview
+	return ports.AgentSession{Ref: ports.AgentSessionRef{ID: id}, Title: title, Status: status, CreatedAt: time.Unix(thread.CreatedAt, 0).UTC(), UpdatedAt: time.Unix(thread.UpdatedAt, 0).UTC(), MessageCount: &messageCount, Preview: &preview}, nil
 }
 
 func (provider *Provider) projectMessages(thread codexThread) ([]ports.AgentMessage, error) {

@@ -172,6 +172,9 @@ func TestAgentSessionListAndCreateUseStablePublicContract(t *testing.T) {
 	if !strings.Contains(list.Body.String(), `"next_cursor":"next"`) || strings.Contains(list.Body.String(), "provider") || strings.Contains(list.Body.String(), "folder_uid") {
 		t.Fatalf("unstable session response: %s", list.Body.String())
 	}
+	if !strings.Contains(list.Body.String(), `"message_count":null`) || !strings.Contains(list.Body.String(), `"preview":null`) {
+		t.Fatalf("missing nullable session summary fields: %s", list.Body.String())
+	}
 
 	createRequest := actorRequest(http.MethodPost, "/api/v1/sessions", `{"title":"Investigate latency","folder_uid":"folder-a"}`)
 	createRequest.Header.Set("Idempotency-Key", "create-session-1")

@@ -302,7 +302,7 @@ func validAgentText(value string, limit int) bool {
 }
 
 func agentSessionJSON(session ports.AgentSession) map[string]any {
-	return map[string]any{"id": session.Ref.ID, "title": session.Title, "status": session.Status, "created_at": session.CreatedAt, "updated_at": session.UpdatedAt}
+	return map[string]any{"id": session.Ref.ID, "title": session.Title, "status": session.Status, "created_at": session.CreatedAt, "updated_at": session.UpdatedAt, "message_count": session.MessageCount, "preview": session.Preview}
 }
 
 func agentSessionDetailJSON(detail ports.AgentSessionDetail) map[string]any {

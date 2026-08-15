@@ -119,6 +119,9 @@ func TestProviderListsAndCreatesSessionsWithoutLeakingCodexIDs(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || !page.HasMore || page.Items[0].Status != domain.SessionBusy || string(page.Items[0].Ref.ID) == threadUUID {
 		t.Fatalf("page = %#v, err = %v", page, err)
 	}
+	if page.Items[0].MessageCount == nil || *page.Items[0].MessageCount != 0 || page.Items[0].Preview == nil || *page.Items[0].Preview != "preview" {
+		t.Fatalf("session summary = %#v", page.Items[0])
+	}
 	if fake.calls[0].method != "thread/list" || fake.calls[0].params["archived"] != false || fake.calls[0].params["cursor"] != "cursor" || fake.calls[0].params["limit"] != float64(25) {
 		t.Fatalf("list call = %#v", fake.calls[0])
 	}
