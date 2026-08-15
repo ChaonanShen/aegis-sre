@@ -6,6 +6,8 @@ DAGU_VERSION := v2.13.0
 DAGU_BIN ?= dagu
 CODEX_VERSION := 0.144.4
 CODEX_BIN ?= codex
+UV_VERSION := 0.8.4
+UV_BIN ?= uv
 
 verify: contracts-check codex-schema-check control-plane-test control-plane-build dagu-validate grafana-mcp-config-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
@@ -56,10 +58,12 @@ grafana-mcp-config-check:
 	GRAFANA_URL=http://grafana:3000 GRAFANA_READ_TOKEN_FILE=/run/secrets/read GRAFANA_WRITE_TOKEN_FILE=/run/secrets/write docker compose -f deploy/grafana-mcp/compose.yaml config --quiet
 
 raglite-provider-test:
-	cd providers/raglite && uv run --extra test --locked pytest
+	@test "$$($(UV_BIN) --version | cut -d ' ' -f 2)" = "$(UV_VERSION)" || (echo "expected uv $(UV_VERSION)" >&2; exit 1)
+	cd providers/raglite && $(UV_BIN) run --extra test --locked pytest
 
 raglite-provider-lint:
-	cd providers/raglite && uv run --extra test --locked ruff check .
+	@test "$$($(UV_BIN) --version | cut -d ' ' -f 2)" = "$(UV_VERSION)" || (echo "expected uv $(UV_VERSION)" >&2; exit 1)
+	cd providers/raglite && $(UV_BIN) run --extra test --locked ruff check .
 
 raglite-config-check:
 	docker compose -f compose.yaml -f deploy/raglite/compose.yaml config --quiet

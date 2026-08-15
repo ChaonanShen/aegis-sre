@@ -36,7 +36,8 @@ aegis-sre/
 
 ## 本地验证与运行
 
-要求 Go 1.26、Node.js 22、Docker Compose、`jq` 和 `openssl`；当前阶段不需要自有数据库。
+要求 Go 1.26、Node.js 22、Docker Compose、`jq` 和 `openssl`；验证 RAGLite sidecar 还需要
+`uv 0.8.4`。当前阶段不需要 Control Plane 自有数据库。
 
 ```bash
 make verify
