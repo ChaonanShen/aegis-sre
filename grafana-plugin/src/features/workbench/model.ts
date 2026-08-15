@@ -1,5 +1,4 @@
 import { Folder } from '../../app/model';
-import type { Query as ContractQuery } from '../../api/generated/pluginBackend';
 
 export type SessionStatus = 'active' | 'archived';
 export type SessionVisibility = 'private' | 'team';
@@ -37,7 +36,19 @@ export interface SavedChartPreview {
   /** 持久化的 Dashboard v2 VizConfig，不包含查询、布局或查询结果。 */
   vizConfig?: unknown;
   /** 持久化 Query；range 是不会随刷新漂移的绝对时间范围。 */
-  query?: ContractQuery;
+  query?: SavedQuery;
+}
+
+export interface SavedQuery {
+  id: string;
+  session_id: string;
+  version: number;
+  spec: {
+    datasource_uid: string;
+    expression: string;
+    range: { from: string; to: string; step_seconds: number };
+  };
+  created_at: string;
 }
 
 export interface ToolCall {

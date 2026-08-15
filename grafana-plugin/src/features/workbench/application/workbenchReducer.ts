@@ -1,5 +1,4 @@
-import { AgentEvent, OpenedSession, SavedChartPreview, ToolCall, WorkbenchMessage } from '../model';
-import type { Query as ContractQuery } from '../../../api/generated/pluginBackend';
+import { AgentEvent, OpenedSession, SavedChartPreview, SavedQuery, ToolCall, WorkbenchMessage } from '../model';
 
 export interface ApplyAgentEventResult {
   session: OpenedSession;
@@ -235,7 +234,7 @@ function chartFromPrometheusCall(toolCall: ToolCall | undefined, sessionId: stri
   }
   const callID = safeChartID(toolCall.id);
   const queryID = `query_${callID}`;
-  const query: ContractQuery = {
+  const query: SavedQuery = {
     id: queryID,
     session_id: sessionId,
     version: 1,
@@ -284,7 +283,7 @@ function isGrafanaPrometheusCall(toolCall: ToolCall): boolean {
   return server === 'grafana' || server.startsWith('grafana-') || server === 'agent';
 }
 
-function normalizedRange(args: PrometheusToolArguments): ContractQuery['spec']['range'] | undefined {
+function normalizedRange(args: PrometheusToolArguments): SavedQuery['spec']['range'] | undefined {
   const nested = isRecord(args.range) ? args.range : undefined;
   const from = firstString(nested?.from, nested?.start, args.startTime) ?? relativeTime(60 * 60);
   const to = firstString(nested?.to, nested?.end, args.endTime) ?? 'now';
