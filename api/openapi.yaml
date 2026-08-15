@@ -941,10 +941,7 @@ components:
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
-        version:
-          type: integer
-          format: int64
-          minimum: 1
+        version: {type: integer, format: int64, minimum: 1}
         datasource_uid:
           type: string
           minLength: 1

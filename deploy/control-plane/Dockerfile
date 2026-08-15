@@ -16,7 +16,8 @@ COPY --from=build /out/control-plane /usr/local/bin/control-plane
 ENV CODEX_HOME=/var/lib/aegis/codex \
     AEGIS_CODEX_COMMAND=/usr/local/bin/codex \
     AEGIS_AGENT_WORKING_DIRECTORY=/workspace
-VOLUME ["/var/lib/aegis/codex", "/var/lib/aegis/canvas"]
+VOLUME ["/var/lib/aegis/codex"]
+VOLUME ["/var/lib/aegis/canvas"]
 WORKDIR /workspace
 USER node
 ENTRYPOINT ["/usr/local/bin/control-plane"]
