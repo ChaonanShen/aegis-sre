@@ -1,0 +1,30 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "aegis-raglite-provider"
+version = "0.1.0"
+description = "Internal RAGLite Knowledge Provider for Aegis SRE"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+  "fastapi==0.116.1",
+  "python-multipart==0.0.20",
+  "raglite[pandoc,llama-cpp-python]==1.1.1",
+  "uvicorn[standard]==0.35.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "httpx==0.28.1",
+  "pytest==8.4.1",
+  "pytest-cov==6.2.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aegis_raglite_provider"]
+
+[tool.pytest.ini_options]
+addopts = "-q --strict-markers"
+testpaths = ["tests"]
+
