@@ -19,6 +19,9 @@ const maxQueryDataPoints = 10_000;
 const defaultFieldConfig: FieldConfigSource = { defaults: {}, overrides: [] };
 const supportedPanelPlugins = new Set(['timeseries', 'stat', 'gauge', 'barchart']);
 
+// Grafana 会用 requestId 取消同 ID 的前序请求；毫秒时间戳不足以区分同批恢复的多张图。
+let panelQueryRequestSequence = 0;
+
 // PanelRenderer 在当前锁定的 @grafana/runtime 13.0.2 中仍标记为 @internal。
 // 查询使用公开的 DataSourceApi；原生 panel 渲染目前没有无需引入 Scenes 的等价稳定入口。
 // 因此这里只接受当前稳定的 Canvas v1 或 Grafana 13.x VizConfig，升级 Grafana 主版本时必须重新做 canary 验证。
@@ -411,7 +414,7 @@ function buildQueryRequest(definition: QueryExecutionDefinition, datasourceType:
     throw new Error(`Query 最多允许 ${maxQueryDataPoints.toLocaleString()} 个数据点。`);
   }
   return {
-    requestId: `torchbearing-${Date.now()}`,
+    requestId: nextPanelQueryRequestId(),
     interval: `${definition.stepSeconds}s`,
     intervalMs,
     maxDataPoints,
@@ -428,6 +431,11 @@ function buildQueryRequest(definition: QueryExecutionDefinition, datasourceType:
     app: CoreApp.PanelViewer,
     startTime: Date.now(),
   };
+}
+
+function nextPanelQueryRequestId(): string {
+  panelQueryRequestSequence++;
+  return `aegis-canvas-${Date.now()}-${panelQueryRequestSequence}`;
 }
 
 function parseAbsoluteRange(
