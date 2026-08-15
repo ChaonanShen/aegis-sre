@@ -525,6 +525,8 @@ SQLite 只包含下列 Canvas 聚合数据，不建立 `sessions`、`turns`、`m
 - [ ] 先用固定 Provider 版本合同测试确认两者都能保留 Canvas MCP 的成功结果。
 - [x] 增加 `canvas.updated` 公共事件，payload 只含 Session ID、Chart ID、operation 和 revision；不得透传
   Provider tool result。若实时事件丢失，持久化仍已完成，重新 GET Canvas 必须恢复，不增加 Event Store。
+- [ ] OpenCode 1.18.18 采用混合协议：V2 仅创建调用方 Session ID，V1 `prompt_async`、MCP 执行和全局
+  `/event` 负责 Agent 回合；V1 事件在 Adapter 内转换，不改变 Canvas 或公共 Session 契约。
 
 完成门禁：Codex 与 OpenCode 使用同一 MCP schema 完成“自然语言 -> PromQL -> Grafana 查询成功 ->
 发布 Query-backed Chart”，失败路径不产生数据库记录。
