@@ -3,18 +3,26 @@ package canvas
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/1024XEngineer/aegis-sre/internal/domain"
 	"github.com/1024XEngineer/aegis-sre/internal/ports"
 )
 
 type Service struct {
-	agents ports.AgentProvider
-	store  ports.CanvasStore
+	agents    ports.AgentProvider
+	store     ports.CanvasStore
+	mu        sync.RWMutex
+	nextEvent uint64
+	subs      map[string]map[chan domain.Event]struct{}
 }
 
 func New(agents ports.AgentProvider, store ports.CanvasStore) *Service {
-	return &Service{agents: agents, store: store}
+	return &Service{agents: agents, store: store, subs: make(map[string]map[chan domain.Event]struct{})}
 }
 
 func (service *Service) Check(ctx context.Context) error {
@@ -38,7 +46,65 @@ func (service *Service) PublishQueryChart(ctx context.Context, actor domain.Acto
 	if service.store == nil {
 		return domain.CanvasProjection{}, unavailable("Canvas persistence is not configured", nil)
 	}
-	return service.store.PublishQueryChart(ctx, actor, input)
+	projection, err := service.store.PublishQueryChart(ctx, actor, input)
+	if err == nil && projection.ActiveChartID != "" {
+		service.publishEvent(actor, input.SessionID, projection.ActiveChartID, input.OperationID, projection.Revision)
+	}
+	return projection, err
+}
+
+// Subscribe exposes a bounded, best-effort notification stream. The Canvas
+// projection remains the source of truth when a notification is dropped.
+func (service *Service) Subscribe(ctx context.Context, actor domain.ActorContext, sessionID domain.ID) (<-chan domain.Event, func(), error) {
+	if err := actor.Validate(); err != nil || !sessionID.Valid() {
+		return nil, func() {}, invalid("Canvas subscription scope is invalid", err)
+	}
+	key := scopeKey(actor, sessionID)
+	ch := make(chan domain.Event, 8)
+	service.mu.Lock()
+	if service.subs[key] == nil {
+		service.subs[key] = make(map[chan domain.Event]struct{})
+	}
+	service.subs[key][ch] = struct{}{}
+	service.mu.Unlock()
+	var once sync.Once
+	cancel := func() {
+		once.Do(func() {
+			service.mu.Lock()
+			if subscribers := service.subs[key]; subscribers != nil {
+				delete(subscribers, ch)
+				if len(subscribers) == 0 {
+					delete(service.subs, key)
+				}
+			}
+			close(ch)
+			service.mu.Unlock()
+		})
+	}
+	go func() {
+		<-ctx.Done()
+		cancel()
+	}()
+	return ch, cancel, nil
+}
+
+func (service *Service) publishEvent(actor domain.ActorContext, sessionID, chartID domain.ID, operationID string, revision int64) {
+	sequence := atomic.AddUint64(&service.nextEvent, 1)
+	payload, _ := json.Marshal(map[string]any{"chart_id": chartID, "operation_id": operationID, "revision": revision})
+	event := domain.Event{ID: domain.ID(fmt.Sprintf("evt_canvas_%016x", sequence)), Type: domain.EventCanvasUpdated, SessionID: sessionID, Sequence: int64(sequence), OccurredAt: time.Now().UTC(), Payload: payload}
+	key := scopeKey(actor, sessionID)
+	service.mu.RLock()
+	defer service.mu.RUnlock()
+	for subscriber := range service.subs[key] {
+		select {
+		case subscriber <- event:
+		default:
+		}
+	}
+}
+
+func scopeKey(actor domain.ActorContext, sessionID domain.ID) string {
+	return actor.TenantID + "\x00" + actor.OrgID + "\x00" + actor.UserID + "\x00" + string(sessionID)
 }
 
 func (service *Service) UpdateLayout(ctx context.Context, actor domain.ActorContext, input ports.UpdateCanvasInput) (domain.CanvasProjection, error) {

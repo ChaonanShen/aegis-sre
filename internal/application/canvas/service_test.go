@@ -1,9 +1,12 @@
 package canvas
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/1024XEngineer/aegis-sre/internal/domain"
 	"github.com/1024XEngineer/aegis-sre/internal/ports"
@@ -23,6 +26,8 @@ func (fake *storeFake) Get(context.Context, domain.ActorContext, domain.ID) (dom
 }
 func (fake *storeFake) PublishQueryChart(_ context.Context, _ domain.ActorContext, input ports.PublishQueryChartInput) (domain.CanvasProjection, error) {
 	fake.projection.SessionID = input.SessionID
+	fake.projection.ActiveChartID = "cht_abcdefgh"
+	fake.projection.Revision++
 	return fake.projection, nil
 }
 func (fake *storeFake) UpdateLayout(_ context.Context, _ domain.ActorContext, input ports.UpdateCanvasInput) (domain.CanvasProjection, error) {
@@ -59,5 +64,30 @@ func TestServiceDoesNotTreatMissingCanvasStoreAsEmpty(t *testing.T) {
 	var appErr *domain.AppError
 	if !errors.As(err, &appErr) || appErr.Code != domain.ErrorCapabilityUnavailable {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestServicePublishesBoundedCanvasUpdatedNotification(t *testing.T) {
+	store := &storeFake{}
+	agents := &contracttest.AgentProvider{SessionDetail: ports.AgentSessionDetail{Session: ports.AgentSession{Status: domain.SessionActive}}}
+	service := New(agents, store)
+	actor := domain.ActorContext{TenantID: "t", OrgID: "o", UserID: "u"}
+	updates, cancel, err := service.Subscribe(context.Background(), actor, "ses_abcdefgh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cancel()
+	spec := domain.QueryChartSpec{DatasourceUID: "prom", Expression: "up", From: time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 8, 15, 1, 0, 0, 0, time.UTC), StepSeconds: 30, Title: "up", Visualization: "timeseries", VizConfig: json.RawMessage(`{"kind":"VizConfig","group":"timeseries","version":"v1","spec":{"options":{},"fieldConfig":{}}}`)}
+	projection, err := service.PublishQueryChart(context.Background(), actor, ports.PublishQueryChartInput{SessionID: "ses_abcdefgh", OperationID: "operation-1", RequestHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Spec: spec})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-updates:
+		if event.Type != domain.EventCanvasUpdated || event.SessionID != "ses_abcdefgh" || event.Sequence == 0 || !bytes.Contains(event.Payload, []byte(string(projection.ActiveChartID))) {
+			t.Fatalf("event=%+v", event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Canvas update notification not delivered")
 	}
 }

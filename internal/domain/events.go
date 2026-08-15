@@ -18,6 +18,7 @@ const (
 	EventTurnCompleted     EventType = "turn.completed"
 	EventTurnFailed        EventType = "turn.failed"
 	EventRunUpdated        EventType = "run.updated"
+	EventCanvasUpdated     EventType = "canvas.updated"
 )
 
 type Event struct {
