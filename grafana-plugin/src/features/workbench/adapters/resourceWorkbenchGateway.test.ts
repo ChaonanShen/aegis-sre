@@ -13,6 +13,23 @@ describe('Control Plane Workbench gateway', () => {
     ]);
   });
 
+  test('loads every session page through the opaque cursor', async () => {
+    const second = { ...session, id: 'ses_second123', title: 'Second' };
+    const backendSrv = {
+      fetch: jest
+        .fn()
+        .mockReturnValueOnce(of({ data: { items: [session], has_more: true, next_cursor: 'next page' }, status: 200 } as FetchResponse))
+        .mockReturnValueOnce(of({ data: { items: [second], has_more: false }, status: 200 } as FetchResponse)),
+    } as unknown as BackendSrv;
+    const gateway = createResourceWorkbenchGateway({ backendSrv });
+
+    await expect(gateway.listSessions()).resolves.toEqual([
+      expect.objectContaining({ id: session.id }),
+      expect.objectContaining({ id: second.id }),
+    ]);
+    expect((backendSrv.fetch as jest.Mock).mock.calls[1][0].url).toContain('?cursor=next%20page');
+  });
+
   test('creates a session with an idempotency key and without browser Folder authority', async () => {
     const backendSrv = fakeBackend({ data: session });
     const gateway = createResourceWorkbenchGateway({ backendSrv });

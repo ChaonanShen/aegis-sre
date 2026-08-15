@@ -40,8 +40,18 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
 
   return {
     async listSessions(signal) {
-      const page = await resources().request(sessionsPath, isSessionPage, { signal });
-      return page.items.map((session) => toSessionSummary(session));
+      const items: SessionSummary[] = [];
+      let cursor = '';
+      do {
+        const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+        const page = await resources().request(`${sessionsPath}${query}`, isSessionPage, { signal });
+        items.push(...page.items.map((session) => toSessionSummary(session)));
+        cursor = page.has_more ? page.next_cursor ?? '' : '';
+        if (page.has_more && !cursor) {
+          throw new ResourceClientError(502, 'provider_unavailable', '会话分页响应缺少 next_cursor。');
+        }
+      } while (cursor);
+      return items;
     },
     async openSession(sessionId, signal) {
       const [detail, canvas] = await Promise.all([
