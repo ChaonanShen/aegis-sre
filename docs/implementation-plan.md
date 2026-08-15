@@ -560,7 +560,7 @@ SQLite 只包含下列 Canvas 聚合数据，不建立 `sessions`、`turns`、`m
   samples/series/frames、截图、Provider ID 或凭据；日志测试证明不输出 PromQL 全文和 DB path。
 - [x] 暴露低基数指标：Canvas 读写耗时/错误、revision conflict、MCP 发布结果、SQLite busy、migration
   version 和 DB 文件大小；不得把 Session/Chart/Datasource ID 放进 metric label。当前端点提供 Canvas
-  操作计数、错误、冲突、通知和累计耗时；SQLite busy、migration version、DB 文件大小仍由部署侧观测。
+  操作计数、发布计数、错误、冲突、通知、SQLite busy、migration version、DB 文件大小和累计耗时。
 - [x] 更新本地 smoke、部署文档、备份恢复 runbook 和发布说明。先在单实例环境开启
   `AEGIS_CANVAS_ENABLED=true`；回滚前做一致备份，旧二进制不得对新 Schema 执行写入。
 
