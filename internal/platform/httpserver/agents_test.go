@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -42,6 +43,27 @@ func (contextCanvasFake) Subscribe(context.Context, domain.ActorContext, domain.
 	return nil, func() {}, nil
 }
 
+type eventCanvasFake struct{ events <-chan domain.Event }
+
+func (fake eventCanvasFake) Delete(context.Context, domain.ActorContext, domain.ID) error { return nil }
+func (fake eventCanvasFake) Subscribe(context.Context, domain.ActorContext, domain.ID) (<-chan domain.Event, func(), error) {
+	return fake.events, func() {}, nil
+}
+
+type delayedEOFStream struct{}
+
+func (delayedEOFStream) Next(ctx context.Context) (domain.Event, error) {
+	timer := time.NewTimer(20 * time.Millisecond)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return domain.Event{}, io.EOF
+	case <-ctx.Done():
+		return domain.Event{}, ctx.Err()
+	}
+}
+func (delayedEOFStream) Close() error { return nil }
+
 func TestCanvasTurnContextCarriesPublicSessionAndPublishRules(t *testing.T) {
 	context := canvasTurnContext(contextCanvasFake{}, "ses_abcdefgh")
 	if !strings.Contains(context, "session_id is ses_abcdefgh") || !strings.Contains(context, "query_prometheus range") || !strings.Contains(context, "canvas.publish_query_chart") {
@@ -49,6 +71,21 @@ func TestCanvasTurnContextCarriesPublicSessionAndPublishRules(t *testing.T) {
 	}
 	if canvasTurnContext(nil, "ses_abcdefgh") != "" {
 		t.Fatal("disabled Canvas unexpectedly added turn context")
+	}
+}
+
+func TestSessionSSEIncludesCanvasUpdatedNotification(t *testing.T) {
+	updates := make(chan domain.Event, 1)
+	updates <- domain.Event{ID: "evt_canvas_0000000000000001", Type: domain.EventCanvasUpdated, SessionID: "ses_abcdefgh", Sequence: 1, OccurredAt: time.Now().UTC(), Payload: json.RawMessage(`{"chart_id":"cht_abcdefgh","operation_id":"operation-1","revision":1}`)}
+	close(updates)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/sessions/ses_abcdefgh/turns:stream", nil)
+	request.Header.Set(headerTenantID, "tenant")
+	request.Header.Set(headerOrgID, "org")
+	request.Header.Set(headerUserID, "user")
+	response := httptest.NewRecorder()
+	streamSSE(response, request, delayedEOFStream{}, eventCanvasFake{events: updates})
+	if !strings.Contains(response.Body.String(), "event: canvas.updated") || !strings.Contains(response.Body.String(), `"revision":1`) {
+		t.Fatalf("SSE body = %s", response.Body.String())
 	}
 }
 
