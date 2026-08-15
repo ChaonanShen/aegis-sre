@@ -328,7 +328,9 @@ func (stream *runEventStream) Next(ctx context.Context) (domain.Event, error) {
 		return domain.Event{}, err
 	}
 	stream.sequence++
-	payload, _ := json.Marshal(map[string]string{"status": string(state.Status)})
+	payloadValue := runStateJSON(state)
+	payloadValue["sequence"] = stream.sequence
+	payload, _ := json.Marshal(payloadValue)
 	event := domain.Event{ID: domain.ID(fmt.Sprintf("evt_%s_%d", stream.ref.ID, stream.sequence)), Type: domain.EventRunUpdated, RunID: stream.ref.ID, Sequence: stream.sequence, OccurredAt: time.Now().UTC(), Payload: payload}
 	if terminalRunStatus(state.Status) {
 		stream.closed = true
@@ -420,6 +422,40 @@ func waitingRunStatus(steps []ports.PlaybookStepState) domain.RunStatus {
 
 func terminalRunStatus(status domain.RunStatus) bool {
 	return status == domain.RunSucceeded || status == domain.RunFailed || status == domain.RunCancelled
+}
+
+// runStateJSON 生成可直接用于 REST 与 SSE 的完整公开快照，避免事件只携带状态导致客户端丢失步骤信息。
+func runStateJSON(state ports.PlaybookRunState) map[string]any {
+	steps := make([]map[string]any, 0, len(state.Steps))
+	for _, step := range state.Steps {
+		item := map[string]any{"id": step.ID, "name": step.Name, "status": step.Status}
+		if !step.StartedAt.IsZero() {
+			item["started_at"] = step.StartedAt
+		}
+		if !step.FinishedAt.IsZero() {
+			item["ended_at"] = step.FinishedAt
+		}
+		if step.HumanTask != nil {
+			item["human_task"] = step.HumanTask
+		}
+		if step.Approval != nil {
+			item["approval"] = step.Approval
+		}
+		steps = append(steps, item)
+	}
+	value := map[string]any{
+		"id":          state.Ref.ID,
+		"playbook_id": state.Ref.PlaybookID,
+		"status":      state.Status,
+		"started_at":  state.StartedAt,
+		"updated_at":  time.Now().UTC(),
+		"steps":       steps,
+	}
+	if !state.FinishedAt.IsZero() {
+		value["ended_at"] = state.FinishedAt
+		value["updated_at"] = state.FinishedAt
+	}
+	return value
 }
 
 func playbookDAGName(id domain.ID) (string, error) {

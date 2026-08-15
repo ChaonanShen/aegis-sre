@@ -54,10 +54,18 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
           if (mounted.current) setRuns((current) => upsertRun(current, next));
           return;
         }
+        let terminalSeen = false;
         for await (const next of gateway.streamRun(activeRunId, 0, controller.signal)) {
           if (!mounted.current) return;
           setRuns((current) => upsertRun(current, next));
-          if (terminal(next.status)) return;
+          if (terminal(next.status)) {
+            terminalSeen = true;
+            return;
+          }
+        }
+        if (!terminalSeen && mounted.current) {
+          const next = await gateway.getRun(activeRunId, controller.signal);
+          if (mounted.current) setRuns((current) => upsertRun(current, next));
         }
       } catch (reason) {
         if (mounted.current && !isAbortError(reason)) {
