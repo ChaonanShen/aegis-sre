@@ -17,7 +17,8 @@ export interface AegisEvent {
     | "turn.started"
     | "turn.completed"
     | "turn.failed"
-    | "run.updated";
+    | "run.updated"
+    | "canvas.updated";
   session_id?: BusinessId;
   turn_id?: BusinessId;
   run_id?: BusinessId;
@@ -33,7 +34,8 @@ export interface AegisEvent {
     | TurnStarted
     | TurnCompleted
     | TurnFailed
-    | RunUpdated;
+    | RunUpdated
+    | CanvasUpdated;
 }
 export interface MessageDelta {
   delta: string;
@@ -86,4 +88,9 @@ export interface RunUpdated {
   status: "queued" | "running" | "waiting_for_input" | "waiting_for_approval" | "succeeded" | "failed" | "cancelled";
   step_id?: string;
   summary?: string;
+}
+export interface CanvasUpdated {
+  chart_id: BusinessId;
+  operation_id: string;
+  revision: number;
 }

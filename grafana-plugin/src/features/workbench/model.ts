@@ -171,5 +171,6 @@ export type AgentEvent =
     }
   | { type: 'interrupt'; payload: PendingHITL }
   | { type: 'folder_changed'; payload: { folderUid: string } }
+  | { type: 'canvas_updated'; payload: { sessionId: string; chartId: string; operationId: string; revision: number } }
   | { type: 'done'; payload: { turnId: string; replayed: boolean } }
   | { type: 'error'; payload: { code: number; message: string; retryable: boolean } };

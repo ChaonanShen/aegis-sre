@@ -15,6 +15,7 @@ export function applyAgentEvent(
     case 'turn_started':
     case 'interrupt':
     case 'done':
+    case 'canvas_updated':
       return { session: opened };
     case 'message_delta':
       return {

@@ -282,6 +282,20 @@ function mapEvent(event: AegisEvent, clientTurnId: string, lastToolCallID?: stri
     case 'artifact.created':
     case 'run.updated':
       return { events: [] };
+    case 'canvas.updated':
+      return {
+        events: [
+          {
+            type: 'canvas_updated',
+            payload: {
+              sessionId: event.session_id ?? '',
+              chartId: stringField(payload, 'chart_id'),
+              operationId: stringField(payload, 'operation_id'),
+              revision: numberField(payload, 'revision'),
+            },
+          },
+        ],
+      };
     default:
       throw new ResourceRequestError(200, 1007, 'Agent 返回了未知事件类型。');
   }

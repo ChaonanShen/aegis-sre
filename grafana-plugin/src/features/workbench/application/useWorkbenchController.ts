@@ -467,6 +467,16 @@ export function useWorkbenchController({
               activeTurnIdRef.current = event.payload.turnId;
               continue;
             }
+            if (event.type === 'canvas_updated') {
+              if (gateway.getCanvas) {
+                const latest = await gateway.getCanvas(command.input.sessionId, controller.signal);
+                if (routeSessionIdRef.current === command.input.sessionId) {
+                  current = { ...current, canvas: latest };
+                  publishOpened(current);
+                }
+              }
+              continue;
+            }
             const applied = applyAgentEvent(current, event, command.assistantMessageId);
             current = applied.session;
             publishOpened(current);
@@ -737,6 +747,16 @@ export function useWorkbenchController({
             return;
           }
           current = mergeLatestCanvas(current, openedRef.current);
+          if (event.type === 'canvas_updated') {
+            if (gateway.getCanvas) {
+              const latest = await gateway.getCanvas(opened.session.id, controller.signal);
+              if (routeSessionIdRef.current === opened.session.id) {
+                current = { ...current, canvas: latest };
+                publishOpened(current);
+              }
+            }
+            continue;
+          }
           current = applyAgentEvent(current, event, assistantMessageId).session;
           publishOpened(current);
           if (event.type === 'interrupt') {

@@ -138,6 +138,32 @@ describe('Control Plane Workbench gateway', () => {
     );
   });
 
+  test('maps canvas.updated into a refreshable Workbench event', async () => {
+    const backendSrv = fakeBackend({
+      chunks: [
+        event({
+          event_type: 'canvas.updated',
+          payload: { chart_id: 'cht_abcdefgh', operation_id: 'operation-1', revision: 2 },
+          turn_id: 'turn_0123456789',
+        }),
+        event({ event_type: 'turn.completed', turn_id: 'turn_0123456789', payload: { status: 'succeeded' } }),
+      ],
+    });
+    const gateway = createResourceWorkbenchGateway({ backendSrv });
+    const events = await collect(
+      gateway.streamMessage(
+        { clientTurnId: 'client-turn-1', sessionId: session.id, input: 'chart', mentions: [] },
+        new AbortController().signal
+      )
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'canvas_updated',
+        payload: expect.objectContaining({ chartId: 'cht_abcdefgh', revision: 2 }),
+      })
+    );
+  });
+
   test('cancels a concrete provider turn instead of treating SSE abort as cancellation', async () => {
     const backendSrv = fakeBackend({ data: undefined });
     const gateway = createResourceWorkbenchGateway({ backendSrv });
