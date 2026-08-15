@@ -50,6 +50,7 @@ func apiHandler(cfg config.Config, deps dependencies) http.Handler {
 	registerAgentHandlers(mux, deps.agents)
 	registerPlaybookHandlers(mux, deps.playbooks)
 	registerKnowledgeHandlers(mux, deps.knowledge, deps.knowledgeIDs)
+	registerCanvasHandlers(mux, deps.canvas)
 	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, request *http.Request) {
 		writeAPIProblem(w, request, http.StatusServiceUnavailable, "capability_unavailable", "capability is not configured", false)
 	})

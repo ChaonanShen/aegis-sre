@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	canvasapp "github.com/1024XEngineer/aegis-sre/internal/application/canvas"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
 	"github.com/1024XEngineer/aegis-sre/internal/ports"
 )
@@ -34,6 +35,7 @@ type dependencies struct {
 	knowledgeHealth func(context.Context) error
 	knowledgeMCP    http.Handler
 	playbookMCP     http.Handler
+	canvas          *canvasapp.Service
 }
 
 func WithAgentProvider(provider ports.AgentProvider) Option {
@@ -72,6 +74,10 @@ func WithKnowledgeMCP(handler http.Handler) Option {
 
 func WithPlaybookMCP(handler http.Handler) Option {
 	return func(deps *dependencies) { deps.playbookMCP = handler }
+}
+
+func WithCanvasService(service *canvasapp.Service) Option {
+	return func(deps *dependencies) { deps.canvas = service }
 }
 
 func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server {
