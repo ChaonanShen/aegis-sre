@@ -132,7 +132,7 @@ export function createResourcePlaybookCrudGateway(
       return toArtifactPreview(await client().request(`${runPath(runId)}/artifacts/preview${query}`, isArtifactPreview, { signal }));
     },
     artifactDownloadUrl(runId, path) {
-      return `${runPath(runId)}/artifacts/download?path=${encodeURIComponent(path)}`;
+      return `${PLUGIN_RESOURCE_BASE_URL}${runPath(runId)}/artifacts/download?path=${encodeURIComponent(path)}`;
     },
   };
 

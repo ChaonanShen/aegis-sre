@@ -85,9 +85,13 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
   }, [activeRunId, gateway]);
 
   useEffect(() => {
+    setArtifacts(undefined);
     if (!latestRun || !gateway.listArtifacts || !terminal(latestRun.status)) return;
     const controller = new AbortController();
-    void gateway.listArtifacts(latestRun.id, controller.signal).then(setArtifacts, () => undefined);
+    void gateway.listArtifacts(latestRun.id, controller.signal).then(
+      (items) => { if (mounted.current) setArtifacts(items); },
+      (reason) => { if (mounted.current && !isAbortError(reason)) setError(toError(reason).message); }
+    );
     return () => controller.abort();
   }, [gateway, latestRun]);
 

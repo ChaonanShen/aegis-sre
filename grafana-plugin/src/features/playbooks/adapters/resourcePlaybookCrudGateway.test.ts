@@ -109,7 +109,9 @@ describe('Control Plane Playbook CRUD gateway', () => {
     await gateway.resolveApproval!('run_abcdefgh', 'approve', 'approve', { reason: 'ok' }, 'approval-operation-123');
     await expect(gateway.listArtifacts!('run_abcdefgh')).resolves.toEqual([{ name: 'report.md', path: 'reports/report.md', mediaType: 'text/markdown', size: 12 }]);
     await expect(gateway.previewArtifact!('run_abcdefgh', 'reports/report.md')).resolves.toMatchObject({ text: 'done', truncated: false });
-    expect(gateway.artifactDownloadUrl!('run_abcdefgh', 'reports/report.md')).toContain('artifacts/download?path=reports%2Freport.md');
+    expect(gateway.artifactDownloadUrl!('run_abcdefgh', 'reports/report.md')).toBe(
+      '/api/plugins/grafana-plugin-app/resources/api/v1/runs/run_abcdefgh/artifacts/download?path=reports%2Freport.md'
+    );
     const requests = (backend.fetch as jest.Mock).mock.calls.map(([request]) => request as BackendSrvRequest);
     expect(requests[0]).toEqual(expect.objectContaining({ method: 'POST', headers: { 'Idempotency-Key': 'human-operation-123' } }));
     expect(requests[1]).toEqual(expect.objectContaining({ method: 'POST', data: { decision: 'approve', inputs: { reason: 'ok' } } }));
