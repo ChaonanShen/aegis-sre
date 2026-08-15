@@ -67,7 +67,7 @@ func TestProviderDerivesChunkIDsAndMapsSearch(t *testing.T) {
 	hits, err := provider.Retrieve(context.Background(), actor, ports.RetrievalInput{
 		Query: "restart", Collections: []ports.KnowledgeCollectionRef{{ID: "kbs_abcdefgh"}}, Limit: 5,
 	})
-	if err != nil || len(hits) != 1 || hits[0].Document.ID != "doc_abcdefgh" || hits[0].Document.CollectionID != "kbs_abcdefgh" {
+	if err != nil || len(hits) != 1 || hits[0].Document.ID != "doc_abcdefgh" || hits[0].Document.CollectionID != "kbs_abcdefgh" || hits[0].PageNumber != 0 {
 		t.Fatalf("search mapping failed: %+v %v", hits, err)
 	}
 }

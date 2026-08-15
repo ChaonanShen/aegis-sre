@@ -12,6 +12,7 @@ class FakeBackend:
         self.deleted: list[str] = []
         self.search_calls: list[dict[str, object]] = []
         self.fail_index = False
+        self.fail_delete = False
         self.chunks: dict[str, list[Chunk]] = {}
 
     def check(self) -> None:
@@ -33,6 +34,8 @@ class FakeBackend:
         ]
 
     def delete(self, document_id: str) -> None:
+        if self.fail_delete:
+            raise RuntimeError("index delete failed")
         self.deleted.append(document_id)
         self.chunks.pop(document_id, None)
 

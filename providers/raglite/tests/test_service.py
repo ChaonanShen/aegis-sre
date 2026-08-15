@@ -8,7 +8,7 @@ from fakes import FakeBackend
 
 from aegis_raglite_provider.backend import Chunk
 from aegis_raglite_provider.original_store import OriginalStore
-from aegis_raglite_provider.repository import Repository
+from aegis_raglite_provider.repository import NotFoundError, Repository
 from aegis_raglite_provider.service import CapabilityError, KnowledgeService
 
 
@@ -137,3 +137,40 @@ def test_stop_only_cancels_queued_job(tmp_path: Path) -> None:
     assert service.repository.claim_next_job() is not None
     with pytest.raises(CapabilityError):
         service.stop_indexing("doc_abcdefgh", "scope-a")
+
+
+def test_delete_document_removes_index_original_and_manifest(tmp_path: Path) -> None:
+    service, backend = new_service(tmp_path)
+    original = service.originals.resolve(
+        service.get_document("doc_abcdefgh", "scope-a").original_path
+    )
+
+    service.delete_document("doc_abcdefgh", "scope-a")
+
+    assert backend.deleted == ["doc_abcdefgh"]
+    assert not original.exists()
+    with pytest.raises(NotFoundError):
+        service.get_document("doc_abcdefgh", "scope-a")
+
+
+def test_delete_failure_preserves_original_and_manifest_for_retry(tmp_path: Path) -> None:
+    service, backend = new_service(tmp_path)
+    document = service.get_document("doc_abcdefgh", "scope-a")
+    original = service.originals.resolve(document.original_path)
+    backend.fail_delete = True
+
+    with pytest.raises(RuntimeError, match="index delete failed"):
+        service.delete_document("doc_abcdefgh", "scope-a")
+
+    assert original.exists()
+    assert service.get_document("doc_abcdefgh", "scope-a").id == "doc_abcdefgh"
+
+
+def test_delete_collection_cleans_all_documents_before_collection(tmp_path: Path) -> None:
+    service, backend = new_service(tmp_path)
+
+    service.delete_collection("kbs_abcdefgh", "scope-a")
+
+    assert backend.deleted == ["doc_abcdefgh"]
+    with pytest.raises(NotFoundError):
+        service.get_collection("kbs_abcdefgh", "scope-a")
