@@ -131,7 +131,11 @@ func (provider *Provider) StartTurn(ctx context.Context, actor domain.ActorConte
 		return ports.AgentTurnRef{}, nil, invalidOpenCodeArgument(err)
 	}
 	messageID := "msg_" + strings.TrimPrefix(string(turnID), "turn_")
-	admitted, err := provider.client.Prompt(ctx, string(session.ID), messageID, input.Message)
+	message := input.Message
+	if input.CanvasContext != "" {
+		message = input.CanvasContext + "\n\n" + message
+	}
+	admitted, err := provider.client.Prompt(ctx, string(session.ID), messageID, message)
 	if err != nil {
 		return ports.AgentTurnRef{}, nil, &domain.AppError{Code: domain.ErrorProviderResultUnknown, Message: "OpenCode prompt admission result is unknown", Retryable: false, Cause: err}
 	}

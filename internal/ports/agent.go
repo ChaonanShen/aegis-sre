@@ -49,11 +49,12 @@ type CreateAgentSessionInput struct {
 }
 
 type StartTurnInput struct {
-	Message     string
-	Mentions    []string
-	OperationID string
-	FolderUID   string
-	ServiceIDs  []domain.ID
+	Message       string
+	CanvasContext string
+	Mentions      []string
+	OperationID   string
+	FolderUID     string
+	ServiceIDs    []domain.ID
 }
 
 type ApprovalDecisionValue string

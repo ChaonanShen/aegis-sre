@@ -187,7 +187,11 @@ func (provider *Provider) StartTurn(ctx context.Context, _ domain.ActorContext, 
 	var response struct {
 		Turn codexTurn `json:"turn"`
 	}
-	params := map[string]any{"threadId": threadID, "input": []map[string]any{{"type": "text", "text": input.Message}}}
+	message := input.Message
+	if input.CanvasContext != "" {
+		message = input.CanvasContext + "\n\n" + message
+	}
+	params := map[string]any{"threadId": threadID, "input": []map[string]any{{"type": "text", "text": message}}}
 	if err := provider.transport.Call(ctx, "turn/start", params, &response); err != nil {
 		return ports.AgentTurnRef{}, nil, providerMutationError(err)
 	}

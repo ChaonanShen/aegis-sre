@@ -35,6 +35,23 @@ type agentHTTPFake struct {
 	checkErr       error
 }
 
+type contextCanvasFake struct{}
+
+func (contextCanvasFake) Delete(context.Context, domain.ActorContext, domain.ID) error { return nil }
+func (contextCanvasFake) Subscribe(context.Context, domain.ActorContext, domain.ID) (<-chan domain.Event, func(), error) {
+	return nil, func() {}, nil
+}
+
+func TestCanvasTurnContextCarriesPublicSessionAndPublishRules(t *testing.T) {
+	context := canvasTurnContext(contextCanvasFake{}, "ses_abcdefgh")
+	if !strings.Contains(context, "session_id is ses_abcdefgh") || !strings.Contains(context, "query_prometheus range") || !strings.Contains(context, "canvas.publish_query_chart") {
+		t.Fatalf("context = %q", context)
+	}
+	if canvasTurnContext(nil, "ses_abcdefgh") != "" {
+		t.Fatal("disabled Canvas unexpectedly added turn context")
+	}
+}
+
 func (fake *agentHTTPFake) Check(context.Context) error { return fake.checkErr }
 
 func (fake *agentHTTPFake) ListSessions(_ context.Context, _ domain.ActorContext, input ports.ListAgentSessionsInput) (domain.Page[ports.AgentSession], error) {

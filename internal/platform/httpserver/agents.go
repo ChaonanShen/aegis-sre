@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -180,7 +181,7 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, can
 		}
 		actor := actorFromRequest(request)
 		turn, stream, err := provider.StartTurn(request.Context(), actor, ref, ports.StartTurnInput{
-			Message: body.Message, Mentions: body.Mentions, OperationID: key, FolderUID: actor.FolderUID,
+			Message: body.Message, Mentions: body.Mentions, OperationID: key, FolderUID: actor.FolderUID, CanvasContext: canvasTurnContext(canvas, ref.ID),
 		})
 		if handleProviderError(w, request, err) {
 			return
@@ -242,6 +243,13 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, can
 		}
 		streamSSE(w, request, stream)
 	})
+}
+
+func canvasTurnContext(canvas canvasIntegration, sessionID domain.ID) string {
+	if canvas == nil {
+		return ""
+	}
+	return fmt.Sprintf("[Aegis Canvas context] Current public session_id is %s. For chart requests, first use the authorized Grafana MCP query_prometheus range tool. Only after it succeeds and the user asks for a chart, call canvas.publish_query_chart with the exact datasource_uid, PromQL expression, absolute UTC from/to range, and step from that successful range query. Do not publish instant queries, failed queries, samples, or provider-specific identifiers.", sessionID)
 }
 
 func isNotFoundError(err error) bool {
