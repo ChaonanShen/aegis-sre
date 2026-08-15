@@ -22,6 +22,56 @@ func TestLoadDefaultsWithoutProviders(t *testing.T) {
 	if cfg.KnowledgeEnabled {
 		t.Fatal("Knowledge must be disabled by default")
 	}
+	if cfg.CanvasEnabled {
+		t.Fatal("Canvas must be disabled by default")
+	}
+}
+
+func TestLoadAcceptsCanvasConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	dbDirectory := filepath.Join(directory, "canvas")
+	if err := os.Mkdir(dbDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	token := filepath.Join(directory, "canvas-mcp-token")
+	if err := os.WriteFile(token, []byte("canvas-secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	values := map[string]string{
+		EnvCanvasEnabled: "true", EnvCanvasDBPath: filepath.Join(dbDirectory, "canvas.db"), EnvCanvasMCPTokenFile: token,
+		EnvAgentTenantID: "tenant", EnvAgentOrgID: "org", EnvAgentUserID: "user",
+	}
+	cfg, err := Load(func(key string) string { return values[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.CanvasEnabled || cfg.CanvasDBPath != values[EnvCanvasDBPath] || cfg.CanvasMCPTokenFile != token {
+		t.Fatalf("config = %+v", cfg)
+	}
+}
+
+func TestLoadRejectsIncompleteCanvasConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	token := filepath.Join(directory, "canvas-mcp-token")
+	if err := os.WriteFile(token, []byte("canvas-secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := map[string]string{
+		EnvCanvasEnabled: "true", EnvCanvasDBPath: filepath.Join(directory, "canvas.db"), EnvCanvasMCPTokenFile: token,
+		EnvAgentTenantID: "tenant", EnvAgentOrgID: "org", EnvAgentUserID: "user",
+	}
+	for name, values := range map[string]map[string]string{
+		"missing token":      mergeAgentConfig(base, map[string]string{EnvCanvasMCPTokenFile: filepath.Join(directory, "missing")}),
+		"relative database":  mergeAgentConfig(base, map[string]string{EnvCanvasDBPath: "canvas.db"}),
+		"disabled with path": mergeAgentConfig(base, map[string]string{EnvCanvasEnabled: "false"}),
+		"missing actor":      mergeAgentConfig(base, map[string]string{EnvAgentUserID: ""}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Load(func(key string) string { return values[key] }); !errors.Is(err, ErrInvalid) {
+				t.Fatalf("error = %v, want ErrInvalid", err)
+			}
+		})
+	}
 }
 
 func TestLoadKeepsDaguTokenAsRotatingFileReference(t *testing.T) {

@@ -27,6 +27,7 @@ generate dagu-basic-password
 generate grafana-admin-password
 generate opencode-server-password
 generate playbook-mcp-token
+generate canvas-mcp-token
 generate_raw agent-id-key
 
 if [ "${AEGIS_INIT_KNOWLEDGE_SECRETS:-0}" = "1" ]; then

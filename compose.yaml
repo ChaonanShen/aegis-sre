@@ -43,6 +43,9 @@ services:
       AEGIS_AGENT_TENANT_ID: default
       AEGIS_AGENT_URL: http://opencode:4096
       AEGIS_AGENT_USER_ID: grafana:default:admin
+      AEGIS_CANVAS_DB_PATH: /var/lib/aegis/canvas/canvas.db
+      AEGIS_CANVAS_ENABLED: "true"
+      AEGIS_CANVAS_MCP_TOKEN_FILE: /run/secrets/canvas-mcp-token
       AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE: /run/secrets/dagu-basic-password
       AEGIS_DAGU_BASIC_AUTH_USERNAME: aegis-control-plane
       AEGIS_DAGU_URL: http://dagu:8080
@@ -58,6 +61,8 @@ services:
       - ./deploy/local/secrets/opencode-server-password:/run/secrets/opencode-server-password:ro
       - ./deploy/local/secrets/playbook-mcp-token:/run/secrets/playbook-mcp-token:ro
       - ./deploy/local/secrets/plugin-token:/run/secrets/aegis-plugin-token:ro
+      - ./deploy/local/secrets/canvas-mcp-token:/run/secrets/canvas-mcp-token:ro
+      - control-plane-data:/var/lib/aegis/canvas
     depends_on:
       dagu:
         condition: service_healthy
@@ -206,4 +211,5 @@ volumes:
   dagu-data:
   grafana-data:
   grafana-mcp-secrets:
+  control-plane-data:
   opencode-data:

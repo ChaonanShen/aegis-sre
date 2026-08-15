@@ -10,13 +10,13 @@ FROM node:22.23.1-alpine3.23
 ARG CODEX_CLI_VERSION=0.144.4
 RUN npm install --global "@openai/codex@${CODEX_CLI_VERSION}" \
     && npm cache clean --force \
-    && mkdir -p /var/lib/aegis/codex /workspace \
-    && chown -R node:node /var/lib/aegis/codex /workspace
+    && mkdir -p /var/lib/aegis/codex /var/lib/aegis/canvas /workspace \
+    && chown -R node:node /var/lib/aegis/codex /var/lib/aegis/canvas /workspace
 COPY --from=build /out/control-plane /usr/local/bin/control-plane
 ENV CODEX_HOME=/var/lib/aegis/codex \
     AEGIS_CODEX_COMMAND=/usr/local/bin/codex \
     AEGIS_AGENT_WORKING_DIRECTORY=/workspace
-VOLUME ["/var/lib/aegis/codex"]
+VOLUME ["/var/lib/aegis/codex", "/var/lib/aegis/canvas"]
 WORKDIR /workspace
 USER node
 ENTRYPOINT ["/usr/local/bin/control-plane"]

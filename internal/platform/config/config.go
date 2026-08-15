@@ -44,6 +44,9 @@ const (
 	EnvPlaybookMCPFolders   = "AEGIS_PLAYBOOK_MCP_FOLDER_UIDS"
 	EnvGrafanaMCPURL        = "AEGIS_GRAFANA_MCP_URL"
 	EnvPluginTokenFile      = "AEGIS_PLUGIN_TOKEN_FILE"
+	EnvCanvasEnabled        = "AEGIS_CANVAS_ENABLED"
+	EnvCanvasDBPath         = "AEGIS_CANVAS_DB_PATH"
+	EnvCanvasMCPTokenFile   = "AEGIS_CANVAS_MCP_TOKEN_FILE"
 )
 
 var ErrInvalid = errors.New("invalid configuration")
@@ -87,6 +90,9 @@ type Config struct {
 	KnowledgeMCPFolders   []string
 	PlaybookMCPTokenFile  string
 	PlaybookMCPFolders    []string
+	CanvasEnabled         bool
+	CanvasDBPath          string
+	CanvasMCPTokenFile    string
 }
 
 func Load(getenv func(string) string) (Config, error) {
@@ -306,7 +312,30 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, RAGFlowAPIKeyFile: ragFlowAPIKeyFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, RAGFlowTimeout: ragFlowTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders, PlaybookMCPTokenFile: playbookMCPTokenFile, PlaybookMCPFolders: playbookMCPFolders}, nil
+	canvasEnabled, err := parseBool(getenv(EnvCanvasEnabled), false)
+	if err != nil {
+		return Config{}, fmt.Errorf("%w: %s must be true or false", ErrInvalid, EnvCanvasEnabled)
+	}
+	canvasDBPath := strings.TrimSpace(getenv(EnvCanvasDBPath))
+	canvasMCPTokenFile := strings.TrimSpace(getenv(EnvCanvasMCPTokenFile))
+	if canvasEnabled {
+		if canvasDBPath == "" {
+			canvasDBPath = "/var/lib/aegis/canvas/canvas.db"
+		}
+		if err := requireWritableDatabasePath(canvasDBPath, EnvCanvasDBPath); err != nil {
+			return Config{}, err
+		}
+		if err := requireRegularFile(canvasMCPTokenFile, EnvCanvasMCPTokenFile); err != nil {
+			return Config{}, err
+		}
+		if !validAgentConfigValue(agentTenantID) || !validAgentConfigValue(agentOrgID) || !validAgentConfigValue(agentUserID) {
+			return Config{}, fmt.Errorf("%w: Canvas requires a complete trusted Agent actor", ErrInvalid)
+		}
+	} else if canvasDBPath != "" || canvasMCPTokenFile != "" {
+		return Config{}, fmt.Errorf("%w: %s must be enabled before Canvas is configured", ErrInvalid, EnvCanvasEnabled)
+	}
+
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, RAGFlowAPIKeyFile: ragFlowAPIKeyFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, RAGFlowTimeout: ragFlowTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders, PlaybookMCPTokenFile: playbookMCPTokenFile, PlaybookMCPFolders: playbookMCPFolders, CanvasEnabled: canvasEnabled, CanvasDBPath: canvasDBPath, CanvasMCPTokenFile: canvasMCPTokenFile}, nil
 }
 
 func parseBool(raw string, defaultValue bool) (bool, error) {
@@ -352,6 +381,21 @@ func requireRegularFile(path, envName string) error {
 	info, err := os.Stat(path)
 	if err != nil || !info.Mode().IsRegular() {
 		return fmt.Errorf("%w: %s must point to a readable regular file", ErrInvalid, envName)
+	}
+	return nil
+}
+
+func requireWritableDatabasePath(path, envName string) error {
+	if !filepath.IsAbs(path) || strings.ContainsAny(path, "\r\n\x00") {
+		return fmt.Errorf("%w: %s must be an absolute database path", ErrInvalid, envName)
+	}
+	directory := filepath.Dir(path)
+	info, err := os.Stat(directory)
+	if err != nil || !info.IsDir() || info.Mode().Perm()&0o200 == 0 {
+		return fmt.Errorf("%w: %s parent directory must be writable", ErrInvalid, envName)
+	}
+	if existing, err := os.Stat(path); err == nil && !existing.Mode().IsRegular() {
+		return fmt.Errorf("%w: %s must point to a regular file", ErrInvalid, envName)
 	}
 	return nil
 }
