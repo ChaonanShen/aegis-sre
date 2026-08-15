@@ -92,6 +92,10 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
       });
       return toCanvasPreview(projection);
     },
+    async getCanvas(sessionId, signal) {
+      const projection = await resources().request(canvasPath(sessionId), isCanvasProjection, { signal });
+      return toCanvasPreview(projection);
+    },
     async getContext(folderUid, signal) {
       throwIfAborted(signal);
       return emptyContext(folderUid);

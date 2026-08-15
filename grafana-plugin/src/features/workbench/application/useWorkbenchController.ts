@@ -800,7 +800,24 @@ export function useWorkbenchController({
           .catch(() => {
             const current = openedRef.current;
             if (current?.session.id === opened.session.id && current.canvas === canvas) {
-              publishOpened({ ...current, canvas: opened.canvas });
+              if (gateway.getCanvas) {
+                void gateway
+                  .getCanvas(opened.session.id)
+                  .then((latest) => {
+                    const refreshed = openedRef.current;
+                    if (refreshed?.session.id === opened.session.id) {
+                      publishOpened({ ...refreshed, canvas: latest });
+                    }
+                  })
+                  .catch(() => {
+                    const refreshed = openedRef.current;
+                    if (refreshed?.session.id === opened.session.id && refreshed.canvas === canvas) {
+                      publishOpened({ ...refreshed, canvas: opened.canvas });
+                    }
+                  });
+              } else {
+                publishOpened({ ...current, canvas: opened.canvas });
+              }
             }
           });
       }
