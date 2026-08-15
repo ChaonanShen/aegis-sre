@@ -152,6 +152,7 @@ describe('GrafanaPanelPreview', () => {
   });
 
   test('数据源失败时显示原因，并允许重新查询', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_786_788_206_818);
     const query = jest
       .fn((_request: DataQueryRequest) => of({ data: [], state: LoadingState.Done }))
       .mockImplementationOnce(() => throwError(() => new Error('Prometheus 暂时不可用')));
@@ -166,6 +167,7 @@ describe('GrafanaPanelPreview', () => {
 
     expect(await screen.findByText('查询完成，但没有数据')).toBeInTheDocument();
     expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0][0].requestId).not.toBe(query.mock.calls[1][0].requestId);
   });
 
   test('缺少 Query 时显示可理解状态，不会退回 fixture 曲线', () => {
