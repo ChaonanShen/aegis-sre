@@ -233,6 +233,14 @@ func TestProviderStreamsDurableTurnEventsAndVerifiesCancellationOwnership(t *tes
 	}
 }
 
+func TestOpenCodeToolSummaryPreservesStructuredErrors(t *testing.T) {
+	t.Parallel()
+	got := openCodeToolSummary(map[string]any{"error": map[string]any{"code": "denied", "message": "write blocked"}})
+	if got != `{"code":"denied","message":"write blocked"}` {
+		t.Fatalf("summary = %#v", got)
+	}
+}
+
 func TestProviderRejectsCancellationForTurnOutsideSession(t *testing.T) {
 	t.Parallel()
 	provider, _ := newOpenCodeProvider(t, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
@@ -287,6 +295,9 @@ func TestProviderProjectsV1GlobalEventsForCurrentSession(t *testing.T) {
 		}
 		if sequence == 1 && !strings.Contains(string(event.Payload), `"expr":"up"`) {
 			t.Fatalf("running tool input was not projected: %s", event.Payload)
+		}
+		if event.Type == domain.EventToolCompleted && !strings.Contains(string(event.Payload), `"summary":"ok"`) {
+			t.Fatalf("tool output was not projected: %s", event.Payload)
 		}
 	}
 	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {

@@ -566,7 +566,25 @@ func (stream *openCodeV1EventStream) projectV1Tool(eventID string, part map[stri
 	if status != "completed" {
 		result = "failed"
 	}
-	return stream.v1Event(eventID, domain.EventToolCompleted, map[string]any{"call_id": encodedCallID, "status": result, "duration_ms": nil})
+	return stream.v1Event(eventID, domain.EventToolCompleted, map[string]any{"call_id": encodedCallID, "status": result, "summary": openCodeToolSummary(state), "duration_ms": nil})
+}
+
+func openCodeToolSummary(state map[string]any) any {
+	value, ok := state["output"]
+	if !ok || value == nil {
+		value = state["error"]
+	}
+	if value == nil {
+		return nil
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	return string(encoded)
 }
 
 func (stream *openCodeV1EventStream) isAssistantMessage(messageID string) bool {
