@@ -214,7 +214,7 @@ Provider 数据归属与标识策略复核：
 
 ## 7. 阶段 4：Dagu 与 `mcp.call`
 
-状态：**基本执行链已完成。插件可直接启动、查看和取消 Dagu Run，并展示 Step 状态；完整运行观测与交互仍需在阶段 7 收口。**
+状态：**基本执行链及 Run 实时状态闭环已完成。插件可直接启动、查看和取消 Dagu Run，并展示 Step 状态；完整运行观测与交互仍需在阶段 7 和后续高级运行观测阶段收口。**
 
 目标：Dagu 成为 Playbook 唯一执行引擎，插件不再依赖自定义 DSL。
 
@@ -264,6 +264,21 @@ Provider 数据归属与标识策略复核：
 - [x] 实现真实 `PlaybookGateway`。
 - [x] 展示 Run、Step、Human Task、Approval 和 Artifact（日志展示仍待补稳定契约）。
 - [x] 删除真实模式下的 Playbook fixture fallback。
+
+### 4.5 2026-08-15 Playbook 链路修正记录
+
+已完成：
+
+- [x] `run.updated` 不再只发送 `status`，Dagu adapter 改为发送包含 Run ID、Playbook ID、状态、序号、时间和 Step 的完整公共快照；流正常结束但未收到终态时，前端使用 `getRun` 做最终对账（`2c4c65c`）。
+- [x] Run 列表接通不透明 cursor 分页；`has_more=true` 时保证返回 `next_cursor`，前端可连续加载全部页（`dcebe0a`）。
+- [x] Artifact 下载 URL 补齐 Grafana Plugin Resource 前缀；切换或启动 Run 时清理旧 Artifact，列表加载错误不再静默吞掉（`1bd5ff7`）。
+
+仍待修正：
+
+- [ ] SSE `sequence` 当前仍是单连接内轮询序号，不是 Provider 可持久恢复的序号；断线后必须通过 Run 快照对账，并明确重复事件和 cursor 失效语义，不建立 Aegis Event Store。
+- [ ] Run/Step 公共详情仍缺少 Provider-neutral 的输出、错误、可空耗时、参数、发起人、retry 关系和日志引用；不得把 Dagu 私有结构直接暴露给前端。
+- [ ] 未识别的 Dagu Run/Step 状态目前可能被映射成看似有效的状态；无效时间也可能被 REST 投影成当前时间。应改为明确 Provider 结果错误或可空的 unknown 语义，不能生成误导数据。
+- [ ] Artifact 仍主要跟随最新终态 Run 展示；需要支持选择历史 Run、文本预览、截断、媒体类型、权限错误、过期引用和下载重试。
 
 本轮保证 Playbook 可以从 Grafana 插件执行并处理人工交互；不把 Dagu UI 当作最终产品界面。日志展示仍因缺少稳定的 provider-neutral API 暂缓，不能把 Provider 私有日志协议直接泄漏到前端。
 
@@ -375,6 +390,27 @@ Provider 数据归属与标识策略复核：
 
 验收标准：切换部署级 `AGENT_PROVIDER=codex|opencode` 后，插件请求和事件 Schema 不变化；清空或重启 Control Plane 不丢失会话，删除 Provider 持久卷则按 Provider 自身的数据丢失语义处理。
 
+### 6.4 2026-08-15 会话链路修正记录
+
+已完成：
+
+- [x] OpenCode V1 全局事件按顶层 Session、嵌套 `info.sessionID`、`part.sessionID`、Message 所属关系做 fail-closed 隔离；无法证明归属或属于其他 Session 的事件不会进入当前 Turn（`092fda2`）。
+- [x] Codex/OpenCode 缺少真实工具耗时时，公共 `duration_ms` 返回 `null`，不再伪造 `0`（`50827b9`）。
+- [x] Session 公共摘要增加可空 `message_count` 和 `preview`；Codex 从原生 Thread 投影真实值，Provider 无法在列表接口证明时返回 `null`，前端显示“消息数未知”而不是错误的 `0 条消息`（`0bffd2a`）。
+- [x] 前端 Session 列表接通全部 cursor 页，并在 `has_more` 缺少 `next_cursor` 时显式报错（`ddb2650`）。
+- [x] Turn 终态对账合并 Provider 持久化文本与实时工具卡，避免本次流中已确认的工具调用和结果被文本历史覆盖（`1540f46`）。
+- [x] OpenCode pending 工具事件参数为空时，running 阶段的完整参数会继续投影；前端按稳定 call ID 原位更新工具卡，不重复插入（`f481af7`）。
+- [x] OpenCode completed/error 中的输出和结构化错误进入 Provider-neutral `summary`，工具卡不再只有成功/失败状态（`a7ff510`）。
+
+仍待修正：
+
+- [ ] 公共 Message 历史仍以纯文本为主，尚未冻结 Provider-neutral 的 parts/tool contract。需要支持 text、tool call、tool result、error、call ID、来源（MCP/builtin/runtime）、参数、结果、状态、可空耗时和时间戳。
+- [ ] Codex 历史读取目前主要保留 `userMessage`/`agentMessage` 文本；OpenCode 历史读取也主要保留 text part。刷新或重新打开旧 Session 时，历史工具卡、工具结果和错误仍不能完整恢复。
+- [ ] 当前终态合并只保护本次浏览器已收到的实时工具卡，不能代替 Provider 历史投影；不得通过 Aegis 消息表或前端整会话缓存补齐。
+- [ ] OpenCode 工具来源仍可能退化为通用 `agent` 命名空间，需要从固定 Provider 协议可靠区分 MCP、内置工具和 runtime；无法证明时使用明确 unknown，不猜测 Grafana/Dagu 来源。
+- [ ] OpenCode Session 列表接口无法直接给出可信消息数时当前返回 `null`；后续仅在 Provider 有批量统计能力或可接受的受控查询方案下接通真实统计，禁止无界 N+1 扫描。
+- [ ] 仍需补双 Provider 历史恢复合同测试：工具调用、工具结果、错误、未知耗时、重启恢复和刷新恢复必须保持相同公共 Schema。
+
 ## 10. 阶段 7：核心前端真实模式收口
 
 状态：**执行中。真实模式 fallback 已收口，Playbook 已接 Dagu；真实 Run 参数、SSE、retry、Human Task、Approval、Artifact 已接入 gateway，组合 Agent + Playbook E2E 已提供入口。Workbench 会话完整能力、Alerts、Audit 和真实环境验收仍待完成。**
@@ -385,6 +421,8 @@ Provider 数据归属与标识策略复核：
 
 - [x] 生成或实现 Control Plane Resource Client。
 - [x] Workbench 使用统一 Agent Event，不再识别旧 AgentType。
+- [x] Session 列表加载全部 cursor 页；消息统计未知时不再显示为 `0 条消息`。
+- [x] Turn 完成后的 Provider 快照对账保留实时工具卡、结果和完整 running 参数。
 - [ ] Workbench 真实会话支持完整的 create/list/read/resume/rename/archive/unarchive/delete、流式 Turn、取消和 Agent Approval；此项优先于 Canvas 增强。
 - [ ] 删除迁移遗留的 `saveSession`、前端 `persistenceQueue` 和发送完整 `history` 的真实模式抽象；前端可以乐观渲染，但最终会话与消息必须重新从 Agent Provider 读取。
 - [ ] 审计公共 `Session` 的 `folder_uid`、title、status 和时间字段，只保留 Provider 原生可读写或可可靠派生的字段；不支持的持久字段通过显式契约修订移除，不以数据库补齐。
@@ -580,15 +618,15 @@ SQLite 只包含下列 Canvas 聚合数据，不建立 `sessions`、`turns`、`m
 
 ## 后续阶段：Playbook 日志与高级运行观测
 
-状态：**部分完成，不阻塞当前 Agent → Playbook 主链路。** 基础参数、启动、取消、retry、SSE
-状态同步、Human Task、Approval、Artifact 列表和下载已接入；日志展示及 Artifact 文本预览仍待稳定的
+状态：**部分完成，不阻塞当前 Agent → Playbook 主链路。** 基础参数、启动、取消、retry、完整 Run SSE
+状态快照、cursor 分页、Human Task、Approval、Artifact 列表和下载已接入；日志展示及 Artifact 文本预览仍待稳定的
 provider-neutral 契约。
 
 后续必须完成：
 
 - [x] Human Task 的 JSON 输入、提交幂等和等待状态恢复。
 - [x] Approval 的 approve/reject/rewind 和重复提交保护。
-- [x] Artifact 列表和下载入口；文本预览、截断提示和非文本媒体处理待补。
+- [x] Artifact 列表和下载入口；下载使用完整 Plugin Resource URL，Run 切换会清理旧列表且加载错误可见。文本预览、截断提示和非文本媒体处理待补。
 - [ ] Run/Step 日志、SSE 断线重连、大小限制和 Provider 路径净化；先增加稳定端口和 OpenAPI 契约。
 - [x] 刷新页面后通过 Run 查询恢复待处理任务、审批和 Artifact 状态。
 - Playwright 真实 Grafana + Dagu + Agent 组合验收。
@@ -617,19 +655,19 @@ provider-neutral 契约。
 
 ### 9.2 Artifact 展示（待后续具体实现）
 
-状态：**部分完成。** 当前已接入 Artifact 列表和下载入口；文本预览、截断提示、媒体类型处理、权限错误和更完整的刷新恢复仍未完成。Artifact `path` 只能作为服务端不透明引用，不能进入领域模型或被前端拼接成 Provider 地址。
+状态：**部分完成。** 当前已接入 Artifact 列表和带 Plugin Resource 前缀的下载入口，Run 切换会清理旧列表且加载错误不再静默忽略；历史 Run 选择、文本预览、截断提示、媒体类型处理、权限错误和更完整的刷新恢复仍未完成。Artifact `path` 只能作为服务端不透明引用，不能进入领域模型或被前端拼接成 Provider 地址。
 
 后续实现项：
 
 - [ ] 使用已有 `previewArtifact` 实现文本预览，展示媒体类型、大小、更新时间和 `truncated` 状态；超限时明确提示并提供下载原文。
 - [ ] 对 PNG/JPEG/SVG、Audio、Embedded Resource 等类型采用受控预览或下载；未知媒体不得直接当 HTML 渲染，不信任 SVG 不执行脚本。
-- [ ] 列表、预览和下载增加 loading、空态、403/404、过期 Run 和网络中断状态；下载 URL 必须由 Control Plane 生成并校验权限。
+- [ ] 列表、预览和下载补齐 loading、空态、403/404、过期 Run 和网络中断状态；下载 URL 已改为完整 Control Plane Plugin Resource URL，服务端权限校验仍必须保持。
 - [ ] 刷新页面后根据 Run 重新拉取 Artifact，处理列表变化、重复事件、删除/过期引用和下载重试。
 - [ ] 如需进入 Agent 消息或 Canvas，先定义 provider-neutral 视觉产物契约，不复用 Workbench 本地 Canvas 状态作为持久化事实。
 
 测试与验收：
 
-- [ ] gateway 契约测试覆盖列表、预览、下载 URL 编码、媒体类型和截断字段。
+- [ ] gateway 契约测试已覆盖列表、预览、下载 URL 前缀与编码；媒体类型分支、截断字段和错误状态测试仍待补。
 - [ ] 前端测试覆盖文本预览、截断、非文本下载、无权访问、空列表和刷新恢复。
 - [ ] 安全测试确认路径穿越、外部 URL、脚本化 SVG 和超大响应均被拒绝或限制。
 - [ ] 真实 E2E 验证 `mcp.call` 产生的报告 Artifact 可在插件内定位、预览或下载，且不暴露 Dagu 文件系统路径。
