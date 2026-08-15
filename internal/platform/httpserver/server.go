@@ -103,6 +103,13 @@ func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, healthResponse{Status: "live"})
 	})
+	mux.HandleFunc("GET /metrics/canvas", func(w http.ResponseWriter, _ *http.Request) {
+		if deps.canvas == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "canvas metrics unavailable"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"canvas": deps.canvas.MetricsSnapshot()})
+	})
 	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, request *http.Request) {
 		statuses := dependencyStatuses(request.Context(), cfg, deps)
 		capabilities := make(map[string]string, len(statuses))

@@ -4,6 +4,7 @@ package canvas
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -19,6 +20,20 @@ type Service struct {
 	mu        sync.RWMutex
 	nextEvent uint64
 	subs      map[string]map[chan domain.Event]struct{}
+	metrics   canvasMetrics
+}
+
+type canvasMetrics struct {
+	reads             atomic.Uint64
+	writes            atomic.Uint64
+	updates           atomic.Uint64
+	deletes           atomic.Uint64
+	errors            atomic.Uint64
+	revisionConflicts atomic.Uint64
+	notifications     atomic.Uint64
+	notificationDrops atomic.Uint64
+	readDurationNS    atomic.Uint64
+	writeDurationNS   atomic.Uint64
 }
 
 func New(agents ports.AgentProvider, store ports.CanvasStore) *Service {
@@ -33,20 +48,33 @@ func (service *Service) Check(ctx context.Context) error {
 }
 
 func (service *Service) Get(ctx context.Context, actor domain.ActorContext, sessionID domain.ID) (domain.CanvasProjection, error) {
+	started := time.Now()
+	service.metrics.reads.Add(1)
+	defer func() { service.metrics.readDurationNS.Add(uint64(time.Since(started).Nanoseconds())) }()
 	if err := service.validate(ctx, actor, sessionID, false); err != nil {
+		service.recordError(err)
 		return domain.CanvasProjection{}, err
 	}
-	return service.store.Get(ctx, actor, sessionID)
+	projection, err := service.store.Get(ctx, actor, sessionID)
+	service.recordError(err)
+	return projection, err
 }
 
 func (service *Service) PublishQueryChart(ctx context.Context, actor domain.ActorContext, input ports.PublishQueryChartInput) (domain.CanvasProjection, error) {
+	started := time.Now()
+	service.metrics.writes.Add(1)
+	defer func() { service.metrics.writeDurationNS.Add(uint64(time.Since(started).Nanoseconds())) }()
 	if err := service.validate(ctx, actor, input.SessionID, true); err != nil {
+		service.recordError(err)
 		return domain.CanvasProjection{}, err
 	}
 	if service.store == nil {
-		return domain.CanvasProjection{}, unavailable("Canvas persistence is not configured", nil)
+		err := unavailable("Canvas persistence is not configured", nil)
+		service.recordError(err)
+		return domain.CanvasProjection{}, err
 	}
 	projection, err := service.store.PublishQueryChart(ctx, actor, input)
+	service.recordError(err)
 	if err == nil && projection.ActiveChartID != "" {
 		service.publishEvent(actor, input.SessionID, projection.ActiveChartID, input.OperationID, projection.Revision)
 	}
@@ -98,7 +126,9 @@ func (service *Service) publishEvent(actor domain.ActorContext, sessionID, chart
 	for subscriber := range service.subs[key] {
 		select {
 		case subscriber <- event:
+			service.metrics.notifications.Add(1)
 		default:
+			service.metrics.notificationDrops.Add(1)
 		}
 	}
 }
@@ -108,26 +138,72 @@ func scopeKey(actor domain.ActorContext, sessionID domain.ID) string {
 }
 
 func (service *Service) UpdateLayout(ctx context.Context, actor domain.ActorContext, input ports.UpdateCanvasInput) (domain.CanvasProjection, error) {
+	started := time.Now()
+	service.metrics.writes.Add(1)
+	service.metrics.updates.Add(1)
+	defer func() { service.metrics.writeDurationNS.Add(uint64(time.Since(started).Nanoseconds())) }()
 	if err := service.validate(ctx, actor, input.SessionID, true); err != nil {
+		service.recordError(err)
 		return domain.CanvasProjection{}, err
 	}
 	if service.store == nil {
-		return domain.CanvasProjection{}, unavailable("Canvas persistence is not configured", nil)
+		err := unavailable("Canvas persistence is not configured", nil)
+		service.recordError(err)
+		return domain.CanvasProjection{}, err
 	}
-	return service.store.UpdateLayout(ctx, actor, input)
+	projection, err := service.store.UpdateLayout(ctx, actor, input)
+	service.recordError(err)
+	return projection, err
 }
 
 func (service *Service) Delete(ctx context.Context, actor domain.ActorContext, sessionID domain.ID) error {
+	started := time.Now()
+	service.metrics.writes.Add(1)
+	service.metrics.deletes.Add(1)
+	defer func() { service.metrics.writeDurationNS.Add(uint64(time.Since(started).Nanoseconds())) }()
 	if service.store == nil {
 		return nil
 	}
 	if err := actor.Validate(); err != nil {
-		return invalid(err.Error(), err)
+		appErr := invalid(err.Error(), err)
+		service.recordError(appErr)
+		return appErr
 	}
 	if !sessionID.Valid() {
-		return invalid("session ID is invalid", nil)
+		err := invalid("session ID is invalid", nil)
+		service.recordError(err)
+		return err
 	}
-	return service.store.Delete(ctx, actor, sessionID)
+	err := service.store.Delete(ctx, actor, sessionID)
+	service.recordError(err)
+	return err
+}
+
+// MetricsSnapshot returns fixed-name, low-cardinality counters for operational use.
+func (service *Service) MetricsSnapshot() map[string]uint64 {
+	return map[string]uint64{
+		"reads_total":                      service.metrics.reads.Load(),
+		"writes_total":                     service.metrics.writes.Load(),
+		"updates_total":                    service.metrics.updates.Load(),
+		"deletes_total":                    service.metrics.deletes.Load(),
+		"errors_total":                     service.metrics.errors.Load(),
+		"revision_conflicts_total":         service.metrics.revisionConflicts.Load(),
+		"notifications_total":              service.metrics.notifications.Load(),
+		"notification_drops_total":         service.metrics.notificationDrops.Load(),
+		"read_duration_nanoseconds_total":  service.metrics.readDurationNS.Load(),
+		"write_duration_nanoseconds_total": service.metrics.writeDurationNS.Load(),
+	}
+}
+
+func (service *Service) recordError(err error) {
+	if err == nil {
+		return
+	}
+	service.metrics.errors.Add(1)
+	var appErr *domain.AppError
+	if errors.As(err, &appErr) && appErr.Code == domain.ErrorConflict {
+		service.metrics.revisionConflicts.Add(1)
+	}
 }
 
 func (service *Service) validate(ctx context.Context, actor domain.ActorContext, sessionID domain.ID, write bool) error {

@@ -90,4 +90,18 @@ func TestServicePublishesBoundedCanvasUpdatedNotification(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("Canvas update notification not delivered")
 	}
+	metrics := service.MetricsSnapshot()
+	if metrics["writes_total"] != 1 || metrics["notifications_total"] != 1 || metrics["errors_total"] != 0 {
+		t.Fatalf("unexpected metrics: %+v", metrics)
+	}
+}
+
+func TestServiceMetricsDoNotContainRequestIdentifiers(t *testing.T) {
+	service := New(nil, nil)
+	metrics := service.MetricsSnapshot()
+	for key := range metrics {
+		if bytes.Contains([]byte(key), []byte("session")) || bytes.Contains([]byte(key), []byte("chart")) || bytes.Contains([]byte(key), []byte("datasource")) {
+			t.Fatalf("metric key leaks request identifier: %q", key)
+		}
+	}
 }

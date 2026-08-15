@@ -52,6 +52,22 @@ func TestCanvasHTTPGetPutUsesRevisionETag(t *testing.T) {
 	}
 }
 
+func TestCanvasMetricsEndpointReturnsFixedCounters(t *testing.T) {
+	store, err := canvassqlite.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	agents := &contracttest.AgentProvider{SessionDetail: ports.AgentSessionDetail{Session: ports.AgentSession{Ref: ports.AgentSessionRef{ID: "ses_abcdefgh"}, Status: domain.SessionActive}}}
+	service := canvas.New(agents, store)
+	handler := New(config.Config{}, nil, WithCanvasService(service)).Handler
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics/canvas", nil))
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"reads_total":0`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestCanvasHTTPRejectsMissingIfMatch(t *testing.T) {
 	agents := &contracttest.AgentProvider{SessionDetail: ports.AgentSessionDetail{Session: ports.AgentSession{Status: domain.SessionActive}}}
 	store, err := canvassqlite.Open(":memory:")
