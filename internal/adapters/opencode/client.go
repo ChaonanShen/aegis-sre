@@ -56,6 +56,12 @@ type ProjectedMessage struct {
 	} `json:"time"`
 }
 
+// V1Message 保留 OpenCode V1 的 info/parts 结构，具体 part 由 Provider adapter 投影。
+type V1Message struct {
+	Info  json.RawMessage   `json:"info"`
+	Parts []json.RawMessage `json:"parts"`
+}
+
 func NewClient(rawURL string, httpClient *http.Client, username string, password func() (string, error)) (*Client, error) {
 	base, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
@@ -103,6 +109,21 @@ func (client *Client) DefaultModel(ctx context.Context) (ModelRef, error) {
 		return ModelRef{}, errors.New("OpenCode default model is not configured")
 	}
 	return ModelRef{ID: modelID, ProviderID: providerID}, nil
+}
+
+func (client *Client) ListSessionsV1(ctx context.Context, limit, start int) ([]Session, error) {
+	query := url.Values{"limit": {strconv.Itoa(limit)}, "start": {strconv.Itoa(start)}}
+	var output []Session
+	if err := client.call(ctx, http.MethodGet, "session", query, nil, &output); err != nil {
+		return nil, err
+	}
+	return output, nil
+}
+
+func (client *Client) GetSessionV1(ctx context.Context, id string) (Session, error) {
+	var output Session
+	err := client.call(ctx, http.MethodGet, "session/"+url.PathEscape(id), nil, nil, &output)
+	return output, err
 }
 
 func (client *Client) CreateSession(ctx context.Context, id string, model ModelRef) (Session, error) {
@@ -163,6 +184,16 @@ func (client *Client) ListMessages(ctx context.Context, sessionID, cursor string
 	return output.Data, output.Cursor.Next, err
 }
 
+func (client *Client) ListMessagesV1(ctx context.Context, sessionID, before string, limit int) ([]V1Message, error) {
+	query := url.Values{"limit": {strconv.Itoa(limit)}}
+	if before != "" {
+		query.Set("before", before)
+	}
+	var output []V1Message
+	err := client.call(ctx, http.MethodGet, "session/"+url.PathEscape(sessionID)+"/message", query, nil, &output)
+	return output, err
+}
+
 func (client *Client) DeleteSession(ctx context.Context, id string) error {
 	return client.call(ctx, http.MethodDelete, "session/"+url.PathEscape(id), nil, nil, nil)
 }
@@ -176,8 +207,25 @@ func (client *Client) Prompt(ctx context.Context, sessionID, messageID, text str
 	return output.Data, err
 }
 
+func (client *Client) PromptAsyncV1(ctx context.Context, sessionID, messageID string, model ModelRef, agent, text string) error {
+	body := map[string]any{
+		"messageID": messageID,
+		"agent":     agent,
+		"model": map[string]string{
+			"providerID": model.ProviderID,
+			"modelID":    model.ID,
+		},
+		"parts": []map[string]string{{"type": "text", "text": text}},
+	}
+	return client.call(ctx, http.MethodPost, "session/"+url.PathEscape(sessionID)+"/prompt_async", nil, body, nil)
+}
+
 func (client *Client) Interrupt(ctx context.Context, sessionID string) error {
 	return client.call(ctx, http.MethodPost, "api/session/"+url.PathEscape(sessionID)+"/interrupt", nil, nil, nil)
+}
+
+func (client *Client) AbortSessionV1(ctx context.Context, sessionID string) error {
+	return client.call(ctx, http.MethodPost, "session/"+url.PathEscape(sessionID)+"/abort", nil, nil, nil)
 }
 
 func (client *Client) ResolvePermission(ctx context.Context, sessionID, permissionID, response string) error {
@@ -207,6 +255,28 @@ func (client *Client) SubscribeEvents(ctx context.Context, sessionID, after stri
 	if !strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
 		response.Body.Close()
 		return nil, errors.New("OpenCode event response is not text/event-stream")
+	}
+	return response.Body, nil
+}
+
+func (client *Client) SubscribeGlobalEventsV1(ctx context.Context) (io.ReadCloser, error) {
+	request, err := client.request(ctx, http.MethodGet, "event", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", "text/event-stream")
+	response, err := client.httpClient.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("subscribe OpenCode V1 events: %w", err)
+	}
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		defer response.Body.Close()
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 64<<10))
+		return nil, &HTTPError{Status: response.StatusCode}
+	}
+	if !strings.HasPrefix(strings.ToLower(response.Header.Get("Content-Type")), "text/event-stream") {
+		response.Body.Close()
+		return nil, errors.New("OpenCode V1 event response is not text/event-stream")
 	}
 	return response.Body, nil
 }
