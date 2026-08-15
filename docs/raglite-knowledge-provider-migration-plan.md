@@ -187,11 +187,11 @@ collections: id, name, folder_uid, scope_fingerprint, status, timestamps
 documents: id, collection_id, name, media_type, size, sha256, original_path,
            service, tags, status, failure_reason, timestamps
 jobs: id, document_id, operation, status, attempts, error, timestamps
-idempotency_keys: actor_scope, operation_key, resource_id, content_sha256
 ~~~
 
 这是 Provider 自有状态，不是 Control Plane 的通用映射表。它必须和 DuckDB、原文件、模型版本
-一起备份恢复。
+一起备份恢复。当前不另建 `idempotency_keys` 表：Control Plane 派生的稳定资源 ID、SQLite 唯一
+约束和原文件 SHA-256 共同处理重复请求；出现不确定写入时由调用方按稳定 ID 查询对账。
 
 ### 6.4 原文件安全存储
 
@@ -204,11 +204,13 @@ idempotency_keys: actor_scope, operation_key, resource_id, content_sha256
   model-cache/
 ~~~
 
-上传流程：限制大小和格式 -> 写入 tmp -> 计算 SHA-256 -> fsync -> 原子 rename -> 写入
+上传流程：限制大小并清洗文件名 -> 写入 tmp -> 计算 SHA-256 -> fsync -> 原子 rename -> 写入
 Document manifest -> 创建索引 job。用户文件名只能作为清洗后的显示名，不能直接参与路径拼接。
 
-删除流程：标记 delete_pending -> 删除 RAGLite Document/Chunk/Embedding -> 确认索引清理 ->
-删除原文件 -> 完成 job。任何一步失败都保留任务并可重试，不能先删原文件再猜测索引状态。
+首版删除是同步操作：先拒绝存在活动索引 job 的文档，再删除 RAGLite
+Document/Chunk/Embedding，随后删除原文件和 SQLite manifest。RAGLite 删除失败时保留原文件与
+manifest 供重试；RAGLite DuckDB 删除本身不是原子事务，半成品删除和后续步骤失败仍需在 P3
+通过故障注入与对账恢复验证。
 
 ### 6.5 Metadata 与授权
 
@@ -232,8 +234,8 @@ Actor/Folder scope。scope 缺失或不匹配时必须 fail-closed。
 ### 7.1 上传与索引
 
 1. Go adapter 生成稳定的 Collection/Document ID，并把 Actor scope 传给 sidecar。
-2. sidecar 安全保存原文件和摘要，写入 Document manifest。
-3. API 返回 202 和 job 状态；请求不等待 Embedding 完成。
+2. sidecar 安全保存原文件和摘要，写入 Document manifest，上传 API 返回 201。
+3. 调用独立的 index endpoint 创建 job 并返回 202；请求不等待 Embedding 完成。
 4. 单写 worker 从原文件重建 Document.from_path，带入稳定 ID 和完整 metadata。
 5. insert_documents 成功后检查 Chunk 数量，再把 Document 标为 ready。
 
@@ -278,31 +280,37 @@ AEGIS_KNOWLEDGE_TIMEOUT=30s
 
 ## 9. 执行阶段与退出标准
 
+当前进度（2026-08-15）：P0 的架构决策和能力语义、P1 的 sidecar 骨架、P2 的 Go adapter 与
+factory、RAGLite 容器和本地叠加部署已经落地。单元与边界测试、镜像构建和运行时导入冒烟通过；
+真实 PDF/TXT、DuckDB 扩展离线预热、双 Provider 公共 contract suite、故障注入、备份恢复和
+30 条中文运维问题质量门禁仍未完成，因此尚不能进入生产切换。
+
 ### P0：文档与契约冻结
 
-- [ ] 接受或修订 ADR 0008，确认 Provider factory、单实例选择和回退窗口。
-- [ ] 更新 docs/architecture.md 中仍指向 RAGFlow 唯一事实来源的表述。
-- [ ] 为 KnowledgeProvider 每个方法写出 RAGLite 语义和能力缺口。
+- [x] 接受或修订 ADR 0008，确认 Provider factory、单实例选择和回退窗口。
+- [x] 更新 docs/architecture.md 中仍指向 RAGFlow 唯一事实来源的表述。
+- [x] 为 KnowledgeProvider 每个方法写出 RAGLite 语义和能力缺口。
 - [ ] 固定内部 REST JSON schema、错误码和 job 状态机。
 
 退出标准：没有未决的公共 ID、授权、阈值和任务取消语义。
 
 ### P1：RAGLite contract spike
 
-- [ ] 建立最小 Python sidecar、Dockerfile、lockfile 和 /healthz。
+- [x] 建立最小 Python sidecar、Dockerfile、lockfile 和 /healthz。
 - [ ] 完成 PDF/Markdown/TXT 上传、索引、检索、Chunk、原文下载闭环。
 - [ ] 验证 DuckDB 扩展离线预热、BGE-M3 Q4 加载和单写 worker。
-- [ ] 建立 sidecar 单元测试和真实文件集冒烟测试。
+- [x] 建立 sidecar 单元测试。
+- [ ] 建立真实 PDF/Markdown/TXT 文件集冒烟测试。
 
 退出标准：在无 RAGFlow、无外网运行时能稳定完成 10 份小文档的索引和检索。
 
 ### P2：Go adapter 与 factory
 
-- [ ] 新增 internal/adapters/raglite。
-- [ ] 把 RAGFlow/RAGLite 装配移入 factory，清理 main.go 中的 Provider-specific 分支。
-- [ ] 统一超时、认证、响应限制和错误映射。
+- [x] 新增 internal/adapters/raglite。
+- [x] 把 RAGFlow/RAGLite 装配移入 factory，清理 main.go 中的 Provider-specific 分支。
+- [x] 统一超时、认证、响应限制和错误映射。
 - [ ] 为 RAGFlow 和 RAGLite 运行同一套 KnowledgeProvider contract tests。
-- [ ] 为非零阈值、运行中 stop、无页码 PDF 增加能力缺口测试。
+- [x] 为非零阈值、运行中 stop、无页码 PDF 增加能力缺口测试。
 
 退出标准：Control Plane 仅依赖 ports.KnowledgeProvider，两种实现都能通过公共契约测试。
 
@@ -310,7 +318,7 @@ AEGIS_KNOWLEDGE_TIMEOUT=30s
 
 - [ ] 测试并发上传、删除、检索和单写队列。
 - [ ] 注入进程重启、半成品索引、磁盘满、sidecar 超时和不确定写入结果。
-- [ ] 验证 scope 缺失、跨 Folder、伪造 Collection ID 的 fail-closed 行为。
+- [x] 验证 scope 缺失、跨 Folder、伪造 Collection ID 的 fail-closed 行为。
 - [ ] 演练 provider.sqlite、raglite.db、originals 和 model-cache 的备份恢复。
 
 退出标准：越权检索 100% 拒绝，恢复演练成功，所有不确定写入均可对账。
@@ -321,7 +329,8 @@ AEGIS_KNOWLEDGE_TIMEOUT=30s
 - [ ] 保留原公共 ID，导入 RAGLite 并重新索引；禁止直接复制 RAGFlow 私有索引。
 - [ ] 使用至少 30 条中文运维问题进行 Top-K、删除残留和引用质量对比。
 - [ ] 记录 CPU、RSS、索引耗时、磁盘增量和启动耗时。
-- [ ] 准备 RAGFlow 只读部署和回退配置。
+- [x] 准备 RAGFlow 显式回退配置。
+- [ ] 在迁移演练中验证 RAGFlow 只读运行模式。
 
 退出标准：RAGLite 通过质量和资源门禁，且可以在不改前端契约的情况下切换部署。
 
@@ -382,10 +391,13 @@ AEGIS_KNOWLEDGE_TIMEOUT=30s
 - sidecar 的备份窗口、磁盘上限和文档大小上限。
 - RAGLite 运行时是否允许 Pandoc 格式，及其固定版本。
 
-## 13. 建议目录结构
+## 13. 实施目录结构
 
 目录按“公共产品边界、Provider 适配、Provider 实现、部署和运行数据”分层。Go Control Plane
 不读取 RAGLite 的数据库文件；Python sidecar 也不读取 Go 的内部包。
+
+当前 sidecar 规模较小，采用文件级分层；达到需要独立维护多组 API 或 application service 时再拆
+子包，避免只为目录形式增加空壳。依赖方向保持为 `api -> service -> repository/backend/store`。
 
 ~~~text
 internal/
@@ -394,10 +406,11 @@ internal/
     contracttest/
       fakes.go                    # 只用于契约测试，不用于真实运行
   domain/
-    knowledge.go                  # Provider-neutral 领域值和公共错误
+    models.go                     # Provider-neutral 领域值
+    common.go                     # 公共错误、分页和 Actor Context
   adapters/
     knowledgefactory/
-      provider.go                 # 根据配置装配一个 Knowledge Provider
+      factory.go                  # 根据配置装配一个 Knowledge Provider
     knowledgeid/
       codec.go                    # Collection/Document/Chunk 公共 ID
     ragflow/
@@ -419,37 +432,27 @@ internal/
 providers/
   raglite/
     pyproject.toml                # Python 依赖和固定版本
-    uv.lock                       # 或等价 lockfile
+    uv.lock                       # 完整依赖 lockfile
+    Dockerfile                    # 固定基础镜像、单 worker、非 root runtime
+    healthcheck.py                # 容器内带 Bearer Token 的健康检查
     src/aegis_raglite_provider/
       main.py                     # FastAPI/Uvicorn 入口
       config.py                   # 数据目录、模型和限制
-      api/
-        auth.py                   # 内部 Bearer 鉴权
-        health.py                  # /healthz
-        collections.py             # Collection 管理端点
-        documents.py               # Document、上传、下载端点
-        jobs.py                    # job 查询和停止请求
-        search.py                  # 检索端点
-      application/
-        collection_service.py      # Collection 生命周期
-        document_service.py       # 原文件和 Document manifest
-        indexing_service.py       # 单写 worker、索引和恢复
-        retrieval_service.py      # scope 过滤和检索编排
-      infrastructure/
-        provider_db.py             # provider.sqlite 访问
-        raglite_store.py           # RAGLite/DuckDB 封装
-        original_store.py          # tmp、原子 rename、下载和删除
-        job_worker.py              # 有界队列和重启恢复
-        migrations.py              # provider.sqlite schema 初始化
-      tests/
-        ...
-    Dockerfile
+      api.py                      # REST、鉴权依赖和稳定错误响应
+      service.py                  # 生命周期、检索编排和单写 worker
+      models.py                   # sidecar 内部资源模型
+      repository.py               # provider.sqlite schema 与事务
+      backend.py                  # RAGLite/DuckDB 唯一封装边界
+      original_store.py           # 原子上传、路径约束、下载和删除
+    tests/                        # API、service、repository、backend 和文件测试
 
 deploy/
   raglite/
-    compose.knowledge.yaml        # sidecar、卷、内部网络和 healthcheck
+    compose.yaml                  # sidecar、卷、内部网络和 healthcheck
     README.md                      # 启动、备份、恢复和资源要求
-    secrets.example/               # 仅示例，不提交真实凭据
+
+scripts/
+  test-raglite-deploy.sh          # Compose 与密钥初始化契约
 
 /var/lib/aegis/raglite/            # 运行时挂载卷，不进入 Git
   provider.sqlite                  # Provider 资源、状态、job 的事实来源
@@ -468,9 +471,9 @@ deploy/
 | --- | --- | --- |
 | `internal/ports`、`domain` | Aegis 稳定类型 | RAGFlow/RAGLite SDK、Provider ID |
 | `internal/adapters/raglite` | sidecar HTTP contract、ID codec | Python 内部模块、DuckDB 文件 |
-| `providers/raglite/api` | application service、认证 | 直接拼 SQL、直接操作公共 API 语义 |
-| `providers/raglite/application` | provider storage、RAGLite facade | FastAPI request/response 对象 |
-| `providers/raglite/infrastructure` | SQLite、DuckDB、文件系统、RAGLite | Grafana、Control Plane 内存状态 |
+| `providers/raglite/api.py` | application service、认证 | 直接拼 SQL、直接访问 DuckDB |
+| `providers/raglite/service.py` | repository、RAGLite facade、原文件 store | FastAPI request/response 对象 |
+| `providers/raglite/repository.py`、`backend.py`、`original_store.py` | SQLite、DuckDB、文件系统、RAGLite | Grafana、Control Plane 内存状态 |
 | `deploy/raglite` | 镜像、卷、secret、网络 | 业务逻辑、Provider 映射 |
 
 ### 13.2 数据所有权

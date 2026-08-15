@@ -488,7 +488,7 @@ provider-neutral 契约。
 
 ## 11. 阶段 8：Knowledge Provider 迁移垂直切片
 
-状态：**暂停。现有 RAGFlow 实现保留为兼容 Provider；RAGLite sidecar、Go adapter、factory 和真实迁移验收按独立执行计划推进。默认配置不装配、不启动、不注册 Knowledge MCP。**
+状态：**执行中。RAGLite sidecar、Go adapter、factory、容器和本地叠加部署已完成；现有 RAGFlow 实现保留为兼容 Provider。默认配置仍不装配、不启动、不注册 Knowledge MCP，真实文件集、恢复、迁移和质量门禁尚未通过。**
 
 目标：先完成 Provider contract spike 和 RAGLite 真实闭环，再通过部署级配置切换 Knowledge Provider；当前不启动任何未显式启用的 Provider，也不把未验收的 Knowledge 注册给 OpenCode、Codex 或 Dagu。
 
@@ -505,9 +505,9 @@ provider-neutral 契约。
 ### 8.1 基础部署
 
 - [ ] 固定当前兼容 Provider 和 RAGLite sidecar 的版本、镜像 digest 与配置 checksum。
-- [ ] 为选定 Provider 的数据目录、索引、原文件和模型缓存配置持久卷。
+- [x] 为选定 Provider 的数据目录、索引、原文件和模型缓存配置持久卷。
 - [ ] 固定 Embedding 模型、DuckDB 扩展和 Pandoc 版本，并完成离线启动预热。
-- [ ] 建立 sidecar readiness、单写约束、备份和恢复说明。
+- [x] 建立 sidecar readiness、单写约束、备份和恢复说明；实际恢复演练仍属于独立计划 P3。
 - [x] 记录不启动 Knowledge Provider 时其他模块的独立开发方式。
 
 ### 8.1.1 公共标识与最小授权前置
@@ -526,7 +526,7 @@ provider-neutral 契约。
 - [x] 文档、Chunk 分页浏览。
 - [x] 混合检索、阈值、Top K 和引用位置映射。
 - [x] 请求超时、只读请求有限重试、响应限额和错误净化。
-- [ ] 验证 RAGFlow 与 RAGLite 的公共标识、metadata 查询和 scope 过滤策略，不建立跨 Provider 映射表。
+- [x] 验证 RAGFlow 与 RAGLite 的公共标识、metadata 查询和 scope 过滤策略，不建立跨 Provider 映射表。
 - [x] 对不确定的变更结果禁止自动重试，并提供 `provider_result_unknown` 对账语义。
 
 ### 8.3 Knowledge MCP
