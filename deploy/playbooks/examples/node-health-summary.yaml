@@ -9,53 +9,62 @@ steps:
       tool: query_prometheus
       args:
         datasourceUid: prometheus
-        expr: up{job="node-exporter"}
+        expr: sum(up{job="node-exporter"})
         endTime: now
         queryType: instant
 
-  - id: query_cpu_idle
+  - id: query_cpu_busy_percent
     action: mcp.call
     with:
       server: grafana-read
       tool: query_prometheus
       args:
         datasourceUid: prometheus
-        expr: avg by (instance) (rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[5m]))
+        expr: 100 * (1 - avg(rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[5m])))
         endTime: now
         queryType: instant
 
-  - id: query_memory_available
+  - id: query_memory_available_gib
     action: mcp.call
     with:
       server: grafana-read
       tool: query_prometheus
       args:
         datasourceUid: prometheus
-        expr: node_memory_MemAvailable_bytes{job="node-exporter"}
+        expr: node_memory_MemAvailable_bytes{job="node-exporter"} / 1024 / 1024 / 1024
         endTime: now
         queryType: instant
 
   - id: summarize
-    depends: [query_up, query_cpu_idle, query_memory_available]
+    depends: [query_up, query_cpu_busy_percent, query_memory_available_gib]
     action: template.render
     with:
       data:
         up: ${query_up.output.text}
-        cpu_idle: ${query_cpu_idle.output.text}
-        memory_available: ${query_memory_available.output.text}
+        cpu_busy_percent: ${query_cpu_busy_percent.output.text}
+        memory_available_gib: ${query_memory_available_gib.output.text}
       template: |
         # Node health summary
 
-        ## Availability
+        ## Node exporter targets up
 
+        `sum(up{job="node-exporter"})`
+        <!-- result:up -->
         {{ .up }}
+        <!-- /result:up -->
 
-        ## CPU idle ratio
+        ## CPU busy percent
 
-        {{ .cpu_idle }}
+        `100 * (1 - avg(rate(node_cpu_seconds_total{job="node-exporter",mode="idle"}[5m])))`
+        <!-- result:cpu -->
+        {{ .cpu_busy_percent }}
+        <!-- /result:cpu -->
 
-        ## Available memory
+        ## Available memory GiB
 
-        {{ .memory_available }}
+        `node_memory_MemAvailable_bytes{job="node-exporter"} / 1024 / 1024 / 1024`
+        <!-- result:memory -->
+        {{ .memory_available_gib }}
+        <!-- /result:memory -->
     stdout:
       artifact: reports/node-health-summary.md

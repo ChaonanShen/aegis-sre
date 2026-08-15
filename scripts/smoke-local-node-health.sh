@@ -55,4 +55,16 @@ artifacts="$(request GET "/runs/$run_id/artifacts")"
 printf '%s\n' "$artifacts" | jq -e '.items | any(.path == "reports/node-health-summary.md")' >/dev/null
 preview="$(request GET "/runs/$run_id/artifacts/preview?path=reports%2Fnode-health-summary.md")"
 printf '%s\n' "$preview" | jq -e '.text | contains("Node health summary")' >/dev/null
+report="$(printf '%s\n' "$preview" | jq -r '.text')"
+result_block() {
+  name="$1"
+  printf '%s\n' "$report" | sed -n "/<!-- result:$name -->/,/<!-- \/result:$name -->/p" | sed '1d;$d' | tr -d '[:space:]'
+}
+up_result="$(result_block up)"
+cpu_result="$(result_block cpu)"
+memory_result="$(result_block memory)"
+test -n "$up_result" -a -n "$cpu_result" -a -n "$memory_result"
+test "$up_result" != "$cpu_result"
+test "$up_result" != "$memory_result"
+test "$cpu_result" != "$memory_result"
 printf 'Node health Playbook smoke passed: %s / %s\n' "$playbook_id" "$run_id"
