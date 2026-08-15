@@ -21,7 +21,7 @@ request() {
 }
 
 # 固定创建键让同一个 Playbook 保留，多次执行只新增 Run 历史。
-playbook_id="$(request POST /playbooks -H 'Content-Type: application/yaml' -H 'Idempotency-Key: node-capacity-local-v1' --data-binary "@$source_file" | jq -r '.id')"
+playbook_id="$(request POST /playbooks -H 'Content-Type: application/yaml' -H 'Idempotency-Key: node-capacity-local-v2' --data-binary "@$source_file" | jq -r '.id')"
 test -n "$playbook_id" -a "$playbook_id" != null
 
 run_key="node-capacity-run-$(date +%s)-$$"
@@ -46,6 +46,12 @@ preview="$(request GET "/runs/$run_id/artifacts/preview?path=reports%2Fnode-capa
 report="$(printf '%s\n' "$preview" | jq -r '.text')"
 printf '%s\n' "$report" | grep -q '<!-- result:disk -->'
 printf '%s\n' "$report" | grep -q '<!-- result:memory -->'
+printf '%s\n' "$report" | grep -Eq 'Root disk remaining: \*\*[0-9]+([.][0-9]+)? GiB\*\*'
+printf '%s\n' "$report" | grep -Eq 'Memory used: \*\*[0-9]+([.][0-9]+)? GiB\*\*'
+if printf '%s\n' "$report" | grep -q '"data"'; then
+  echo 'capacity report unexpectedly contains raw Grafana MCP JSON' >&2
+  exit 1
+fi
 
 printf 'Node capacity Playbook succeeded: %s / %s\n\n' "$playbook_id" "$run_id"
 printf '%s\n' "$report"

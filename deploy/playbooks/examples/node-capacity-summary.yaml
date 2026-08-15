@@ -24,30 +24,40 @@ steps:
         endTime: now
         queryType: instant
 
+  - id: extract_disk_available_gib
+    depends: [query_disk_available_gib]
+    action: jq.filter
+    with:
+      filter: '.data[0].value[1] | tonumber | . * 100 | round / 100'
+      data: ${query_disk_available_gib.output.text}
+      raw: true
+    output: DISK_AVAILABLE_GIB
+
+  - id: extract_memory_used_gib
+    depends: [query_memory_used_gib]
+    action: jq.filter
+    with:
+      filter: '.data[0].value[1] | tonumber | . * 100 | round / 100'
+      data: ${query_memory_used_gib.output.text}
+      raw: true
+    output: MEMORY_USED_GIB
+
   - id: summarize_capacity
-    depends: [query_disk_available_gib, query_memory_used_gib]
+    depends: [extract_disk_available_gib, extract_memory_used_gib]
     action: template.render
     with:
       data:
-        disk_available_gib: ${query_disk_available_gib.output.text}
-        memory_used_gib: ${query_memory_used_gib.output.text}
+        disk_available_gib: ${env.DISK_AVAILABLE_GIB}
+        memory_used_gib: ${env.MEMORY_USED_GIB}
       template: |
         # Node capacity summary
 
-        ## Root disk remaining (GiB)
-
-        `max(node_filesystem_avail_bytes{job="node-exporter",mountpoint="/"}) / 1024 / 1024 / 1024`
-
         <!-- result:disk -->
-        {{ .disk_available_gib }}
+        - Root disk remaining: **{{ .disk_available_gib }} GiB**
         <!-- /result:disk -->
 
-        ## Memory used (GiB)
-
-        `max(node_memory_MemTotal_bytes{job="node-exporter"} - node_memory_MemAvailable_bytes{job="node-exporter"}) / 1024 / 1024 / 1024`
-
         <!-- result:memory -->
-        {{ .memory_used_gib }}
+        - Memory used: **{{ .memory_used_gib }} GiB**
         <!-- /result:memory -->
     stdout:
       artifact: reports/node-capacity-summary.md
