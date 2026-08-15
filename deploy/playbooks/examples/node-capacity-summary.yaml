@@ -1,0 +1,53 @@
+type: graph
+description: Show remaining root disk space and used memory in GiB.
+
+steps:
+  - id: query_disk_available_gib
+    action: mcp.call
+    with:
+      server: grafana-read
+      tool: query_prometheus
+      args:
+        datasourceUid: prometheus
+        expr: max(node_filesystem_avail_bytes{job="node-exporter",mountpoint="/"}) / 1024 / 1024 / 1024
+        endTime: now
+        queryType: instant
+
+  - id: query_memory_used_gib
+    action: mcp.call
+    with:
+      server: grafana-read
+      tool: query_prometheus
+      args:
+        datasourceUid: prometheus
+        expr: max(node_memory_MemTotal_bytes{job="node-exporter"} - node_memory_MemAvailable_bytes{job="node-exporter"}) / 1024 / 1024 / 1024
+        endTime: now
+        queryType: instant
+
+  - id: summarize_capacity
+    depends: [query_disk_available_gib, query_memory_used_gib]
+    action: template.render
+    with:
+      data:
+        disk_available_gib: ${query_disk_available_gib.output.text}
+        memory_used_gib: ${query_memory_used_gib.output.text}
+      template: |
+        # Node capacity summary
+
+        ## Root disk remaining (GiB)
+
+        `max(node_filesystem_avail_bytes{job="node-exporter",mountpoint="/"}) / 1024 / 1024 / 1024`
+
+        <!-- result:disk -->
+        {{ .disk_available_gib }}
+        <!-- /result:disk -->
+
+        ## Memory used (GiB)
+
+        `max(node_memory_MemTotal_bytes{job="node-exporter"} - node_memory_MemAvailable_bytes{job="node-exporter"}) / 1024 / 1024 / 1024`
+
+        <!-- result:memory -->
+        {{ .memory_used_gib }}
+        <!-- /result:memory -->
+    stdout:
+      artifact: reports/node-capacity-summary.md

@@ -1,4 +1,4 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate node-health-playbook-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke local-secrets local-config-check local-up local-agent-smoke local-playbook-smoke local-node-health-smoke agent-playbook-e2e local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate node-health-playbook-validate node-capacity-playbook-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke local-secrets local-config-check local-up local-agent-smoke local-playbook-smoke local-node-health-smoke local-node-capacity-run agent-playbook-e2e local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 OAPI_CODEGEN_VERSION := v2.8.0
 MAGE_VERSION := v1.17.2
@@ -43,6 +43,12 @@ node-health-playbook-validate:
 	cp deploy/dagu/base.yaml "$$dagu_tmp/base.yaml"; \
 	$(DAGU_BIN) validate --dagu-home "$$dagu_tmp" -c deploy/dagu/config.yaml deploy/playbooks/examples/node-health-summary.yaml
 
+node-capacity-playbook-validate:
+	dagu_tmp=$$(mktemp -d); \
+	trap 'rm -rf "$$dagu_tmp"' EXIT; \
+	cp deploy/dagu/base.yaml "$$dagu_tmp/base.yaml"; \
+	$(DAGU_BIN) validate --dagu-home "$$dagu_tmp" -c deploy/dagu/config.yaml deploy/playbooks/examples/node-capacity-summary.yaml
+
 dagu-contract-test:
 	./scripts/test-dagu-contract.sh
 
@@ -84,6 +90,9 @@ local-playbook-smoke:
 
 local-node-health-smoke:
 	./scripts/smoke-local-node-health.sh
+
+local-node-capacity-run:
+	./scripts/run-local-node-capacity.sh
 
 codex-schema-check:
 	@test "$$($(CODEX_BIN) --version)" = "codex-cli $(CODEX_VERSION)" || (echo "expected codex-cli $(CODEX_VERSION)" >&2; exit 1)
