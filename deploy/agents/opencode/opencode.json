@@ -4,15 +4,7 @@
   "small_model": "deepseek/deepseek-chat",
   "autoupdate": false,
   "provider": {
-    "deepseek": {
-      "models": {
-        "deepseek-v4-flash": {
-          "interleaved": {
-            "field": "reasoning_content"
-          }
-        }
-      }
-    }
+    "deepseek": {}
   },
   "mcp": {
     "grafana-read": {
