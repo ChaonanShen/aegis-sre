@@ -34,6 +34,7 @@ type ValidationResult struct {
 type DAGRun struct {
 	DAGRunID   string          `json:"dagRunId"`
 	Name       string          `json:"name"`
+	Labels     []string        `json:"labels"`
 	Status     int             `json:"status"`
 	StatusText string          `json:"statusLabel"`
 	StartedAt  string          `json:"startedAt"`

@@ -13,8 +13,9 @@ import (
 	"github.com/1024XEngineer/aegis-sre/internal/ports"
 )
 
-func TestProviderUsesPublicIDsWithoutMappingStore(t *testing.T) {
+func TestProviderUsesYAMLNameForRunsAndStableLabelForOwnership(t *testing.T) {
 	t.Parallel()
+	label := playbookRunLabel("pbk_abcdefgh")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/api/v1/dags/pbk_abcdefgh/start":
@@ -22,12 +23,15 @@ func TestProviderUsesPublicIDsWithoutMappingStore(t *testing.T) {
 			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 				t.Fatal(err)
 			}
-			if body["dagName"] != "pbk_abcdefgh" {
-				t.Errorf("dagName = %#v", body["dagName"])
+			labels, _ := body["labels"].([]any)
+			if body["dagName"] != nil || len(labels) != 1 || labels[0] != label {
+				t.Errorf("body = %#v", body)
 			}
 			_, _ = w.Write([]byte(`{"dagRunId":"run_abcdefgh"}`))
-		case "/api/v1/dag-runs/pbk_abcdefgh/run_abcdefgh":
-			_, _ = w.Write([]byte(`{"dagRunDetails":{"dagRunId":"run_abcdefgh","name":"pbk_abcdefgh","statusLabel":"success","nodes":[]}}`))
+		case "/api/v1/dag-runs":
+			_, _ = w.Write([]byte(`{"dagRuns":[{"dagRunId":"run_abcdefgh","name":"diagnose-api","labels":["` + label + `"],"statusLabel":"success"}]}`))
+		case "/api/v1/dag-runs/diagnose-api/run_abcdefgh":
+			_, _ = w.Write([]byte(`{"dagRunDetails":{"dagRunId":"run_abcdefgh","name":"diagnose-api","labels":["` + label + `"],"statusLabel":"success","nodes":[]}}`))
 		default:
 			t.Errorf("unexpected path %q", request.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
@@ -144,23 +148,54 @@ func TestProviderResolvesRunNameFromDaguWithoutMappingStore(t *testing.T) {
 	}
 }
 
+func TestProviderUsesResolvedDisplayNameForRunArtifacts(t *testing.T) {
+	t.Parallel()
+	label := playbookRunLabel("pbk_abcdefgh")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/api/v1/dag-runs":
+			_, _ = w.Write([]byte(`{"dagRuns":[{"dagRunId":"run_abcdefgh","name":"renamed-playbook","labels":["` + label + `"]}]}`))
+		case "/api/v1/dag-runs/renamed-playbook/run_abcdefgh/artifacts":
+			_, _ = w.Write([]byte(`{"items":[{"name":"report.md","path":"reports/report.md","type":"text/markdown","size":12}]}`))
+		default:
+			t.Errorf("path = %q", request.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	provider, _ := NewProvider(client)
+	artifacts, err := provider.ListArtifacts(context.Background(), domain.ActorContext{}, ports.PlaybookRunRef{ID: "run_abcdefgh", PlaybookID: "pbk_abcdefgh"})
+	if err != nil || len(artifacts) != 1 || artifacts[0].Path != "reports/report.md" {
+		t.Fatalf("artifacts = %#v, err = %v", artifacts, err)
+	}
+}
+
 func TestProviderListsOnlyPublicRunsForRequestedPlaybook(t *testing.T) {
 	t.Parallel()
+	label := playbookRunLabel("pbk_abcdefgh")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		if request.URL.Query().Get("name") != "pbk_abcdefgh" || request.URL.Query().Get("limit") != "3" {
+		if request.URL.Query().Get("limit") != "3" {
 			t.Errorf("query = %q", request.URL.RawQuery)
 		}
-		_, _ = w.Write([]byte(`{"dagRuns":[
-			{"dagRunId":"run_first123","name":"pbk_abcdefgh","statusLabel":"success"},
-			{"dagRunId":"internal","name":"pbk_abcdefgh","statusLabel":"running"},
-			{"dagRunId":"run_foreign","name":"pbk_foreign","statusLabel":"failed"}
-		]}`))
+		switch {
+		case request.URL.Query().Get("labels") == label:
+			_, _ = w.Write([]byte(`{"dagRuns":[{"dagRunId":"run_new12345","name":"renamed","labels":["` + label + `"],"statusLabel":"running","startedAt":"2026-08-15T02:00:00Z"}]}`))
+		case request.URL.Query().Get("name") == "pbk_abcdefgh":
+			_, _ = w.Write([]byte(`{"dagRuns":[
+				{"dagRunId":"run_first123","name":"pbk_abcdefgh","statusLabel":"success","startedAt":"2026-08-15T01:00:00Z"},
+				{"dagRunId":"internal","name":"pbk_abcdefgh","statusLabel":"running"},
+				{"dagRunId":"run_foreign","name":"pbk_foreign","statusLabel":"failed"}
+			]}`))
+		default:
+			t.Errorf("query = %q", request.URL.RawQuery)
+		}
 	}))
 	defer server.Close()
 	client, _ := NewClient(server.URL, server.Client())
 	provider, _ := NewProvider(client)
 	page, err := provider.ListRuns(context.Background(), domain.ActorContext{}, ports.PlaybookRef{ID: "pbk_abcdefgh"}, domain.PageRequest{Limit: 2})
-	if err != nil || len(page.Items) != 1 || page.Items[0].Ref.ID != "run_first123" || page.Items[0].Status != domain.RunSucceeded || page.HasMore {
+	if err != nil || len(page.Items) != 2 || page.Items[0].Ref.ID != "run_new12345" || page.Items[1].Ref.ID != "run_first123" || page.HasMore {
 		t.Fatalf("page = %#v, err = %v", page, err)
 	}
 }
@@ -223,13 +258,15 @@ func TestProviderGetsNameAndDescriptionFromNativeYAML(t *testing.T) {
 
 func TestProviderRecoversIdempotentRunConflicts(t *testing.T) {
 	t.Parallel()
+	label := playbookRunLabel("pbk_abcdefgh")
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.Method + " " + request.URL.Path {
 		case "POST /api/v1/dags/pbk_abcdefgh/start",
-			"POST /api/v1/dag-runs/pbk_abcdefgh/run_original/retry":
+			"POST /api/v1/dag-runs/renamed/run_original/retry":
 			w.WriteHeader(http.StatusConflict)
-		case "GET /api/v1/dag-runs/pbk_abcdefgh/run_abcdefgh":
-			_, _ = w.Write([]byte(`{"dagRunDetails":{"dagRunId":"run_abcdefgh","name":"pbk_abcdefgh"}}`))
+		case "GET /api/v1/dag-runs":
+			runID := request.URL.Query().Get("dagRunId")
+			_, _ = w.Write([]byte(`{"dagRuns":[{"dagRunId":"` + runID + `","name":"renamed","labels":["` + label + `"]}]}`))
 		default:
 			t.Errorf("request = %s %s", request.Method, request.URL.Path)
 		}

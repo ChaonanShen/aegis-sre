@@ -116,7 +116,7 @@ func (client *Client) DeleteDAG(ctx context.Context, fileName string) error {
 	return client.doJSON(ctx, http.MethodDelete, "dags/"+url.PathEscape(fileName), nil, nil)
 }
 
-func (client *Client) StartDAG(ctx context.Context, fileName, runID string, params map[string]string, enqueue bool) (string, error) {
+func (client *Client) StartDAG(ctx context.Context, fileName, playbookID, runID string, params map[string]string, enqueue bool) (string, error) {
 	encodedParams, err := json.Marshal(params)
 	if err != nil {
 		return "", fmt.Errorf("encode Dagu parameters: %w", err)
@@ -125,8 +125,12 @@ func (client *Client) StartDAG(ctx context.Context, fileName, runID string, para
 	if enqueue {
 		action = "enqueue"
 	}
-	// 覆盖 Dagu DAG 的逻辑名称，使后续 run 查询始终使用稳定的 Aegis playbook ID。
-	request := map[string]any{"dagName": fileName, "dagRunId": runID, "params": string(encodedParams)}
+	// Dagu 使用 YAML name 展示执行记录；稳定关联通过 Provider 私有标签维护。
+	request := map[string]any{
+		"dagRunId": runID,
+		"labels":   []string{playbookRunLabel(playbookID)},
+		"params":   string(encodedParams),
+	}
 	var response struct {
 		DAGRunID string `json:"dagRunId"`
 	}
@@ -144,6 +148,15 @@ func (client *Client) GetRun(ctx context.Context, name, runID string) (DAGRun, e
 
 func (client *Client) ListRuns(ctx context.Context, name string, limit int) ([]DAGRun, error) {
 	query := url.Values{"name": {name}, "limit": {strconv.Itoa(limit)}}
+	return client.listRuns(ctx, query)
+}
+
+func (client *Client) ListRunsByLabel(ctx context.Context, label string, limit int) ([]DAGRun, error) {
+	query := url.Values{"labels": {label}, "limit": {strconv.Itoa(limit)}}
+	return client.listRuns(ctx, query)
+}
+
+func (client *Client) listRuns(ctx context.Context, query url.Values) ([]DAGRun, error) {
 	var response struct {
 		Runs []DAGRun `json:"dagRuns"`
 	}

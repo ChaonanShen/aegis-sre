@@ -26,7 +26,8 @@ func TestClientUsesCallerSuppliedRunIDAndRotatingToken(t *testing.T) {
 		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		if body["dagName"] != "pbk_example.yaml" || body["dagRunId"] != "run_example" || body["params"] != `{"service":"api"}` {
+		labels, _ := body["labels"].([]any)
+		if body["dagName"] != nil || body["dagRunId"] != "run_example" || body["params"] != `{"service":"api"}` || len(labels) != 1 || labels[0] != playbookRunLabel("pbk_example") {
 			t.Errorf("body = %#v", body)
 		}
 		_, _ = w.Write([]byte(`{"dagRunId":"run_example"}`))
@@ -39,7 +40,7 @@ func TestClientUsesCallerSuppliedRunIDAndRotatingToken(t *testing.T) {
 	}
 	for _, expectedToken := range []string{"first", "rotated"} {
 		token = expectedToken
-		runID, err := client.StartDAG(context.Background(), "pbk_example.yaml", "run_example", map[string]string{"service": "api"}, false)
+		runID, err := client.StartDAG(context.Background(), "pbk_example.yaml", "pbk_example", "run_example", map[string]string{"service": "api"}, false)
 		if err != nil || runID != "run_example" {
 			t.Fatalf("runID = %q, err = %v", runID, err)
 		}
@@ -149,6 +150,23 @@ func TestClientListsRunsForOneDAG(t *testing.T) {
 	client, _ := NewClient(server.URL, server.Client())
 	runs, err := client.ListRuns(context.Background(), "pbk_a", 11)
 	if err != nil || len(runs) != 1 || runs[0].DAGRunID != "run_a" {
+		t.Fatalf("runs = %#v, err = %v", runs, err)
+	}
+}
+
+func TestClientListsRunsByStablePlaybookLabel(t *testing.T) {
+	t.Parallel()
+	label := playbookRunLabel("pbk_a")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		if request.URL.Path != "/api/v1/dag-runs" || request.URL.Query().Get("labels") != label || request.URL.Query().Get("limit") != "11" {
+			t.Errorf("request = %s?%s", request.URL.Path, request.URL.RawQuery)
+		}
+		_, _ = w.Write([]byte(`{"dagRuns":[{"dagRunId":"run_a","name":"renamed","labels":["` + label + `"],"statusLabel":"running"}]}`))
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	runs, err := client.ListRunsByLabel(context.Background(), label, 11)
+	if err != nil || len(runs) != 1 || runs[0].Name != "renamed" || len(runs[0].Labels) != 1 {
 		t.Fatalf("runs = %#v, err = %v", runs, err)
 	}
 }

@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -151,14 +153,14 @@ func (provider *Provider) StartRun(ctx context.Context, _ domain.ActorContext, r
 	if err := requireIDPrefix(input.ID, "run_"); err != nil {
 		return ports.PlaybookRunRef{}, err
 	}
-	runID, err := provider.client.StartDAG(ctx, dagName, string(input.ID), input.Parameters, input.Enqueue)
+	runID, err := provider.client.StartDAG(ctx, dagName, string(ref.ID), string(input.ID), input.Parameters, input.Enqueue)
 	if err != nil {
 		if !isHTTPConflict(err) {
 			return ports.PlaybookRunRef{}, err
 		}
 		// Dagu 已接受同一个 caller-supplied run ID 时，把重复请求视为同一次运行。
-		existing, getErr := provider.client.GetRun(ctx, string(ref.ID), string(input.ID))
-		if getErr != nil || existing.DAGRunID != string(input.ID) {
+		existing, getErr := provider.client.FindRun(ctx, string(input.ID))
+		if getErr != nil || existing.DAGRunID != string(input.ID) || !runBelongsToPlaybook(existing, ref.ID) {
 			return ports.PlaybookRunRef{}, err
 		}
 		runID = existing.DAGRunID
@@ -177,15 +179,27 @@ func (provider *Provider) ListRuns(ctx context.Context, _ domain.ActorContext, r
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	runs, err := provider.client.ListRuns(ctx, string(ref.ID), limit+1)
+	labeledRuns, err := provider.client.ListRunsByLabel(ctx, playbookRunLabel(string(ref.ID)), limit+1)
 	if err != nil {
 		return domain.Page[ports.PlaybookRunState]{}, err
 	}
+	// 兼容旧版以 pbk_* 作为 Dagu Run 名称的历史记录。
+	legacyRuns, err := provider.client.ListRuns(ctx, string(ref.ID), limit+1)
+	if err != nil {
+		return domain.Page[ports.PlaybookRunState]{}, err
+	}
+	runs := append(labeledRuns, legacyRuns...)
+	sort.SliceStable(runs, func(i, j int) bool { return runs[i].StartedAt > runs[j].StartedAt })
 	items := make([]ports.PlaybookRunState, 0, min(len(runs), limit+1))
+	seen := make(map[string]struct{}, len(runs))
 	for _, run := range runs {
-		if run.Name != string(ref.ID) || requireIDPrefix(domain.ID(run.DAGRunID), "run_") != nil {
+		if !runBelongsToPlaybook(run, ref.ID) || requireIDPrefix(domain.ID(run.DAGRunID), "run_") != nil {
 			continue
 		}
+		if _, exists := seen[run.DAGRunID]; exists {
+			continue
+		}
+		seen[run.DAGRunID] = struct{}{}
 		items = append(items, mapRun(ports.PlaybookRunRef{ID: domain.ID(run.DAGRunID), PlaybookID: ref.ID}, run))
 	}
 	hasMore := len(items) > limit
@@ -196,11 +210,11 @@ func (provider *Provider) ListRuns(ctx context.Context, _ domain.ActorContext, r
 }
 
 func (provider *Provider) GetRun(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef) (ports.PlaybookRunState, error) {
-	resolved, err := provider.resolveRunRef(ctx, ref)
+	resolved, summary, err := provider.resolveRun(ctx, ref)
 	if err != nil {
 		return ports.PlaybookRunState{}, err
 	}
-	run, err := provider.client.GetRun(ctx, string(resolved.PlaybookID), string(resolved.ID))
+	run, err := provider.client.GetRun(ctx, summary.Name, string(resolved.ID))
 	if err != nil {
 		return ports.PlaybookRunState{}, err
 	}
@@ -208,27 +222,27 @@ func (provider *Provider) GetRun(ctx context.Context, _ domain.ActorContext, ref
 }
 
 func (provider *Provider) CancelRun(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef) error {
-	ref, err := provider.resolveRunRef(ctx, ref)
+	ref, run, err := provider.resolveRun(ctx, ref)
 	if err != nil {
 		return err
 	}
-	return provider.client.StopRun(ctx, string(ref.PlaybookID), string(ref.ID))
+	return provider.client.StopRun(ctx, run.Name, string(ref.ID))
 }
 
 func (provider *Provider) RetryRun(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef, newRunID domain.ID) (ports.PlaybookRunRef, error) {
-	ref, err := provider.resolveRunRef(ctx, ref)
+	ref, run, err := provider.resolveRun(ctx, ref)
 	if err != nil {
 		return ports.PlaybookRunRef{}, err
 	}
 	if err := requireIDPrefix(newRunID, "run_"); err != nil {
 		return ports.PlaybookRunRef{}, err
 	}
-	if err := provider.client.RetryRun(ctx, string(ref.PlaybookID), string(ref.ID), string(newRunID)); err != nil {
+	if err := provider.client.RetryRun(ctx, run.Name, string(ref.ID), string(newRunID)); err != nil {
 		if !isHTTPConflict(err) {
 			return ports.PlaybookRunRef{}, err
 		}
-		existing, getErr := provider.client.GetRun(ctx, string(ref.PlaybookID), string(newRunID))
-		if getErr != nil || existing.DAGRunID != string(newRunID) {
+		existing, getErr := provider.client.FindRun(ctx, string(newRunID))
+		if getErr != nil || existing.DAGRunID != string(newRunID) || !runBelongsToPlaybook(existing, ref.PlaybookID) {
 			return ports.PlaybookRunRef{}, err
 		}
 	}
@@ -243,30 +257,30 @@ func (provider *Provider) StreamRun(_ context.Context, _ domain.ActorContext, re
 }
 
 func (provider *Provider) CompleteHumanTask(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef, stepID string, input map[string]any) error {
-	ref, err := provider.resolveRunRef(ctx, ref)
+	ref, run, err := provider.resolveRun(ctx, ref)
 	if err != nil {
 		return err
 	}
-	return provider.client.CompleteHumanTask(ctx, string(ref.PlaybookID), string(ref.ID), stepID, input)
+	return provider.client.CompleteHumanTask(ctx, run.Name, string(ref.ID), stepID, input)
 }
 
 func (provider *Provider) ResolveApproval(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef, stepID string, action ports.ApprovalAction, input map[string]string) error {
-	ref, err := provider.resolveRunRef(ctx, ref)
+	ref, run, err := provider.resolveRun(ctx, ref)
 	if err != nil {
 		return err
 	}
 	if action != ports.ApprovalApprove && action != ports.ApprovalReject && action != ports.ApprovalRewind {
 		return errors.New("unsupported approval action")
 	}
-	return provider.client.ResolveApproval(ctx, string(ref.PlaybookID), string(ref.ID), stepID, string(action), input)
+	return provider.client.ResolveApproval(ctx, run.Name, string(ref.ID), stepID, string(action), input)
 }
 
 func (provider *Provider) ListArtifacts(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef) ([]ports.ArtifactRef, error) {
-	ref, err := provider.resolveRunRef(ctx, ref)
+	ref, run, err := provider.resolveRun(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
-	items, err := provider.client.ListArtifacts(ctx, string(ref.PlaybookID), string(ref.ID))
+	items, err := provider.client.ListArtifacts(ctx, run.Name, string(ref.ID))
 	if err != nil {
 		return nil, err
 	}
@@ -277,11 +291,11 @@ func (provider *Provider) PreviewArtifact(ctx context.Context, _ domain.ActorCon
 	if err := validateArtifactPath(artifactPath); err != nil {
 		return ports.ArtifactPreview{}, err
 	}
-	ref, err := provider.resolveRunRef(ctx, ref)
+	ref, run, err := provider.resolveRun(ctx, ref)
 	if err != nil {
 		return ports.ArtifactPreview{}, err
 	}
-	preview, err := provider.client.PreviewArtifact(ctx, string(ref.PlaybookID), string(ref.ID), artifactPath)
+	preview, err := provider.client.PreviewArtifact(ctx, run.Name, string(ref.ID), artifactPath)
 	if err != nil {
 		return ports.ArtifactPreview{}, err
 	}
@@ -292,11 +306,11 @@ func (provider *Provider) DownloadArtifact(ctx context.Context, _ domain.ActorCo
 	if err := validateArtifactPath(artifactPath); err != nil {
 		return ports.ArtifactDownload{}, err
 	}
-	ref, err := provider.resolveRunRef(ctx, ref)
+	ref, run, err := provider.resolveRun(ctx, ref)
 	if err != nil {
 		return ports.ArtifactDownload{}, err
 	}
-	content, mediaType, err := provider.client.DownloadArtifact(ctx, string(ref.PlaybookID), string(ref.ID), artifactPath)
+	content, mediaType, err := provider.client.DownloadArtifact(ctx, run.Name, string(ref.ID), artifactPath)
 	if err != nil {
 		return ports.ArtifactDownload{}, err
 	}
@@ -495,25 +509,51 @@ func validateRunRef(ref ports.PlaybookRunRef) error {
 	return requireIDPrefix(ref.ID, "run_")
 }
 
-func (provider *Provider) resolveRunRef(ctx context.Context, ref ports.PlaybookRunRef) (ports.PlaybookRunRef, error) {
-	if err := requireIDPrefix(ref.ID, "run_"); err != nil {
-		return ports.PlaybookRunRef{}, err
-	}
-	if ref.PlaybookID != "" {
-		if err := requireIDPrefix(ref.PlaybookID, "pbk_"); err != nil {
-			return ports.PlaybookRunRef{}, err
+const playbookRunLabelKey = "aegis.playbook.id"
+
+func playbookRunLabel(playbookID string) string {
+	return playbookRunLabelKey + "=" + hex.EncodeToString([]byte(playbookID))
+}
+
+func playbookIDFromRun(run DAGRun) (domain.ID, bool) {
+	prefix := playbookRunLabelKey + "="
+	for _, label := range run.Labels {
+		if !strings.HasPrefix(label, prefix) {
+			continue
 		}
-		return ref, nil
+		decoded, err := hex.DecodeString(strings.TrimPrefix(label, prefix))
+		if err != nil {
+			return "", false
+		}
+		id := domain.ID(decoded)
+		return id, requireIDPrefix(id, "pbk_") == nil
+	}
+	// 旧版直接用公开 Playbook ID 作为 Dagu Run 名称。
+	id := domain.ID(run.Name)
+	return id, requireIDPrefix(id, "pbk_") == nil
+}
+
+func runBelongsToPlaybook(run DAGRun, playbookID domain.ID) bool {
+	actual, ok := playbookIDFromRun(run)
+	return ok && actual == playbookID
+}
+
+func (provider *Provider) resolveRun(ctx context.Context, ref ports.PlaybookRunRef) (ports.PlaybookRunRef, DAGRun, error) {
+	if err := requireIDPrefix(ref.ID, "run_"); err != nil {
+		return ports.PlaybookRunRef{}, DAGRun{}, err
+	}
+	if ref.PlaybookID != "" && requireIDPrefix(ref.PlaybookID, "pbk_") != nil {
+		return ports.PlaybookRunRef{}, DAGRun{}, errors.New("invalid playbook identifier")
 	}
 	run, err := provider.client.FindRun(ctx, string(ref.ID))
 	if err != nil {
-		return ports.PlaybookRunRef{}, err
+		return ports.PlaybookRunRef{}, DAGRun{}, err
 	}
-	playbookID := domain.ID(run.Name)
-	if err := requireIDPrefix(playbookID, "pbk_"); err != nil {
-		return ports.PlaybookRunRef{}, errors.New("Dagu run does not belong to an Aegis playbook")
+	playbookID, ok := playbookIDFromRun(run)
+	if !ok || (ref.PlaybookID != "" && ref.PlaybookID != playbookID) {
+		return ports.PlaybookRunRef{}, DAGRun{}, errors.New("Dagu run does not belong to the requested Aegis playbook")
 	}
-	return ports.PlaybookRunRef{ID: ref.ID, PlaybookID: playbookID}, nil
+	return ports.PlaybookRunRef{ID: ref.ID, PlaybookID: playbookID}, run, nil
 }
 
 func validateArtifactPath(value string) error {
