@@ -1,4 +1,4 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate node-health-playbook-validate node-capacity-playbook-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke local-secrets local-config-check local-up local-agent-smoke local-playbook-smoke local-node-health-smoke local-node-capacity-run agent-playbook-e2e local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate node-health-playbook-validate node-capacity-playbook-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke raglite-provider-test raglite-provider-lint raglite-config-check raglite-deploy-test raglite-image-smoke local-secrets local-config-check local-up local-agent-smoke local-playbook-smoke local-node-health-smoke local-node-capacity-run agent-playbook-e2e local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 OAPI_CODEGEN_VERSION := v2.8.0
 MAGE_VERSION := v1.17.2
@@ -54,6 +54,22 @@ dagu-contract-test:
 
 grafana-mcp-config-check:
 	GRAFANA_URL=http://grafana:3000 GRAFANA_READ_TOKEN_FILE=/run/secrets/read GRAFANA_WRITE_TOKEN_FILE=/run/secrets/write docker compose -f deploy/grafana-mcp/compose.yaml config --quiet
+
+raglite-provider-test:
+	cd providers/raglite && uv run --extra test --locked pytest
+
+raglite-provider-lint:
+	cd providers/raglite && uv run --extra test --locked ruff check .
+
+raglite-config-check:
+	docker compose -f compose.yaml -f deploy/raglite/compose.yaml config --quiet
+
+raglite-deploy-test:
+	./scripts/test-raglite-deploy.sh
+
+raglite-image-smoke:
+	docker build -f providers/raglite/Dockerfile -t aegis-raglite-provider:test .
+	docker run --rm --entrypoint python aegis-raglite-provider:test -c 'import llama_cpp, onnxruntime, raglite; print("RAGLite runtime imports passed")'
 
 # 真实冒烟验收显式要求两个 datasource UID，避免以 fixture 假装 Grafana 已连通。
 grafana-mcp-smoke:

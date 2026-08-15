@@ -1,0 +1,62 @@
+services:
+  control-plane:
+    environment:
+      AEGIS_KNOWLEDGE_ENABLED: "true"
+      AEGIS_KNOWLEDGE_ID_KEY_FILE: /run/secrets/knowledge-id-key
+      AEGIS_KNOWLEDGE_MCP_FOLDER_UIDS: ${AEGIS_KNOWLEDGE_MCP_FOLDER_UIDS:-infra,payment}
+      AEGIS_KNOWLEDGE_MCP_ORG_ID: "1"
+      AEGIS_KNOWLEDGE_MCP_TENANT_ID: default
+      AEGIS_KNOWLEDGE_MCP_TOKEN_FILE: /run/secrets/knowledge-mcp-token
+      AEGIS_KNOWLEDGE_MCP_USER_ID: agent:knowledge
+      AEGIS_KNOWLEDGE_PROVIDER: raglite
+      AEGIS_KNOWLEDGE_TIMEOUT: 30s
+      AEGIS_KNOWLEDGE_TOKEN_FILE: /run/secrets/knowledge-provider-token
+      AEGIS_KNOWLEDGE_URL: http://raglite-provider:8090
+    volumes:
+      - ./deploy/local/secrets/knowledge-id-key:/run/secrets/knowledge-id-key:ro
+      - ./deploy/local/secrets/knowledge-mcp-token:/run/secrets/knowledge-mcp-token:ro
+      - ./deploy/local/secrets/knowledge-provider-token:/run/secrets/knowledge-provider-token:ro
+    depends_on:
+      raglite-provider:
+        condition: service_healthy
+    networks: [aegis-app, aegis-knowledge]
+
+  opencode:
+    environment:
+      KNOWLEDGE_MCP_URL: http://control-plane:8080/mcp/knowledge
+    volumes:
+      - ./deploy/local/secrets/knowledge-mcp-token:/run/secrets/knowledge-mcp-token:ro
+    depends_on:
+      control-plane:
+        condition: service_started
+
+  dagu:
+    volumes:
+      - ./deploy/local/mcp-servers.knowledge.yaml:/etc/aegis/mcp-servers.yaml:ro
+      - ./deploy/local/secrets/knowledge-mcp-token:/run/secrets/knowledge-mcp-token:ro
+
+  raglite-provider:
+    build:
+      # Compose 会以首个 -f 文件为相对路径基准；叠加根 compose.yaml 时这里必须指向仓库根。
+      context: .
+      dockerfile: providers/raglite/Dockerfile
+    environment:
+      AEGIS_RAGLITE_DATA_DIR: /var/lib/aegis/raglite
+      AEGIS_RAGLITE_MAX_UPLOAD_BYTES: "20971520"
+      AEGIS_RAGLITE_TOKEN_FILE: /run/secrets/knowledge-provider-token
+    volumes:
+      - raglite-data:/var/lib/aegis/raglite
+      - ./deploy/local/secrets/knowledge-provider-token:/run/secrets/knowledge-provider-token:ro
+    read_only: true
+    tmpfs:
+      - /tmp:uid=10001,gid=10001,mode=0700
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    networks: [aegis-knowledge]
+
+networks:
+  aegis-knowledge:
+    internal: true
+
+volumes:
+  raglite-data:
