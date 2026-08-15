@@ -30,6 +30,10 @@ const (
 	EnvDaguBasicUser        = "AEGIS_DAGU_BASIC_AUTH_USERNAME"
 	EnvDaguBasicPass        = "AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE"
 	EnvKnowledgeEnabled     = "AEGIS_KNOWLEDGE_ENABLED"
+	EnvKnowledgeProvider    = "AEGIS_KNOWLEDGE_PROVIDER"
+	EnvKnowledgeURL         = "AEGIS_KNOWLEDGE_URL"
+	EnvKnowledgeTokenFile   = "AEGIS_KNOWLEDGE_TOKEN_FILE"
+	EnvKnowledgeTimeout     = "AEGIS_KNOWLEDGE_TIMEOUT"
 	EnvRAGFlowURL           = "AEGIS_RAGFLOW_URL"
 	EnvRAGFlowAPIKeyFile    = "AEGIS_RAGFLOW_API_KEY_FILE"
 	EnvKnowledgeIDKeyFile   = "AEGIS_KNOWLEDGE_ID_KEY_FILE"
@@ -76,10 +80,13 @@ type Config struct {
 	OpenCodeUsername      string
 	OpenCodePasswordFile  string
 	KnowledgeEnabled      bool
+	KnowledgeProvider     string
+	KnowledgeTokenFile    string
 	RAGFlowAPIKeyFile     string
 	KnowledgeIDKeyFile    string
 	KnowledgeEmbedding    string
 	RAGFlowTimeout        time.Duration
+	KnowledgeTimeout      time.Duration
 	KnowledgeMCPTokenFile string
 	KnowledgeMCPTenantID  string
 	KnowledgeMCPOrgID     string
@@ -132,11 +139,18 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		endpoints[capability] = raw
 	}
-	knowledgeURL := strings.TrimSpace(getenv(EnvRAGFlowURL))
+	knowledgeURL := strings.TrimSpace(getenv(EnvKnowledgeURL))
+	legacyKnowledgeURL := strings.TrimSpace(getenv(EnvRAGFlowURL))
+	if knowledgeURL != "" && legacyKnowledgeURL != "" && knowledgeURL != legacyKnowledgeURL {
+		return Config{}, fmt.Errorf("%w: %s and %s cannot disagree", ErrInvalid, EnvKnowledgeURL, EnvRAGFlowURL)
+	}
+	if knowledgeURL == "" {
+		knowledgeURL = legacyKnowledgeURL
+	}
 	if knowledgeEnabled && knowledgeURL != "" {
 		parsed, err := url.Parse(knowledgeURL)
 		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
-			return Config{}, fmt.Errorf("%w: %s must be an HTTP origin", ErrInvalid, EnvRAGFlowURL)
+			return Config{}, fmt.Errorf("%w: %s must be an HTTP origin", ErrInvalid, EnvKnowledgeURL)
 		}
 		endpoints[CapabilityKnowledge] = knowledgeURL
 	}
@@ -241,36 +255,64 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("%w: %s is required when %s is set", ErrInvalid, EnvAgentProvider, EnvAgentURL)
 	}
 
-	ragFlowAPIKeyFile := strings.TrimSpace(getenv(EnvRAGFlowAPIKeyFile))
+	knowledgeProvider := strings.ToLower(strings.TrimSpace(getenv(EnvKnowledgeProvider)))
+	legacyAPIKeyFile := strings.TrimSpace(getenv(EnvRAGFlowAPIKeyFile))
+	knowledgeTokenFile := strings.TrimSpace(getenv(EnvKnowledgeTokenFile))
+	if knowledgeTokenFile != "" && legacyAPIKeyFile != "" && knowledgeTokenFile != legacyAPIKeyFile {
+		return Config{}, fmt.Errorf("%w: %s and %s cannot disagree", ErrInvalid, EnvKnowledgeTokenFile, EnvRAGFlowAPIKeyFile)
+	}
+	if knowledgeTokenFile == "" {
+		knowledgeTokenFile = legacyAPIKeyFile
+	}
+	if knowledgeProvider == "" && (legacyKnowledgeURL != "" || legacyAPIKeyFile != "") {
+		knowledgeProvider = "ragflow"
+	}
+	if knowledgeProvider != "" && knowledgeProvider != "ragflow" && knowledgeProvider != "raglite" {
+		return Config{}, fmt.Errorf("%w: %s must be ragflow or raglite", ErrInvalid, EnvKnowledgeProvider)
+	}
+	if knowledgeProvider == "raglite" && (legacyKnowledgeURL != "" || legacyAPIKeyFile != "") {
+		return Config{}, fmt.Errorf("%w: RAGFlow compatibility settings cannot configure the raglite provider", ErrInvalid)
+	}
 	knowledgeIDKeyFile := strings.TrimSpace(getenv(EnvKnowledgeIDKeyFile))
 	knowledgeEmbedding := strings.TrimSpace(getenv(EnvKnowledgeEmbedding))
-	ragFlowTimeout := 30 * time.Second
-	if raw := strings.TrimSpace(getenv(EnvRAGFlowTimeout)); raw != "" {
-		parsed, err := time.ParseDuration(raw)
-		if err != nil || parsed <= 0 {
-			return Config{}, fmt.Errorf("%w: %s must be a positive duration", ErrInvalid, EnvRAGFlowTimeout)
-		}
-		ragFlowTimeout = parsed
+	knowledgeTimeout := 30 * time.Second
+	rawKnowledgeTimeout := strings.TrimSpace(getenv(EnvKnowledgeTimeout))
+	legacyTimeout := strings.TrimSpace(getenv(EnvRAGFlowTimeout))
+	if rawKnowledgeTimeout != "" && legacyTimeout != "" && rawKnowledgeTimeout != legacyTimeout {
+		return Config{}, fmt.Errorf("%w: %s and %s cannot disagree", ErrInvalid, EnvKnowledgeTimeout, EnvRAGFlowTimeout)
 	}
-	knowledgeConfigured := knowledgeURL != "" || ragFlowAPIKeyFile != "" || knowledgeIDKeyFile != "" || knowledgeEmbedding != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPToken)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPTenant)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPOrg)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPUser)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPFolders)) != ""
+	if rawKnowledgeTimeout == "" {
+		rawKnowledgeTimeout = legacyTimeout
+	}
+	if rawKnowledgeTimeout != "" {
+		parsed, err := time.ParseDuration(rawKnowledgeTimeout)
+		if err != nil || parsed <= 0 {
+			return Config{}, fmt.Errorf("%w: %s must be a positive duration", ErrInvalid, EnvKnowledgeTimeout)
+		}
+		knowledgeTimeout = parsed
+	}
+	knowledgeConfigured := knowledgeProvider != "" || knowledgeURL != "" || knowledgeTokenFile != "" || knowledgeIDKeyFile != "" || knowledgeEmbedding != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPToken)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPTenant)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPOrg)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPUser)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPFolders)) != ""
 	if knowledgeConfigured && !knowledgeEnabled {
 		return Config{}, fmt.Errorf("%w: %s must be true before Knowledge can be configured", ErrInvalid, EnvKnowledgeEnabled)
 	}
 	if endpoints[CapabilityKnowledge] != "" {
-		if err := requireRegularFile(ragFlowAPIKeyFile, EnvRAGFlowAPIKeyFile); err != nil {
+		if knowledgeProvider == "" {
+			return Config{}, fmt.Errorf("%w: %s is required when Knowledge is configured", ErrInvalid, EnvKnowledgeProvider)
+		}
+		if err := requireRegularFile(knowledgeTokenFile, EnvKnowledgeTokenFile); err != nil {
 			return Config{}, err
 		}
 		if err := requireRegularFile(knowledgeIDKeyFile, EnvKnowledgeIDKeyFile); err != nil {
 			return Config{}, err
 		}
-		if knowledgeEmbedding == "" || len(knowledgeEmbedding) > 255 || !strings.Contains(knowledgeEmbedding, "@") || strings.ContainsAny(knowledgeEmbedding, "\r\n\x00") {
+		if knowledgeProvider == "ragflow" && (knowledgeEmbedding == "" || len(knowledgeEmbedding) > 255 || !strings.Contains(knowledgeEmbedding, "@") || strings.ContainsAny(knowledgeEmbedding, "\r\n\x00")) {
 			return Config{}, fmt.Errorf("%w: %s must be a model_name@model_factory value", ErrInvalid, EnvKnowledgeEmbedding)
 		}
 		if pluginToken == "" {
 			return Config{}, fmt.Errorf("%w: %s is required when Knowledge is configured", ErrInvalid, EnvPluginTokenFile)
 		}
-	} else if ragFlowAPIKeyFile != "" || knowledgeIDKeyFile != "" || knowledgeEmbedding != "" {
-		return Config{}, fmt.Errorf("%w: %s is required when Knowledge credentials are configured", ErrInvalid, EnvRAGFlowURL)
+	} else if knowledgeProvider != "" || knowledgeTokenFile != "" || knowledgeIDKeyFile != "" || knowledgeEmbedding != "" {
+		return Config{}, fmt.Errorf("%w: %s is required when Knowledge credentials are configured", ErrInvalid, EnvKnowledgeURL)
 	}
 
 	knowledgeMCPTokenFile := strings.TrimSpace(getenv(EnvKnowledgeMCPToken))
@@ -281,7 +323,7 @@ func Load(getenv func(string) string) (Config, error) {
 	mcpConfigured := knowledgeMCPTokenFile != "" || knowledgeMCPTenantID != "" || knowledgeMCPOrgID != "" || knowledgeMCPUserID != "" || len(knowledgeMCPFolders) > 0
 	if mcpConfigured {
 		if endpoints[CapabilityKnowledge] == "" {
-			return Config{}, fmt.Errorf("%w: %s is required when Knowledge MCP is configured", ErrInvalid, EnvRAGFlowURL)
+			return Config{}, fmt.Errorf("%w: %s is required when Knowledge MCP is configured", ErrInvalid, EnvKnowledgeURL)
 		}
 		if err := requireRegularFile(knowledgeMCPTokenFile, EnvKnowledgeMCPToken); err != nil {
 			return Config{}, err
@@ -306,7 +348,7 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, RAGFlowAPIKeyFile: ragFlowAPIKeyFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, RAGFlowTimeout: ragFlowTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders, PlaybookMCPTokenFile: playbookMCPTokenFile, PlaybookMCPFolders: playbookMCPFolders}, nil
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, KnowledgeProvider: knowledgeProvider, KnowledgeTokenFile: knowledgeTokenFile, RAGFlowAPIKeyFile: knowledgeTokenFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, KnowledgeTimeout: knowledgeTimeout, RAGFlowTimeout: knowledgeTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders, PlaybookMCPTokenFile: playbookMCPTokenFile, PlaybookMCPFolders: playbookMCPFolders}, nil
 }
 
 func parseBool(raw string, defaultValue bool) (bool, error) {

@@ -194,8 +194,52 @@ func TestLoadAcceptsCompleteKnowledgeConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Endpoints[CapabilityKnowledge] != values[EnvRAGFlowURL] || cfg.RAGFlowAPIKeyFile != apiKey || cfg.KnowledgeIDKeyFile != idKey || cfg.RAGFlowTimeout != 45*time.Second || cfg.PluginToken != "plugin-secret" {
+	if cfg.KnowledgeProvider != "ragflow" || cfg.Endpoints[CapabilityKnowledge] != values[EnvRAGFlowURL] || cfg.KnowledgeTokenFile != apiKey || cfg.KnowledgeIDKeyFile != idKey || cfg.KnowledgeTimeout != 45*time.Second || cfg.PluginToken != "plugin-secret" {
 		t.Fatalf("config = %+v", cfg)
+	}
+}
+
+func TestLoadAcceptsProviderNeutralRAGLiteConfiguration(t *testing.T) {
+	directory := t.TempDir()
+	token := filepath.Join(directory, "raglite-token")
+	idKey := filepath.Join(directory, "knowledge-id-key")
+	pluginToken := filepath.Join(directory, "plugin-token")
+	for path, value := range map[string]string{token: "raglite-secret", idKey: "01234567890123456789012345678901", pluginToken: "plugin-secret"} {
+		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	values := map[string]string{
+		EnvKnowledgeEnabled: "true", EnvKnowledgeProvider: "raglite",
+		EnvKnowledgeURL: "http://raglite-provider:8090", EnvKnowledgeTokenFile: token,
+		EnvKnowledgeIDKeyFile: idKey, EnvKnowledgeTimeout: "12s", EnvPluginTokenFile: pluginToken,
+	}
+	cfg, err := Load(func(key string) string { return values[key] })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.KnowledgeProvider != "raglite" || cfg.KnowledgeTokenFile != token || cfg.KnowledgeTimeout != 12*time.Second || cfg.KnowledgeEmbedding != "" {
+		t.Fatalf("config = %+v", cfg)
+	}
+}
+
+func TestLoadRejectsMixedKnowledgeProviderConfiguration(t *testing.T) {
+	values := map[string]string{
+		EnvKnowledgeEnabled: "true", EnvKnowledgeProvider: "raglite",
+		EnvKnowledgeURL: "http://raglite-provider:8090", EnvRAGFlowURL: "http://ragflow:9380",
+	}
+	if _, err := Load(func(key string) string { return values[key] }); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error = %v, want ErrInvalid", err)
+	}
+}
+
+func TestLoadRejectsRAGLiteWithLegacyRAGFlowCredential(t *testing.T) {
+	values := map[string]string{
+		EnvKnowledgeEnabled: "true", EnvKnowledgeProvider: "raglite",
+		EnvKnowledgeURL: "http://raglite-provider:8090", EnvRAGFlowAPIKeyFile: "legacy-secret",
+	}
+	if _, err := Load(func(key string) string { return values[key] }); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error = %v, want ErrInvalid", err)
 	}
 }
 

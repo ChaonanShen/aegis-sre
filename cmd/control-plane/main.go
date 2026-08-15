@@ -15,9 +15,9 @@ import (
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/agentscope"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/codex"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/dagu"
+	"github.com/1024XEngineer/aegis-sre/internal/adapters/knowledgefactory"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/knowledgeid"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/opencode"
-	"github.com/1024XEngineer/aegis-sre/internal/adapters/ragflow"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/httpserver"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/knowledgemcp"
@@ -140,16 +140,7 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		transport := http.DefaultTransport.(*http.Transport).Clone()
-		transport.ResponseHeaderTimeout = cfg.RAGFlowTimeout
-		client, err := ragflow.NewClient(endpoint, func() (string, error) {
-			content, readErr := os.ReadFile(cfg.RAGFlowAPIKeyFile)
-			return strings.TrimSpace(string(content)), readErr
-		}, ragflow.ClientOptions{HTTPClient: &http.Client{Transport: transport, Timeout: cfg.RAGFlowTimeout}, ReadAttempts: 2})
-		if err != nil {
-			return err
-		}
-		provider, err := ragflow.NewProvider(client, ids, cfg.KnowledgeEmbedding)
+		provider, err := knowledgefactory.New(cfg, ids)
 		if err != nil {
 			return err
 		}
