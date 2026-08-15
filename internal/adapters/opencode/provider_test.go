@@ -234,3 +234,45 @@ func TestProviderRejectsCancellationForTurnOutsideSession(t *testing.T) {
 		t.Fatalf("error = %#v", err)
 	}
 }
+
+func TestProviderProjectsV1GlobalEventsForCurrentSession(t *testing.T) {
+	t.Parallel()
+	frames := []string{
+		`{"id":"evt_other","type":"message.updated","properties":{"sessionID":"ses_other","info":{"role":"assistant","id":"msg_other","parentID":"msg_v1"}}}`,
+		`{"id":"evt_assistant","type":"message.updated","properties":{"sessionID":"ses_abcdefgh","info":{"role":"assistant","id":"msg_assistant","parentID":"msg_v1","sessionID":"ses_abcdefgh"}}}`,
+		`{"id":"evt_pending","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"grafana-read_query_prometheus","callID":"provider-call","messageID":"msg_assistant","state":{"status":"pending","input":{}}}}}`,
+		`{"id":"evt_running","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"grafana-read_query_prometheus","callID":"provider-call","messageID":"msg_assistant","state":{"status":"running","input":{"expr":"up"}}}}}`,
+		`{"id":"evt_completed","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"grafana-read_query_prometheus","callID":"provider-call","messageID":"msg_assistant","state":{"status":"completed","input":{"expr":"up"},"output":"ok"}}}}`,
+		`{"id":"evt_delta","type":"message.part.delta","properties":{"sessionID":"ses_abcdefgh","messageID":"msg_assistant","partID":"prt_text","field":"text","delta":"healthy"}}`,
+		`{"id":"evt_stop","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"step-finish","reason":"stop","messageID":"msg_assistant"}}}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = w.Write([]byte("data: " + frame + "\n\n"))
+		}
+	}))
+	defer server.Close()
+	response, err := server.Client().Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	codec, _ := agentid.New([]byte("0123456789abcdef0123456789abcdef"))
+	stream := newOpenCodeV1EventStream(response.Body, codec, "ses_abcdefgh", "turn_abcdefgh", "msg_v1")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	want := []domain.EventType{domain.EventToolStarted, domain.EventToolCompleted, domain.EventMessageDelta, domain.EventTurnCompleted}
+	for sequence, eventType := range want {
+		event, err := stream.Next(ctx)
+		if err != nil || event.Type != eventType || event.Sequence != int64(sequence+1) || event.SessionID != "ses_abcdefgh" || event.TurnID != "turn_abcdefgh" {
+			t.Fatalf("event %d = %#v, err = %v", sequence, event, err)
+		}
+		if event.Type == domain.EventToolStarted && strings.Contains(string(event.Payload), "provider-call") {
+			t.Fatalf("provider call ID leaked: %s", event.Payload)
+		}
+	}
+	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("stream after terminal event = %v", err)
+	}
+}
