@@ -217,6 +217,9 @@ func TestProviderStreamsDurableTurnEventsAndVerifiesCancellationOwnership(t *tes
 		if strings.Contains(string(event.ID), "evt_") && string(event.ID) == "evt_text0001" {
 			t.Fatalf("provider event ID leaked: %q", event.ID)
 		}
+		if event.Type == domain.EventToolCompleted && !strings.Contains(string(event.Payload), `"duration_ms":null`) {
+			t.Fatalf("missing duration must remain null: %s", event.Payload)
+		}
 	}
 	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {
 		t.Fatalf("stream after terminal event = %v, want EOF", err)

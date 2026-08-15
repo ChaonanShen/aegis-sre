@@ -277,8 +277,8 @@ func (hub *eventHub) projectToolCompleted(stream *codexEventStream, notification
 	if params.Item.Status != "completed" {
 		status = "failed"
 	}
-	duration := int64(0)
-	if params.Item.DurationMS != nil && *params.Item.DurationMS > 0 {
+	var duration any
+	if params.Item.DurationMS != nil {
 		duration = *params.Item.DurationMS
 	}
 	callID, err := hub.provider.codec.EncodeCallKey(stream.threadID + "\x00" + stream.turnID + "\x00" + params.Item.ID)

@@ -395,7 +395,7 @@ func (stream *openCodeEventStream) project(raw json.RawMessage) (domain.Event, b
 		if event.Type == "session.next.tool.failed" {
 			status = "failed"
 		}
-		eventType, payload = domain.EventToolCompleted, map[string]any{"call_id": callID, "status": status, "duration_ms": 0}
+		eventType, payload = domain.EventToolCompleted, map[string]any{"call_id": callID, "status": status, "duration_ms": nil}
 	case "session.next.step.ended":
 		if strings.Contains(strings.ToLower(event.Data.Finish), "tool") {
 			return domain.Event{}, false, nil
@@ -572,7 +572,7 @@ func (stream *openCodeV1EventStream) projectV1Tool(eventID string, part map[stri
 	if status != "completed" {
 		result = "failed"
 	}
-	return stream.v1Event(eventID, domain.EventToolCompleted, map[string]any{"call_id": encodedCallID, "status": result, "duration_ms": 0})
+	return stream.v1Event(eventID, domain.EventToolCompleted, map[string]any{"call_id": encodedCallID, "status": result, "duration_ms": nil})
 }
 
 func (stream *openCodeV1EventStream) isAssistantMessage(messageID string) bool {

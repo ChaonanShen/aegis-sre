@@ -282,9 +282,14 @@ func TestProviderStartsTurnWithoutDroppingEarlyNotificationsAndCancelsExplicitly
 	if startedPayload.CallID == "" || startedPayload.CallID != completedPayload.CallID || !startedPayload.CallID.Valid() {
 		t.Fatalf("call IDs = %q / %q", startedPayload.CallID, completedPayload.CallID)
 	}
+	fake.notifications <- Notification{Method: "item/completed", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turnId":"` + turnUUID + `","item":{"id":"tool-no-duration","type":"commandExecution","status":"completed"}}`)}
+	withoutDuration, err := stream.Next(ctx)
+	if err != nil || withoutDuration.Type != domain.EventToolCompleted || !strings.Contains(string(withoutDuration.Payload), `"duration_ms":null`) {
+		t.Fatalf("missing duration = %#v, err = %v", withoutDuration, err)
+	}
 	fake.notifications <- Notification{Method: "turn/completed", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turn":{"id":"` + turnUUID + `","status":"completed","items":[]}}`)}
 	terminal, err := stream.Next(ctx)
-	if err != nil || terminal.Type != domain.EventTurnCompleted || terminal.Sequence != 4 || !strings.Contains(string(terminal.Payload), `"succeeded"`) {
+	if err != nil || terminal.Type != domain.EventTurnCompleted || terminal.Sequence != 5 || !strings.Contains(string(terminal.Payload), `"succeeded"`) {
 		t.Fatalf("terminal = %#v, err = %v", terminal, err)
 	}
 	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {
