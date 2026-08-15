@@ -66,7 +66,7 @@ func (delayedEOFStream) Close() error { return nil }
 
 func TestCanvasTurnContextCarriesPublicSessionAndPublishRules(t *testing.T) {
 	context := canvasTurnContext(contextCanvasFake{}, "ses_abcdefgh")
-	if !strings.Contains(context, "session_id is ses_abcdefgh") || !strings.Contains(context, "query_prometheus range") || !strings.Contains(context, "canvas.publish_query_chart") {
+	if !strings.Contains(context, "session_id is ses_abcdefgh") || !strings.Contains(context, "node-exporter") || !strings.Contains(context, "query_prometheus range") || !strings.Contains(context, "canvas.publish_query_chart") {
 		t.Fatalf("context = %q", context)
 	}
 	if canvasTurnContext(nil, "ses_abcdefgh") != "" {

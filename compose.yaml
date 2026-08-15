@@ -1,6 +1,45 @@
 name: aegis-sre
 
 services:
+  prometheus:
+    image: prom/prometheus:v3.13.1@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=2d
+      - --web.enable-lifecycle
+    ports:
+      - "127.0.0.1:${PROMETHEUS_PORT:-19090}:9090"
+    volumes:
+      - ./deploy/local/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      node-exporter:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    networks: [aegis-mcp]
+
+  node-exporter:
+    image: prom/node-exporter:v1.9.1@sha256:d00a542e409ee618a4edc67da14dd48c5da66726bbd5537ab2af9c1dfc442c8a
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/host/root
+      - --collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+    read_only: true
+    security_opt: [no-new-privileges:true]
+    networks: [aegis-mcp]
+
   grafana:
     build:
       context: ./grafana-plugin/.config
@@ -29,6 +68,9 @@ services:
       - ./deploy/local/secrets/plugin-token:/run/secrets/aegis-plugin-token:ro
       - ./deploy/local/secrets/grafana-admin-password:/run/secrets/grafana-admin-password:ro
     restart: unless-stopped
+    depends_on:
+      prometheus:
+        condition: service_healthy
     networks: [aegis-app, aegis-mcp]
 
   control-plane:
@@ -213,3 +255,4 @@ volumes:
   grafana-mcp-secrets:
   control-plane-data:
   opencode-data:
+  prometheus-data:
