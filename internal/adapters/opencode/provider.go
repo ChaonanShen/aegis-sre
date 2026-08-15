@@ -31,7 +31,11 @@ func NewProvider(client *Client, codec *agentid.Codec) (*Provider, error) {
 func (provider *Provider) Check(ctx context.Context) error { return provider.client.Check(ctx) }
 
 func (provider *Provider) ListSessions(ctx context.Context, _ domain.ActorContext, input ports.ListAgentSessionsInput) (domain.Page[ports.AgentSession], error) {
-	sessions, next, err := provider.client.ListSessions(ctx, input.Page.Limit, input.Page.Cursor)
+	start, err := decodeV1Offset(input.Page.Cursor)
+	if err != nil {
+		return domain.Page[ports.AgentSession]{}, invalidOpenCodeArgument(err)
+	}
+	sessions, err := provider.client.ListSessionsV1(ctx, input.Page.Limit, start)
 	if err != nil {
 		return domain.Page[ports.AgentSession]{}, err
 	}
@@ -42,7 +46,12 @@ func (provider *Provider) ListSessions(ctx context.Context, _ domain.ActorContex
 			items = append(items, projected)
 		}
 	}
-	return domain.Page[ports.AgentSession]{Items: items, NextCursor: next, HasMore: next != ""}, nil
+	hasMore := len(sessions) == input.Page.Limit && len(sessions) > 0
+	next := ""
+	if hasMore {
+		next = encodeV1Offset(start + len(sessions))
+	}
+	return domain.Page[ports.AgentSession]{Items: items, NextCursor: next, HasMore: hasMore}, nil
 }
 
 func (provider *Provider) CreateSession(ctx context.Context, actor domain.ActorContext, input ports.CreateAgentSessionInput) (ports.AgentSession, error) {
@@ -84,7 +93,7 @@ func (provider *Provider) ReadSession(ctx context.Context, _ domain.ActorContext
 	if err := validateOpenCodeSessionRef(ref); err != nil {
 		return ports.AgentSessionDetail{}, err
 	}
-	session, err := provider.client.GetSession(ctx, string(ref.ID))
+	session, err := provider.client.GetSessionV1(ctx, string(ref.ID))
 	if err != nil {
 		return ports.AgentSessionDetail{}, err
 	}
@@ -135,15 +144,19 @@ func (provider *Provider) StartTurn(ctx context.Context, actor domain.ActorConte
 	if input.CanvasContext != "" {
 		message = input.CanvasContext + "\n\n" + message
 	}
-	admitted, err := provider.client.Prompt(ctx, string(session.ID), messageID, message)
-	if err != nil {
-		return ports.AgentTurnRef{}, nil, &domain.AppError{Code: domain.ErrorProviderResultUnknown, Message: "OpenCode prompt admission result is unknown", Retryable: false, Cause: err}
-	}
-	body, err := provider.client.SubscribeEvents(ctx, string(session.ID), strconv.FormatInt(admitted.Sequence, 10))
+	model, err := provider.client.DefaultModel(ctx)
 	if err != nil {
 		return ports.AgentTurnRef{}, nil, err
 	}
-	return ports.AgentTurnRef{ID: turnID}, newOpenCodeEventStream(body, provider.codec, session.ID, turnID), nil
+	body, err := provider.client.SubscribeGlobalEventsV1(ctx)
+	if err != nil {
+		return ports.AgentTurnRef{}, nil, err
+	}
+	if err := provider.client.PromptAsyncV1(ctx, string(session.ID), messageID, model, "build", message); err != nil {
+		_ = body.Close()
+		return ports.AgentTurnRef{}, nil, &domain.AppError{Code: domain.ErrorProviderResultUnknown, Message: "OpenCode prompt admission result is unknown", Retryable: false, Cause: err}
+	}
+	return ports.AgentTurnRef{ID: turnID}, newOpenCodeV1EventStream(body, provider.codec, session.ID, turnID, messageID), nil
 }
 
 func (provider *Provider) CancelTurn(ctx context.Context, _ domain.ActorContext, session ports.AgentSessionRef, turn ports.AgentTurnRef) error {
@@ -161,23 +174,32 @@ func (provider *Provider) CancelTurn(ctx context.Context, _ domain.ActorContext,
 	if !found {
 		return &domain.AppError{Code: domain.ErrorNotFound, Message: "agent turn not found", Retryable: false}
 	}
-	return provider.client.Interrupt(ctx, string(session.ID))
+	return provider.client.AbortSessionV1(ctx, string(session.ID))
 }
 
 func (provider *Provider) messageExists(ctx context.Context, sessionID, messageID string) (bool, error) {
 	cursor := ""
 	seen := map[string]struct{}{}
 	for {
-		messages, next, err := provider.client.ListMessages(ctx, sessionID, cursor, 200)
+		before := ""
+		if cursor != "" {
+			before = cursor
+		}
+		messages, err := provider.client.ListMessagesV1(ctx, sessionID, before, 200)
 		if err != nil {
 			return false, err
 		}
 		for _, message := range messages {
-			if message.ID == messageID {
+			providerMessageID, ok := v1MessageID(message)
+			if ok && providerMessageID == messageID {
 				return true, nil
 			}
 		}
-		if next == "" {
+		if len(messages) < 200 {
+			return false, nil
+		}
+		next, ok := v1MessageID(messages[0])
+		if !ok || next == "" {
 			return false, nil
 		}
 		if _, duplicate := seen[next]; duplicate {
@@ -552,35 +574,29 @@ func (provider *Provider) readAllMessages(ctx context.Context, sessionID string)
 	seen := map[string]struct{}{}
 	var messages []ports.AgentMessage
 	for {
-		page, next, err := provider.client.ListMessages(ctx, sessionID, cursor, 200)
+		before := ""
+		if cursor != "" {
+			before = cursor
+		}
+		page, err := provider.client.ListMessagesV1(ctx, sessionID, before, 200)
 		if err != nil {
 			return nil, err
 		}
 		for _, message := range page {
-			role := ports.AgentMessageRole("")
-			content := message.Text
-			switch message.Type {
-			case "user":
-				role = ports.AgentMessageUser
-			case "assistant":
-				role = ports.AgentMessageAssistant
-				var parts []string
-				for _, part := range message.Content {
-					if part.Type == "text" && part.Text != "" {
-						parts = append(parts, part.Text)
-					}
-				}
-				content = strings.Join(parts, "\n")
-			default:
-				continue
-			}
-			id, err := provider.codec.EncodeMessageKey(sessionID + "\x00" + message.ID)
+			projected, ok, err := projectV1Message(sessionID, provider.codec, message)
 			if err != nil {
 				return nil, err
 			}
-			messages = append(messages, ports.AgentMessage{ID: id, Role: role, Content: content, CreatedAt: unixMilliseconds(message.Time.Created)})
+			if !ok {
+				continue
+			}
+			messages = append(messages, projected)
 		}
-		if next == "" {
+		if len(page) < 200 {
+			return messages, nil
+		}
+		next, ok := v1MessageID(page[0])
+		if !ok || next == "" {
 			return messages, nil
 		}
 		if _, duplicate := seen[next]; duplicate {
@@ -590,6 +606,70 @@ func (provider *Provider) readAllMessages(ctx context.Context, sessionID string)
 		cursor = next
 	}
 }
+
+func projectV1Message(sessionID string, codec *agentid.Codec, message V1Message) (ports.AgentMessage, bool, error) {
+	var info struct {
+		ID   string `json:"id"`
+		Role string `json:"role"`
+		Time struct {
+			Created int64 `json:"created"`
+		} `json:"time"`
+	}
+	if err := json.Unmarshal(message.Info, &info); err != nil || info.ID == "" {
+		return ports.AgentMessage{}, false, errors.New("invalid OpenCode V1 message")
+	}
+	var role ports.AgentMessageRole
+	switch info.Role {
+	case "user":
+		role = ports.AgentMessageUser
+	case "assistant":
+		role = ports.AgentMessageAssistant
+	default:
+		return ports.AgentMessage{}, false, nil
+	}
+	var parts []string
+	for _, raw := range message.Parts {
+		var part struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(raw, &part) == nil && part.Type == "text" && part.Text != "" {
+			parts = append(parts, part.Text)
+		}
+	}
+	id, err := codec.EncodeMessageKey(sessionID + "\x00" + info.ID)
+	if err != nil {
+		return ports.AgentMessage{}, false, err
+	}
+	return ports.AgentMessage{ID: id, Role: role, Content: strings.Join(parts, "\n"), CreatedAt: unixMilliseconds(info.Time.Created)}, true, nil
+}
+
+func v1MessageID(message V1Message) (string, bool) {
+	var info struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(message.Info, &info) != nil || info.ID == "" {
+		return "", false
+	}
+	return info.ID, true
+}
+
+func decodeV1Offset(cursor string) (int, error) {
+	if cursor == "" {
+		return 0, nil
+	}
+	value, ok := strings.CutPrefix(cursor, "v1:")
+	if !ok {
+		return 0, errors.New("invalid OpenCode V1 session cursor")
+	}
+	offset, err := strconv.Atoi(value)
+	if err != nil || offset < 0 {
+		return 0, errors.New("invalid OpenCode V1 session cursor")
+	}
+	return offset, nil
+}
+
+func encodeV1Offset(offset int) string { return "v1:" + strconv.Itoa(offset) }
 
 func projectSession(session Session) ports.AgentSession {
 	status := domain.SessionActive
