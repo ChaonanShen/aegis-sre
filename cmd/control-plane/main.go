@@ -20,6 +20,7 @@ import (
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/opencode"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/ragflow"
 	canvasapp "github.com/1024XEngineer/aegis-sre/internal/application/canvas"
+	"github.com/1024XEngineer/aegis-sre/internal/platform/canvasmcp"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/httpserver"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/knowledgemcp"
@@ -46,6 +47,7 @@ func run(logger *slog.Logger) error {
 	var serverOptions []httpserver.Option
 	var codexProcess *codex.Process
 	var agentProvider ports.AgentProvider
+	var canvasService *canvasapp.Service
 	if cfg.AgentProvider != "" {
 		keyContent, err := os.ReadFile(cfg.AgentIDKeyFile)
 		if err != nil {
@@ -102,7 +104,15 @@ func run(logger *slog.Logger) error {
 			return err
 		}
 		defer store.Close()
-		serverOptions = append(serverOptions, httpserver.WithCanvasService(canvasapp.New(agentProvider, store)))
+		canvasService = canvasapp.New(agentProvider, store)
+		serverOptions = append(serverOptions, httpserver.WithCanvasService(canvasService))
+		if cfg.CanvasMCPTokenFile != "" {
+			handler, err := canvasmcp.NewHandler(canvasService, canvasmcp.Config{TokenFile: cfg.CanvasMCPTokenFile, TenantID: cfg.AgentTenantID, OrgID: cfg.AgentOrgID, UserID: cfg.AgentUserID})
+			if err != nil {
+				return err
+			}
+			serverOptions = append(serverOptions, httpserver.WithCanvasMCP(handler))
+		}
 	}
 	var playbookProvider ports.PlaybookProvider
 	if endpoint := cfg.Endpoints[config.CapabilityPlaybook]; endpoint != "" {

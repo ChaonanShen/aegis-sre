@@ -37,6 +37,7 @@ type dependencies struct {
 	playbookMCP     http.Handler
 	canvas          *canvasapp.Service
 	canvasHealth    func(context.Context) error
+	canvasMCP       http.Handler
 }
 
 func WithAgentProvider(provider ports.AgentProvider) Option {
@@ -86,6 +87,10 @@ func WithCanvasService(service *canvasapp.Service) Option {
 	}
 }
 
+func WithCanvasMCP(handler http.Handler) Option {
+	return func(deps *dependencies) { deps.canvasMCP = handler }
+}
+
 func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -120,6 +125,9 @@ func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server
 	}
 	if deps.playbookMCP != nil {
 		mux.Handle("/mcp/playbooks", deps.playbookMCP)
+	}
+	if deps.canvasMCP != nil {
+		mux.Handle("/mcp/canvas", deps.canvasMCP)
 	}
 
 	return &http.Server{
