@@ -177,7 +177,11 @@ func (provider *Provider) ListRuns(ctx context.Context, _ domain.ActorContext, r
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	runs, err := provider.client.ListRuns(ctx, string(ref.ID), limit+1)
+	start, err := decodeRunCursor(request.Cursor)
+	if err != nil {
+		return domain.Page[ports.PlaybookRunState]{}, err
+	}
+	runs, err := provider.client.ListRuns(ctx, string(ref.ID), start+limit+1)
 	if err != nil {
 		return domain.Page[ports.PlaybookRunState]{}, err
 	}
@@ -188,11 +192,19 @@ func (provider *Provider) ListRuns(ctx context.Context, _ domain.ActorContext, r
 		}
 		items = append(items, mapRun(ports.PlaybookRunRef{ID: domain.ID(run.DAGRunID), PlaybookID: ref.ID}, run))
 	}
+	if start >= len(items) {
+		return domain.Page[ports.PlaybookRunState]{Items: []ports.PlaybookRunState{}}, nil
+	}
+	items = items[start:]
 	hasMore := len(items) > limit
 	if hasMore {
 		items = items[:limit]
 	}
-	return domain.Page[ports.PlaybookRunState]{Items: items, HasMore: hasMore}, nil
+	next := ""
+	if hasMore {
+		next = encodeRunCursor(start + len(items))
+	}
+	return domain.Page[ports.PlaybookRunState]{Items: items, NextCursor: next, HasMore: hasMore}, nil
 }
 
 func (provider *Provider) GetRun(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef) (ports.PlaybookRunState, error) {
@@ -490,6 +502,25 @@ func decodePageCursor(cursor string) (int, error) {
 		return 0, errors.New("invalid page cursor")
 	}
 	return page, nil
+}
+
+func encodeRunCursor(offset int) string {
+	return base64.RawURLEncoding.EncodeToString([]byte("run:" + strconv.Itoa(offset)))
+}
+
+func decodeRunCursor(cursor string) (int, error) {
+	if cursor == "" {
+		return 0, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil || !strings.HasPrefix(string(decoded), "run:") {
+		return 0, errors.New("invalid run cursor")
+	}
+	offset, err := strconv.Atoi(strings.TrimPrefix(string(decoded), "run:"))
+	if err != nil || offset < 0 {
+		return 0, errors.New("invalid run cursor")
+	}
+	return offset, nil
 }
 
 func dagMetadata(raw json.RawMessage, spec string) (string, string) {
