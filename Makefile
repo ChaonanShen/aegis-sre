@@ -1,4 +1,4 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke local-secrets local-config-check local-up local-agent-smoke local-playbook-smoke agent-playbook-e2e local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke local-secrets local-config-check local-up local-agent-smoke local-playbook-smoke agent-playbook-e2e local-smoke canvas-e2e codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 OAPI_CODEGEN_VERSION := v2.8.0
 MAGE_VERSION := v1.17.2
@@ -56,10 +56,10 @@ local-secrets:
 	./scripts/init-local-secrets.sh
 
 local-config-check:
-	docker compose config --quiet
+	docker compose -p aegis-sre-audit-canvas config --quiet
 
 local-up: local-secrets plugin-backend-build plugin-build
-	docker compose up --build --wait
+	docker compose -p aegis-sre-audit-canvas up --build --wait
 
 local-smoke:
 	./scripts/smoke-local-playbook.sh
@@ -71,6 +71,11 @@ local-agent-smoke:
 
 agent-playbook-e2e:
 	./scripts/smoke-local-agent-playbook.mjs
+
+canvas-e2e: local-secrets plugin-backend-build plugin-build
+	@: $${CANVAS_SMOKE_PROMETHEUS_UID:?set CANVAS_SMOKE_PROMETHEUS_UID}
+	docker compose -p aegis-sre-audit-canvas up --build --wait
+	./scripts/smoke-local-canvas.mjs
 
 local-playbook-smoke:
 	./scripts/smoke-local-playbook.sh
