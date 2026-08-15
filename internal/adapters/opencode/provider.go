@@ -230,7 +230,6 @@ type openCodeV1EventStream struct {
 	sequence         int64
 	terminal         bool
 	assistantMessage map[string]struct{}
-	toolStarted      map[string]struct{}
 	textDeltas       map[string]struct{}
 }
 
@@ -251,7 +250,6 @@ func newOpenCodeV1EventStream(body io.ReadCloser, codec *agentid.Codec, sessionI
 		turnID:           turnID,
 		messageID:        messageID,
 		assistantMessage: map[string]struct{}{},
-		toolStarted:      map[string]struct{}{},
 		textDeltas:       map[string]struct{}{},
 	}
 }
@@ -558,10 +556,6 @@ func (stream *openCodeV1EventStream) projectV1Tool(eventID string, part map[stri
 		return domain.Event{}, false, err
 	}
 	if status == "pending" || status == "running" {
-		if _, seen := stream.toolStarted[callID]; seen {
-			return domain.Event{}, false, nil
-		}
-		stream.toolStarted[callID] = struct{}{}
 		input, _ := state["input"].(map[string]any)
 		return stream.v1Event(eventID, domain.EventToolStarted, map[string]any{"call_id": encodedCallID, "server": "agent", "tool": tool, "arguments": input, "access": openCodeToolAccess(tool)})
 	}

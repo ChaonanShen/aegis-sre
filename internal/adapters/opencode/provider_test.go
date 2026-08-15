@@ -183,7 +183,8 @@ func TestProviderStreamsDurableTurnEventsAndVerifiesCancellationOwnership(t *tes
 			}
 			frames := []string{
 				`{"id":"evt_assistant","type":"message.updated","properties":{"sessionID":"ses_abcdefgh","info":{"role":"assistant","id":"msg_assistant","parentID":"` + messageID + `"}}}`,
-				`{"id":"evt_tool1","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"query_metrics","callID":"provider-call","messageID":"msg_assistant","state":{"status":"pending","input":{"expr":"up"}}}}}`,
+				`{"id":"evt_tool1","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"query_metrics","callID":"provider-call","messageID":"msg_assistant","state":{"status":"pending","input":{}}}}}`,
+				`{"id":"evt_tool_running","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"query_metrics","callID":"provider-call","messageID":"msg_assistant","state":{"status":"running","input":{"expr":"up"}}}}}`,
 				`{"id":"evt_tool2","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"query_metrics","callID":"provider-call","messageID":"msg_assistant","state":{"status":"completed","input":{"expr":"up"}}}}}`,
 				`{"id":"evt_delta","type":"message.part.delta","properties":{"sessionID":"ses_abcdefgh","messageID":"msg_assistant","partID":"prt_text","field":"text","delta":"healthy"}}`,
 				`{"id":"evt_step","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"step-finish","reason":"stop","messageID":"msg_assistant"}}}`,
@@ -208,7 +209,7 @@ func TestProviderStreamsDurableTurnEventsAndVerifiesCancellationOwnership(t *tes
 	defer stream.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	want := []domain.EventType{domain.EventToolStarted, domain.EventToolCompleted, domain.EventMessageDelta, domain.EventTurnCompleted}
+	want := []domain.EventType{domain.EventToolStarted, domain.EventToolStarted, domain.EventToolCompleted, domain.EventMessageDelta, domain.EventTurnCompleted}
 	for sequence, eventType := range want {
 		event, err := stream.Next(ctx)
 		if err != nil || event.Type != eventType || event.Sequence != int64(sequence+1) || event.SessionID != "ses_abcdefgh" || event.TurnID != turn.ID || !event.ID.Valid() {
@@ -219,6 +220,9 @@ func TestProviderStreamsDurableTurnEventsAndVerifiesCancellationOwnership(t *tes
 		}
 		if event.Type == domain.EventToolCompleted && !strings.Contains(string(event.Payload), `"duration_ms":null`) {
 			t.Fatalf("missing duration must remain null: %s", event.Payload)
+		}
+		if sequence == 1 && !strings.Contains(string(event.Payload), `"expr":"up"`) {
+			t.Fatalf("running tool input was not projected: %s", event.Payload)
 		}
 	}
 	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {
@@ -272,7 +276,7 @@ func TestProviderProjectsV1GlobalEventsForCurrentSession(t *testing.T) {
 	stream := newOpenCodeV1EventStream(response.Body, codec, "ses_abcdefgh", "turn_abcdefgh", "msg_v1")
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	want := []domain.EventType{domain.EventToolStarted, domain.EventToolCompleted, domain.EventMessageDelta, domain.EventTurnCompleted}
+	want := []domain.EventType{domain.EventToolStarted, domain.EventToolStarted, domain.EventToolCompleted, domain.EventMessageDelta, domain.EventTurnCompleted}
 	for sequence, eventType := range want {
 		event, err := stream.Next(ctx)
 		if err != nil || event.Type != eventType || event.Sequence != int64(sequence+1) || event.SessionID != "ses_abcdefgh" || event.TurnID != "turn_abcdefgh" {
@@ -280,6 +284,9 @@ func TestProviderProjectsV1GlobalEventsForCurrentSession(t *testing.T) {
 		}
 		if event.Type == domain.EventToolStarted && strings.Contains(string(event.Payload), "provider-call") {
 			t.Fatalf("provider call ID leaked: %s", event.Payload)
+		}
+		if sequence == 1 && !strings.Contains(string(event.Payload), `"expr":"up"`) {
+			t.Fatalf("running tool input was not projected: %s", event.Payload)
 		}
 	}
 	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {

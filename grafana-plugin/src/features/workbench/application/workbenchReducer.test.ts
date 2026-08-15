@@ -44,12 +44,21 @@ describe('workbenchReducer', () => {
     ).session;
     opened = applyAgentEvent(
       opened,
+      {
+        type: 'tool_call',
+        payload: { id: 'tc', server: 'grafana', tool: 'query', tier: 'read', status: 'pending', args: '{"expr":"up"}' },
+      },
+      assistantId
+    ).session;
+    opened = applyAgentEvent(
+      opened,
       { type: 'tool_result', payload: { id: 'tc', status: 'ok', result: 'done', durationMs: 12 } },
       assistantId
     ).session;
 
     expect(opened.messages[0].role).toBe('tool');
-    expect(opened.messages[0].toolCalls?.[0]).toMatchObject({ status: 'ok', result: 'done', durationMs: 12 });
+    expect(opened.messages).toHaveLength(2);
+    expect(opened.messages[0].toolCalls?.[0]).toMatchObject({ args: '{"expr":"up"}', status: 'ok', result: 'done', durationMs: 12 });
   });
 
   test('turns a successful Grafana Prometheus call into a live Grafana panel definition', () => {

@@ -59,6 +59,20 @@ export function applyAgentEvent(
       };
     }
     case 'tool_call': {
+      const existing = findToolCall(opened.messages, event.payload.id);
+      if (existing) {
+        return {
+          session: withMessages(
+            opened,
+            opened.messages.map((message) => ({
+              ...message,
+              toolCalls: message.toolCalls?.map((item) =>
+                item.id === event.payload.id ? { ...item, ...event.payload } : item
+              ),
+            }))
+          ),
+        };
+      }
       const toolMessage: WorkbenchMessage = {
         id: `message-${event.payload.id}`,
         role: 'tool',
