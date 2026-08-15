@@ -827,6 +827,11 @@ describe('useWorkbenchController', () => {
     ): AsyncGenerator<AgentEvent> {
       yield { type: 'message_start' };
       yield { type: 'message_delta', payload: { delta: 'optimistic' } };
+      yield {
+        type: 'tool_call',
+        payload: { id: 'call-query', server: 'grafana', tool: 'query_prometheus', tier: 'read', status: 'pending' },
+      };
+      yield { type: 'tool_result', payload: { id: 'call-query', status: 'ok', result: 'up = 1', durationMs: 12 } };
       yield { type: 'message_end', payload: {} };
       yield { type: 'done', payload: { turnId: 'turn-1', replayed: false } };
     });
@@ -850,7 +855,13 @@ describe('useWorkbenchController', () => {
     expect(openSession).toHaveBeenCalledTimes(2);
     expect(result.current.openedSession).toMatchObject({
       status: 'success',
-      data: { messages: [{ content: 'persisted user' }, { content: 'persisted assistant' }] },
+      data: {
+        messages: expect.arrayContaining([
+          expect.objectContaining({ content: 'persisted user' }),
+          expect.objectContaining({ content: 'persisted assistant' }),
+          expect.objectContaining({ role: 'tool', toolCalls: [expect.objectContaining({ id: 'call-query', result: 'up = 1' })] }),
+        ]),
+      },
     });
   });
 

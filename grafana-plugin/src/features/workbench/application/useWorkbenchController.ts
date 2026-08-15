@@ -383,7 +383,7 @@ export function useWorkbenchController({
   }, []);
 
   const reconcileCommand = useCallback(
-    async (command: FailedCommand, runID: number): Promise<boolean> => {
+    async (command: FailedCommand, runID: number, live: OpenedSession): Promise<boolean> => {
       const controller = new AbortController();
       reconcileControllerRef.current?.abort();
       reconcileControllerRef.current = controller;
@@ -398,7 +398,8 @@ export function useWorkbenchController({
             index >= previousMessageCount && role === 'assistant' && streamStatus === 'complete'
         );
         if (committed) {
-          publishOpened(persisted);
+          // Provider 历史接口可能只投影文本；保留本次流中已确认的工具卡和结果。
+          publishOpened(mergePersistedSession(persisted, live));
           failedCommandRef.current = undefined;
           failedCommandSessionIdRef.current = undefined;
           setLastFailedInput(undefined);
@@ -524,7 +525,7 @@ export function useWorkbenchController({
         return;
       }
       const stopped = stopRequestedRef.current && isAbortError(failure);
-      const committed = await reconcileCommand(command, runID);
+      const committed = await reconcileCommand(command, runID, current);
       if (runID !== streamRunRef.current) {
         clearStream();
         return;
@@ -1005,6 +1006,21 @@ export function useWorkbenchController({
     },
     deleteCurrentSession,
   };
+}
+
+function mergePersistedSession(persisted: OpenedSession, live: OpenedSession): OpenedSession {
+  const liveByID = new Map(live.messages.map((message) => [message.id, message]));
+  const messages = persisted.messages.map((message) => {
+    const current = liveByID.get(message.id);
+    return current?.toolCalls?.length ? { ...message, toolCalls: current.toolCalls } : message;
+  });
+  const persistedIDs = new Set(messages.map((message) => message.id));
+  for (const message of live.messages) {
+    if (message.role === 'tool' && !persistedIDs.has(message.id)) {
+      messages.push(message);
+    }
+  }
+  return { ...persisted, messages, session: { ...persisted.session, messageCount: messages.length } };
 }
 
 function newMessageId(): string {
