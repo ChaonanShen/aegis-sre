@@ -25,8 +25,9 @@ import (
 var migrationFiles embed.FS
 
 type Store struct {
-	db  *sql.DB
-	now func() time.Time
+	db     *sql.DB
+	dbPath string
+	now    func() time.Time
 }
 
 func Open(path string) (*Store, error) {
@@ -43,7 +44,7 @@ func Open(path string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
-	store := &Store{db: db, now: func() time.Time { return time.Now().UTC() }}
+	store := &Store{db: db, dbPath: path, now: func() time.Time { return time.Now().UTC() }}
 	if err := store.initialize(context.Background()); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -52,6 +53,21 @@ func Open(path string) (*Store, error) {
 		_ = os.Chmod(path, 0o600)
 	}
 	return store, nil
+}
+
+// MetricsSnapshot exposes only fixed, low-cardinality SQLite operational values.
+func (store *Store) MetricsSnapshot(ctx context.Context) (map[string]uint64, error) {
+	var migration uint64
+	if err := store.db.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&migration); err != nil {
+		return nil, err
+	}
+	var size uint64
+	if store.dbPath != ":memory:" && !strings.HasPrefix(store.dbPath, "file::memory:") {
+		if info, err := os.Stat(store.dbPath); err == nil {
+			size = uint64(info.Size())
+		}
+	}
+	return map[string]uint64{"migration_version": migration, "db_file_size_bytes": size}, nil
 }
 
 func (store *Store) initialize(ctx context.Context) error {

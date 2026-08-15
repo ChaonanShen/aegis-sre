@@ -63,7 +63,7 @@ func TestCanvasMetricsEndpointReturnsFixedCounters(t *testing.T) {
 	handler := New(config.Config{}, nil, WithCanvasService(service)).Handler
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics/canvas", nil))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"reads_total":0`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"reads_total":0`) || !strings.Contains(response.Body.String(), `"migration_version":1`) {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }

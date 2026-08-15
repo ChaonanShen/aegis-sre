@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,12 +27,14 @@ type Service struct {
 type canvasMetrics struct {
 	reads             atomic.Uint64
 	writes            atomic.Uint64
+	publishes         atomic.Uint64
 	updates           atomic.Uint64
 	deletes           atomic.Uint64
 	errors            atomic.Uint64
 	revisionConflicts atomic.Uint64
 	notifications     atomic.Uint64
 	notificationDrops atomic.Uint64
+	sqliteBusyErrors  atomic.Uint64
 	readDurationNS    atomic.Uint64
 	writeDurationNS   atomic.Uint64
 }
@@ -63,6 +66,7 @@ func (service *Service) Get(ctx context.Context, actor domain.ActorContext, sess
 func (service *Service) PublishQueryChart(ctx context.Context, actor domain.ActorContext, input ports.PublishQueryChartInput) (domain.CanvasProjection, error) {
 	started := time.Now()
 	service.metrics.writes.Add(1)
+	service.metrics.publishes.Add(1)
 	defer func() { service.metrics.writeDurationNS.Add(uint64(time.Since(started).Nanoseconds())) }()
 	if err := service.validate(ctx, actor, input.SessionID, true); err != nil {
 		service.recordError(err)
@@ -181,18 +185,28 @@ func (service *Service) Delete(ctx context.Context, actor domain.ActorContext, s
 
 // MetricsSnapshot returns fixed-name, low-cardinality counters for operational use.
 func (service *Service) MetricsSnapshot() map[string]uint64 {
-	return map[string]uint64{
+	result := map[string]uint64{
 		"reads_total":                      service.metrics.reads.Load(),
 		"writes_total":                     service.metrics.writes.Load(),
+		"publishes_total":                  service.metrics.publishes.Load(),
 		"updates_total":                    service.metrics.updates.Load(),
 		"deletes_total":                    service.metrics.deletes.Load(),
 		"errors_total":                     service.metrics.errors.Load(),
 		"revision_conflicts_total":         service.metrics.revisionConflicts.Load(),
 		"notifications_total":              service.metrics.notifications.Load(),
 		"notification_drops_total":         service.metrics.notificationDrops.Load(),
+		"sqlite_busy_errors_total":         service.metrics.sqliteBusyErrors.Load(),
 		"read_duration_nanoseconds_total":  service.metrics.readDurationNS.Load(),
 		"write_duration_nanoseconds_total": service.metrics.writeDurationNS.Load(),
 	}
+	if metrics, ok := service.store.(ports.CanvasStoreMetrics); ok {
+		if snapshot, err := metrics.MetricsSnapshot(context.Background()); err == nil {
+			for key, value := range snapshot {
+				result[key] = value
+			}
+		}
+	}
+	return result
 }
 
 func (service *Service) recordError(err error) {
@@ -200,6 +214,9 @@ func (service *Service) recordError(err error) {
 		return
 	}
 	service.metrics.errors.Add(1)
+	if strings.Contains(strings.ToLower(err.Error()), "busy") {
+		service.metrics.sqliteBusyErrors.Add(1)
+	}
 	var appErr *domain.AppError
 	if errors.As(err, &appErr) && appErr.Code == domain.ErrorConflict {
 		service.metrics.revisionConflicts.Add(1)

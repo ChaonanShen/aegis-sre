@@ -30,3 +30,9 @@ type CanvasStore interface {
 	Delete(context.Context, domain.ActorContext, domain.ID) error
 	Close() error
 }
+
+// CanvasStoreMetrics is optional operational data exposed by a store adapter.
+// Keys and values must remain low-cardinality and must not contain identifiers.
+type CanvasStoreMetrics interface {
+	MetricsSnapshot(context.Context) (map[string]uint64, error)
+}
