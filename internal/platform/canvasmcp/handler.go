@@ -31,7 +31,7 @@ func NewHandler(service *canvasapp.Service, config Config) (http.Handler, error)
 	}
 	svc := &handler{service: service, actor: domain.ActorContext{TenantID: config.TenantID, OrgID: config.OrgID, UserID: config.UserID}}
 	server := mcp.NewServer(&mcp.Implementation{Name: "aegis-canvas", Version: "1.0.0"}, nil)
-	mcp.AddTool(server, &mcp.Tool{Name: "canvas.publish_query_chart", Description: "Persist a bounded Prometheus range query and its Canvas chart definition for an Agent session."}, svc.publish)
+	mcp.AddTool(server, &mcp.Tool{Name: "canvas.publish_query_chart", Description: `Persist a bounded Prometheus range query and its Canvas chart definition for an Agent session. viz_config MUST be a VizConfig envelope: {"kind":"VizConfig","group":"timeseries","version":"v1","spec":{"options":{},"fieldConfig":{}}}. Put legend and tooltip in spec.options and field settings in spec.fieldConfig; top-level Grafana panel options are invalid.`}, svc.publish)
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	return bearerFile(config.TokenFile, streamable), nil
 }
