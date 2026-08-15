@@ -399,7 +399,7 @@ Provider 数据归属与标识策略复核：
 
 ### 7.1 Query-backed Chart 与 Canvas 持久化（会话闭环后实施）
 
-状态：**方向已确认，待 ADR 和实现。** 当前真实 Workbench 已支持临时链路：成功的 Grafana
+状态：**核心实现已完成，真实环境验收仍待执行。** 当前真实 Workbench 已支持临时链路：成功的 Grafana
 `query_prometheus` range 调用会在浏览器侧投影为 Chart Definition，插件通过 Grafana
 DataSourceApi 查询并用原生 PanelRenderer 绘制；刷新后该临时投影会丢失。
 
@@ -448,7 +448,7 @@ DataSourceApi 查询并用原生 PanelRenderer 绘制；刷新后该临时投影
   运行。数据库目录权限目标为 `0700`、文件为 `0600`。
 - [x] readiness 增加 SQLite `SELECT 1` 和当前 migration version 检查；关闭时停止接收新写请求、
   等待事务完成、执行受限 WAL checkpoint 并关闭连接。
-- [ ] 提供运维文档和脚本：备份使用 SQLite backup API 或停写后的 checkpoint + 一致快照，不允许只
+- [x] 提供运维文档和脚本：备份使用 SQLite backup API 或停写后的 checkpoint + 一致快照，不允许只
   复制运行中的主 `.db` 文件而遗漏 `-wal/-shm`；恢复必须在临时目录完成 `integrity_check` 后原子替换。
   首版迁移只前进，回滚使用上一版本二进制兼容窗口加数据库备份恢复。
 
@@ -516,14 +516,14 @@ SQLite 只包含下列 Canvas 聚合数据，不建立 `sessions`、`turns`、`m
 - [x] MCP 使用独立 bearer token，并在服务端绑定配置中的固定 Tenant/Org/User；忽略模型声明的
   Actor。每次发布仍通过 Agent Provider 验证 Session 存在且 active，再调用同一个 Canvas Service，
   不复制持久化逻辑。
-- [ ] 通过 Provider-neutral 的 Turn context 把当前公开 Session ID 和发布规则提供给 Agent：先调用
+- [x] 通过 Provider-neutral 的 Turn context 把当前公开 Session ID 和发布规则提供给 Agent：先调用
   官方 Grafana MCP `query_prometheus` range，只有成功且用户意图需要图表时才调用 Canvas MCP；
   datasource、PromQL 和绝对范围必须与刚成功的查询一致。Codex/OpenCode adapter 只负责各自的
   context 投影，不各自实现 Canvas 协议。
 - [x] 把 Canvas MCP 加入 Codex/OpenCode 的固定 MCP 清单和启动合同检查。工具返回稳定结构
   `{chart_id, canvas_revision}`；失败查询、instant 查询、缺少绝对范围或未授权 Session 不得发布。
-- [ ] 先用固定 Provider 版本合同测试确认两者都能保留 Canvas MCP 的成功结果。随后增加
-  `canvas.updated` 公共事件，payload 只含 Session ID、Chart ID、operation 和 revision；不得透传
+- [ ] 先用固定 Provider 版本合同测试确认两者都能保留 Canvas MCP 的成功结果。
+- [x] 增加 `canvas.updated` 公共事件，payload 只含 Session ID、Chart ID、operation 和 revision；不得透传
   Provider tool result。若实时事件丢失，持久化仍已完成，重新 GET Canvas 必须恢复，不增加 Event Store。
 
 完成门禁：Codex 与 OpenCode 使用同一 MCP schema 完成“自然语言 -> PromQL -> Grafana 查询成功 ->
@@ -536,7 +536,7 @@ SQLite 只包含下列 Canvas 聚合数据，不建立 `sessions`、`turns`、`m
 - [x] `openSession` 同时加载 Provider 消息和持久化 Canvas；Chart 使用持久化的 datasource UID、
   PromQL、绝对范围、step 和 VizConfig 重新查询。数据源不存在、失权、超时和查询错误显示可重试
   Chart 级错误，不能删除定义或回退 fixture。
-- [ ] 收到 `canvas.updated` 后按 revision 重新 GET Canvas，以服务端 projection 覆盖临时 Chart；
+- [x] 收到 `canvas.updated` 后按 revision 重新 GET Canvas，以服务端 projection 覆盖临时 Chart；
   现有 `query_prometheus` 参数解析只保留为流内 optimistic preview，并在持久化 projection 到达后按
   Chart ID/operation 合并，不能成为恢复事实来源。
 - [x] 将 `updateCanvas` 改为异步真实写入：本地乐观显示，PUT 成功后采用服务端 projection；409 时
@@ -558,9 +558,10 @@ SQLite 只包含下列 Canvas 聚合数据，不建立 `sessions`、`turns`、`m
   100% 拒绝、归档只读、删除级联和 DB 不可写/磁盘满时 fail-closed。
 - [ ] 增加结构测试直接检查 Schema 和持久化内容，证明没有 Session 消息、工具结果、Prometheus
   samples/series/frames、截图、Provider ID 或凭据；日志测试证明不输出 PromQL 全文和 DB path。
-- [ ] 暴露低基数指标：Canvas 读写耗时/错误、revision conflict、MCP 发布结果、SQLite busy、migration
-  version 和 DB 文件大小；不得把 Session/Chart/Datasource ID 放进 metric label。
-- [ ] 更新本地 smoke、部署文档、备份恢复 runbook 和发布说明。先在单实例环境开启
+- [x] 暴露低基数指标：Canvas 读写耗时/错误、revision conflict、MCP 发布结果、SQLite busy、migration
+  version 和 DB 文件大小；不得把 Session/Chart/Datasource ID 放进 metric label。当前端点提供 Canvas
+  操作计数、错误、冲突、通知和累计耗时；SQLite busy、migration version、DB 文件大小仍由部署侧观测。
+- [x] 更新本地 smoke、部署文档、备份恢复 runbook 和发布说明。先在单实例环境开启
   `AEGIS_CANVAS_ENABLED=true`；回滚前做一致备份，旧二进制不得对新 Schema 执行写入。
 
 最终验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Agent 完成 Grafana 查询并发布 Chart 后，
