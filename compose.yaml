@@ -2,7 +2,6 @@ name: aegis-sre
 
 services:
   grafana:
-    container_name: aegis-sre-grafana
     build:
       context: ./grafana-plugin/.config
       args:
