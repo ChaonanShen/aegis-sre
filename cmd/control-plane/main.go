@@ -13,11 +13,14 @@ import (
 
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/agentid"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/agentscope"
+	"github.com/1024XEngineer/aegis-sre/internal/adapters/canvassqlite"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/codex"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/dagu"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/knowledgefactory"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/knowledgeid"
 	"github.com/1024XEngineer/aegis-sre/internal/adapters/opencode"
+	canvasapp "github.com/1024XEngineer/aegis-sre/internal/application/canvas"
+	"github.com/1024XEngineer/aegis-sre/internal/platform/canvasmcp"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/httpserver"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/knowledgemcp"
@@ -43,6 +46,8 @@ func run(logger *slog.Logger) error {
 
 	var serverOptions []httpserver.Option
 	var codexProcess *codex.Process
+	var agentProvider ports.AgentProvider
+	var canvasService *canvasapp.Service
 	if cfg.AgentProvider != "" {
 		keyContent, err := os.ReadFile(cfg.AgentIDKeyFile)
 		if err != nil {
@@ -56,18 +61,17 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		var agentProvider ports.AgentProvider
+		var provider ports.AgentProvider
 		if cfg.AgentProvider == "codex" {
 			codexProcess, err = codex.StartProcess(runCtx, cfg.CodexInitTimeout, codex.ProcessConfig{Command: cfg.CodexCommand, Args: []string{"app-server"}, Dir: cfg.AgentWorkDir})
 			if err != nil {
 				return err
 			}
 			defer codexProcess.Close()
-			provider, err := codex.NewProvider(codexProcess.Client(), codec, cfg.AgentWorkDir)
+			provider, err = codex.NewProvider(codexProcess.Client(), codec, cfg.AgentWorkDir)
 			if err != nil {
 				return err
 			}
-			agentProvider = provider
 		} else {
 			transport := http.DefaultTransport.(*http.Transport).Clone()
 			transport.ResponseHeaderTimeout = 15 * time.Second
@@ -78,17 +82,36 @@ func run(logger *slog.Logger) error {
 			if err != nil {
 				return err
 			}
-			provider, err := opencode.NewProvider(client, codec)
+			provider, err = opencode.NewProvider(client, codec)
 			if err != nil {
 				return err
 			}
-			agentProvider = provider
 		}
-		scoped, err := agentscope.New(agentProvider, agentscope.Scope{TenantID: cfg.AgentTenantID, OrgID: cfg.AgentOrgID, UserID: cfg.AgentUserID})
+		scoped, err := agentscope.New(provider, agentscope.Scope{TenantID: cfg.AgentTenantID, OrgID: cfg.AgentOrgID, UserID: cfg.AgentUserID})
 		if err != nil {
 			return err
 		}
 		serverOptions = append(serverOptions, httpserver.WithAgentProvider(scoped))
+		agentProvider = scoped
+	}
+	if cfg.CanvasEnabled {
+		if agentProvider == nil {
+			return errors.New("Canvas requires an Agent provider")
+		}
+		store, err := canvassqlite.Open(cfg.CanvasDBPath)
+		if err != nil {
+			return err
+		}
+		defer store.Close()
+		canvasService = canvasapp.New(agentProvider, store)
+		serverOptions = append(serverOptions, httpserver.WithCanvasService(canvasService))
+		if cfg.CanvasMCPTokenFile != "" {
+			handler, err := canvasmcp.NewHandler(canvasService, canvasmcp.Config{TokenFile: cfg.CanvasMCPTokenFile, TenantID: cfg.AgentTenantID, OrgID: cfg.AgentOrgID, UserID: cfg.AgentUserID})
+			if err != nil {
+				return err
+			}
+			serverOptions = append(serverOptions, httpserver.WithCanvasMCP(handler))
+		}
 	}
 	var playbookProvider ports.PlaybookProvider
 	if endpoint := cfg.Endpoints[config.CapabilityPlaybook]; endpoint != "" {

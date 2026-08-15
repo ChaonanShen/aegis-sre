@@ -11,11 +11,13 @@ type AgentSessionRef struct{ ID domain.ID }
 type AgentTurnRef struct{ ID domain.ID }
 
 type AgentSession struct {
-	Ref       AgentSessionRef
-	Title     string
-	Status    domain.SessionStatus
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Ref          AgentSessionRef
+	Title        string
+	Status       domain.SessionStatus
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	MessageCount *int
+	Preview      *string
 }
 
 type AgentMessageRole string
@@ -49,11 +51,12 @@ type CreateAgentSessionInput struct {
 }
 
 type StartTurnInput struct {
-	Message     string
-	Mentions    []string
-	OperationID string
-	FolderUID   string
-	ServiceIDs  []domain.ID
+	Message       string
+	CanvasContext string
+	Mentions      []string
+	OperationID   string
+	FolderUID     string
+	ServiceIDs    []domain.ID
 }
 
 type ApprovalDecisionValue string

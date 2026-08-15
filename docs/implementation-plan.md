@@ -217,7 +217,7 @@ Provider 数据归属与标识策略复核：
 
 ## 7. 阶段 4：Dagu 与 `mcp.call`
 
-状态：**基本执行链已完成。插件可直接启动、查看和取消 Dagu Run，并展示 Step 状态；完整运行观测与交互仍需在阶段 7 收口。**
+状态：**基本执行链及 Run 实时状态闭环已完成。插件可直接启动、查看和取消 Dagu Run，并展示 Step 状态；完整运行观测与交互仍需在阶段 7 和后续高级运行观测阶段收口。**
 
 目标：Dagu 成为 Playbook 唯一执行引擎，插件不再依赖自定义 DSL。
 
@@ -272,6 +272,21 @@ Provider 数据归属与标识策略复核：
 - [x] 通过真实 Dagu Run 验证多个 `mcp.call` 查询节点和汇总 Artifact。
 - [x] 历史 Run 不阻止再次执行；`run.updated` 作为快照失效通知驱动完整 Run 刷新，终态无需手动刷新页面。
 - [x] 新 Run 使用原生 Dagu YAML 的 `name` 展示在 Dagu executions；Aegis 通过 adapter 私有标签保留稳定 Playbook 关联，并兼容旧的 `pbk_*` Run 名称。
+
+### 4.5 2026-08-15 Playbook 链路修正记录
+
+已完成：
+
+- [x] `run.updated` 不再只发送 `status`，Dagu adapter 改为发送包含 Run ID、Playbook ID、状态、序号、时间和 Step 的完整公共快照；流正常结束但未收到终态时，前端使用 `getRun` 做最终对账（`2c4c65c`）。
+- [x] Run 列表接通不透明 cursor 分页；`has_more=true` 时保证返回 `next_cursor`，前端可连续加载全部页（`dcebe0a`）。
+- [x] Artifact 下载 URL 补齐 Grafana Plugin Resource 前缀；切换或启动 Run 时清理旧 Artifact，列表加载错误不再静默吞掉（`1bd5ff7`）。
+
+仍待修正：
+
+- [ ] SSE `sequence` 当前仍是单连接内轮询序号，不是 Provider 可持久恢复的序号；断线后必须通过 Run 快照对账，并明确重复事件和 cursor 失效语义，不建立 Aegis Event Store。
+- [ ] Run/Step 公共详情仍缺少 Provider-neutral 的输出、错误、可空耗时、参数、发起人、retry 关系和日志引用；不得把 Dagu 私有结构直接暴露给前端。
+- [ ] 未识别的 Dagu Run/Step 状态目前可能被映射成看似有效的状态；无效时间也可能被 REST 投影成当前时间。应改为明确 Provider 结果错误或可空的 unknown 语义，不能生成误导数据。
+- [ ] Artifact 仍主要跟随最新终态 Run 展示；需要支持选择历史 Run、文本预览、截断、媒体类型、权限错误、过期引用和下载重试。
 
 本轮保证 Playbook 可以从 Grafana 插件执行并处理人工交互；不把 Dagu UI 当作最终产品界面。日志展示仍因缺少稳定的 provider-neutral API 暂缓，不能把 Provider 私有日志协议直接泄漏到前端。
 
@@ -385,6 +400,27 @@ Dagu 2.13.0 没有重命名历史 DAG Run 的稳定接口，因此 Playbook 改�
 
 验收标准：切换部署级 `AGENT_PROVIDER=codex|opencode` 后，插件请求和事件 Schema 不变化；清空或重启 Control Plane 不丢失会话，删除 Provider 持久卷则按 Provider 自身的数据丢失语义处理。
 
+### 6.4 2026-08-15 会话链路修正记录
+
+已完成：
+
+- [x] OpenCode V1 全局事件按顶层 Session、嵌套 `info.sessionID`、`part.sessionID`、Message 所属关系做 fail-closed 隔离；无法证明归属或属于其他 Session 的事件不会进入当前 Turn（`092fda2`）。
+- [x] Codex/OpenCode 缺少真实工具耗时时，公共 `duration_ms` 返回 `null`，不再伪造 `0`（`50827b9`）。
+- [x] Session 公共摘要增加可空 `message_count` 和 `preview`；Codex 从原生 Thread 投影真实值，Provider 无法在列表接口证明时返回 `null`，前端显示“消息数未知”而不是错误的 `0 条消息`（`0bffd2a`）。
+- [x] 前端 Session 列表接通全部 cursor 页，并在 `has_more` 缺少 `next_cursor` 时显式报错（`ddb2650`）。
+- [x] Turn 终态对账合并 Provider 持久化文本与实时工具卡，避免本次流中已确认的工具调用和结果被文本历史覆盖（`1540f46`）。
+- [x] OpenCode pending 工具事件参数为空时，running 阶段的完整参数会继续投影；前端按稳定 call ID 原位更新工具卡，不重复插入（`f481af7`）。
+- [x] OpenCode completed/error 中的输出和结构化错误进入 Provider-neutral `summary`，工具卡不再只有成功/失败状态（`a7ff510`）。
+
+仍待修正：
+
+- [ ] 公共 Message 历史仍以纯文本为主，尚未冻结 Provider-neutral 的 parts/tool contract。需要支持 text、tool call、tool result、error、call ID、来源（MCP/builtin/runtime）、参数、结果、状态、可空耗时和时间戳。
+- [ ] Codex 历史读取目前主要保留 `userMessage`/`agentMessage` 文本；OpenCode 历史读取也主要保留 text part。刷新或重新打开旧 Session 时，历史工具卡、工具结果和错误仍不能完整恢复。
+- [ ] 当前终态合并只保护本次浏览器已收到的实时工具卡，不能代替 Provider 历史投影；不得通过 Aegis 消息表或前端整会话缓存补齐。
+- [ ] OpenCode 工具来源仍可能退化为通用 `agent` 命名空间，需要从固定 Provider 协议可靠区分 MCP、内置工具和 runtime；无法证明时使用明确 unknown，不猜测 Grafana/Dagu 来源。
+- [ ] OpenCode Session 列表接口无法直接给出可信消息数时当前返回 `null`；后续仅在 Provider 有批量统计能力或可接受的受控查询方案下接通真实统计，禁止无界 N+1 扫描。
+- [ ] 仍需补双 Provider 历史恢复合同测试：工具调用、工具结果、错误、未知耗时、重启恢复和刷新恢复必须保持相同公共 Schema。
+
 ## 10. 阶段 7：核心前端真实模式收口
 
 状态：**执行中。真实模式 fallback 已收口，Playbook 已接 Dagu；真实 Run 参数、SSE、retry、Human Task、Approval、Artifact 已接入 gateway，组合 Agent + Playbook E2E 已提供入口。Workbench 会话完整能力、Alerts、Audit 和真实环境验收仍待完成。**
@@ -395,6 +431,8 @@ Dagu 2.13.0 没有重命名历史 DAG Run 的稳定接口，因此 Playbook 改�
 
 - [x] 生成或实现 Control Plane Resource Client。
 - [x] Workbench 使用统一 Agent Event，不再识别旧 AgentType。
+- [x] Session 列表加载全部 cursor 页；消息统计未知时不再显示为 `0 条消息`。
+- [x] Turn 完成后的 Provider 快照对账保留实时工具卡、结果和完整 running 参数。
 - [ ] Workbench 真实会话支持完整的 create/list/read/resume/rename/archive/unarchive/delete、流式 Turn、取消和 Agent Approval；此项优先于 Canvas 增强。
 - [ ] 删除迁移遗留的 `saveSession`、前端 `persistenceQueue` 和发送完整 `history` 的真实模式抽象；前端可以乐观渲染，但最终会话与消息必须重新从 Agent Provider 读取。
 - [ ] 审计公共 `Session` 的 `folder_uid`、title、status 和时间字段，只保留 Provider 原生可读写或可可靠派生的字段；不支持的持久字段通过显式契约修订移除，不以数据库补齐。
@@ -407,21 +445,179 @@ Dagu 2.13.0 没有重命名历史 DAG Run 的稳定接口，因此 Playbook 改�
 - [x] 真实模式中未实现能力显示明确不可用，不静默返回 fixture 数据。
 - [x] 增加 `make agent-playbook-e2e` 真实组合冒烟入口；Playwright 视觉验收仍待本地完整栈环境执行。
 
-### 7.1 Canvas 与视觉产物已知缺口（会话闭环后实施）
+### 7.1 Query-backed Chart 与 Canvas 持久化（会话闭环后实施）
 
-当前前端已有 Chart/Canvas 模型、布局和 Grafana 查询渲染能力，但新的 Control Plane 真实会话链路尚未完整承载这些状态。本节全部暂缓到核心会话闭环之后，不得误标为已完成：
+状态：**核心实现已完成，真实环境验收仍待执行。** 当前真实 Workbench 已支持临时链路：成功的 Grafana
+`query_prometheus` range 调用会在浏览器侧投影为 Chart Definition，插件通过 Grafana
+DataSourceApi 查询并用原生 PanelRenderer 绘制；刷新后该临时投影会丢失。
 
-- [ ] 定义 Provider-neutral 的视觉产物契约，至少区分 Grafana Chart Definition 与 PNG/JPEG/SVG 等普通图片 Artifact。
-- [ ] 将 Codex Image/Tool Item、OpenCode File/Message Part 和 Aegis 工具结果统一映射为稳定事件，不让前端识别 Provider 私有类型。
-- [ ] 扩展 `artifact.created` 或新增 Canvas 事件，携带受控资源引用、媒体类型、Chart Definition 及 upsert/remove/layout 语义；不得暴露 Provider 文件路径或内部 URL。
-- [ ] 修复真实 Workbench adapter 当前忽略 `artifact.created` 的问题，使流式生成的图表或图片可以直接进入消息和 Canvas。
-- [ ] 删除 `updateCanvas` 原样返回造成的虚假持久化语义；优先从 Agent Artifact/结构化事件重建 Canvas。若确有无法由 Provider 承载的布局状态，按独立 Canvas ADR 决策，不把它并入 Session/Turn 存储。
-- [ ] Grafana 图表优先保存 datasource、PromQL/LogQL、绝对时间范围和 VizConfig，由插件查询真实 Grafana 数据并原生渲染；不得用 Agent 生成的截图替代可交互 Grafana Panel。
-- [ ] 为 Agent 提供受控的 Aegis Canvas 发布工具，使 Codex 与 OpenCode 通过同一工具发布图表，而不是分别实现画布协议。
-- [ ] 先验证能否从 Provider 会话的结构化事件或 metadata 重建 Canvas；若无法可靠承载产品专有布局状态，先提交 ADR 说明事实来源和最小持久化范围，再决定是否引入存储。
-- [ ] 添加刷新恢复、重复事件去重、流式生成期间用户编辑合并、无权 Artifact 拒绝和大图片限制测试。
+本切片的事实来源边界如下：
 
-Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Agent 生成的 Grafana 图表和普通图片均可在同一个 Grafana Workbench Canvas 中展示，并能在重新打开会话后恢复。
+- Agent Provider 继续独占 Session、Turn、Message、工具调用和审批的持久化；Aegis 不增加
+  `SessionRepository`、Turn/Message/Event 表或 Provider ID 映射。
+- Aegis 独占产品专有的 Canvas 投影：持久化 Query Definition、Chart Definition、Canvas
+  布局/成员/active chart 和乐观并发版本。记录以 Provider-neutral 的公开 Session ID 和可信
+  Actor scope 关联 Agent 会话，但不复制会话字段，也不把 Canvas 记录伪装成 Agent Session。
+- 首版 Query 只保存 datasource UID、PromQL、绝对时间范围和 step；Chart 只保存标题、类型、
+  VizConfig、Query 引用和可选来源引用；Canvas 只保存布局和 Chart 位置。不得保存查询样本、
+  Grafana 响应、工具结果正文或图表截图。重新打开会话时必须重新查询当前 Grafana 数据源。
+- 普通 PNG/JPEG/SVG 等二进制 Artifact 不与 Query-backed Chart 共用持久化模型，继续按 9.2
+  的受控 Artifact 引用设计实施，不作为本切片的阻塞项。
+
+#### 7.1.1 阶段 0：冻结 ADR 与边界
+
+- [x] 新增 `docs/adr/0007-canvas-sqlite-persistence.md` 并同步更新 `docs/architecture.md` 的组件、
+  数据归属、持久化决策门和部署拓扑。ADR 必须明确 SQLite 是 Aegis Canvas 投影的唯一事实来源，
+  Agent Provider 仍是 Session/Turn/Message 的唯一事实来源。
+- [x] 冻结首版范围为 Prometheus range Query-backed Chart；instant 查询、LogQL、普通图片、跨 Session
+  Canvas、模板市场、多人实时协作和 Chart 查询编辑不进入本切片。
+- [x] 明确只借鉴旧项目的 Query/Chart/Canvas 拆分、绝对时间、事务和乐观版本；不得迁移旧项目的
+  `sessions`/`turns` 表、Agent Runner、Prometheus Runner、自研 Grafana MCP 或整会话 Store。
+- [x] ADR 记录 SQLite 的单 Control Plane 实例/单写者限制；多副本和网络文件系统不在首版支持范围。
+  以后需要水平扩展时更换 Canvas Store adapter，不改变领域 Port 和公共 API。
+
+完成门禁：ADR 接受后才能增加数据库依赖或跨模块装配。
+
+#### 7.1.2 阶段 1：SQLite 基础设施与部署
+
+- [x] 固定纯 Go 驱动 `modernc.org/sqlite v1.56.0`，保持现有 `CGO_ENABLED=0` 构建；不引入 ORM。
+- [x] 增加显式配置：`AEGIS_CANVAS_ENABLED`、`AEGIS_CANVAS_DB_PATH` 和
+  `AEGIS_CANVAS_MCP_TOKEN_FILE`。启用时 DB path 必须是绝对路径、父目录可写、Token 必须是只读
+  普通文件；缺少或错误配置时启动失败。未启用时能力明确返回 unavailable，不使用内存或 fixture
+  回退。开发默认路径为 `/var/lib/aegis/canvas/canvas.db`；capabilities 和 readiness 增加独立
+  `canvas` 状态，不能用 Agent available 掩盖 Canvas Store 不可用。
+- [x] `compose.yaml` 为 Control Plane 增加 `control-plane-data` named volume，只将
+  `/var/lib/aegis/canvas` 设为可写，继续保持容器根文件系统 `read_only: true`；镜像创建目录并保证
+  运行用户可写。Canvas MCP 使用独立 secret，不复用 Plugin、Grafana MCP 或 Playbook MCP Token。
+- [x] 打开数据库后固定执行并校验 `foreign_keys=ON`、`journal_mode=WAL`、`synchronous=FULL`、
+  `busy_timeout=5000`；连接池 `MaxOpenConns=1`、`MaxIdleConns=1`，所有写入使用显式事务。
+- [x] 迁移 SQL 使用 `go:embed` 随二进制发布，建立带 checksum 的 `schema_migrations`。启动时在提供
+  HTTP 服务前串行迁移；未知新版本、checksum 漂移或迁移失败必须 fail-closed，不得跳过迁移继续
+  运行。数据库目录权限目标为 `0700`、文件为 `0600`。
+- [x] readiness 增加 SQLite `SELECT 1` 和当前 migration version 检查；关闭时停止接收新写请求、
+  等待事务完成、执行受限 WAL checkpoint 并关闭连接。
+- [x] 提供运维文档和脚本：备份使用 SQLite backup API 或停写后的 checkpoint + 一致快照，不允许只
+  复制运行中的主 `.db` 文件而遗漏 `-wal/-shm`；恢复必须在临时目录完成 `integrity_check` 后原子替换。
+  首版迁移只前进，回滚使用上一版本二进制兼容窗口加数据库备份恢复。
+
+完成门禁：空库启动、重复启动、升级迁移、损坏库拒绝启动、Compose 重启恢复和备份恢复测试通过。
+
+#### 7.1.3 阶段 2：最小数据模型与 Canvas Store Port
+
+SQLite 只包含下列 Canvas 聚合数据，不建立 `sessions`、`turns`、`messages`、`events` 或 Provider
+映射表：
+
+| 表 | 主键/唯一约束 | 保存内容 |
+| --- | --- | --- |
+| `schema_migrations` | `version` | migration checksum 与应用时间 |
+| `canvases` | `(tenant_id, org_id, user_id, session_id)` | `layout`、`visible`、`active_chart_id`、`revision`、创建/更新时间 |
+| `queries` | Actor scope + `session_id/query_id/version` | `language=promql`、datasource UID、expression、绝对 `from/to`、step、创建时间 |
+| `charts` | Actor scope + `session_id/chart_id`；同 Session 内 `publish_operation_id` 唯一 | Query/version 引用、title、description、visualization、规范化 VizConfig、request hash、revision、创建/更新时间 |
+| `canvas_items` | Actor scope + `session_id/chart_id`；`position` 唯一 | Canvas 成员和当前 UI 使用的稳定排序 |
+
+- [x] 数据库外键只连接上述产品投影内部记录；`session_id` 是经过校验的公开 Session 引用，不对
+  不存在的 Aegis Session 表建立外键。所有查询条件必须包含完整可信 Actor scope 和 Session ID。
+- [x] 在 `internal/ports` 增加独立 `CanvasStore`，至少提供 `Get`、`PublishQueryChart`、
+  `UpdateLayout`、`Delete` 和 `Check`；在应用层增加 Canvas Service，先通过 `AgentProvider.ReadSession`
+  校验会话存在、Actor 有权且状态允许，再调用 Store。Store 本身不依赖 Agent Provider。
+- [x] `PublishQueryChart` 在一个 `BEGIN IMMEDIATE` 事务内创建/读取 Canvas、写 immutable Query
+  version、写 Chart、追加 Canvas item 并递增 Canvas revision。任何一步失败必须整体回滚。
+- [x] 发布请求要求 8-128 字节稳定 idempotency key；保存 canonical request hash。同 key 同 payload
+  返回原 Chart 和 revision，同 key 不同 payload 返回 `idempotency_conflict`，不得覆盖已有定义。
+- [x] `UpdateLayout` 只接受 `visible/layout/active_chart_id/ordered_chart_ids` 和期望 revision。客户端不能
+  修改 Query、VizConfig 或伪造新 Chart ID；成员删除在同一事务中删除 Chart，并删除已无引用的 Query。
+  revision 不一致返回 `canvas_revision_conflict` 和当前 revision，不做 last-write-wins。
+- [x] 首版上限：每 Canvas 20 个 Chart、datasource UID 512 bytes、PromQL 16 KiB、title 1 KiB、
+  description 4 KiB、VizConfig 128 KiB/深度 12/节点 2048；只接受绝对 UTC 且递增的时间范围、正 step、
+  最多 31 天范围和最多 11000 个预估数据点。VizConfig 只允许 Dashboard v2 `VizConfig` envelope，
+  禁止 targets、原始 frames/series/samples、URL、凭据和任意 HTML。
+- [x] ID 使用公共前缀 `qry_`、`cht_`，由服务端生成；时间由服务端 UTC clock 生成。所有 SQLite
+  错误映射为稳定领域错误，响应和日志不得包含 DB path、SQL、PromQL 全文或 datasource 凭据。
+
+完成门禁：文件数据库关闭重开后逐字段一致；事务回滚、外键、幂等、并发 revision、Actor 隔离、
+资源上限和“不存在样本列/结果 JSON”测试通过。
+
+#### 7.1.4 阶段 3：公共 HTTP 契约
+
+- [x] 在 `api/openapi.yaml` 增加 Provider-neutral 的 `QueryDefinition`、`ChartDefinition`、
+  `CanvasProjection`、`CanvasItem` 和 `UpdateCanvasRequest`，运行现有 Go/TypeScript 契约生成器；不得
+  直接复活 `pluginBackend.ts` 迁移兼容契约。
+- [x] 增加 `GET /api/v1/sessions/{session_id}/canvas`：先用 Agent Provider 验证会话和权限，再读取
+  Canvas。尚未创建时返回 `200` 的空投影和 revision 0；Store 故障返回受控 5xx，不能伪装成空投影。
+- [x] 增加 `PUT /api/v1/sessions/{session_id}/canvas`：要求 `If-Match`/expected revision，只更新显示、
+  布局、active chart 和顺序/删除。返回新 projection 与 ETag；冲突返回 409
+  `canvas_revision_conflict`，越权使用 404/403 的现有资源隐藏策略。
+- [x] 不把 Canvas 字段塞回 Agent `Session` 领域模型。Workbench Gateway 打开会话时并行读取
+  SessionDetail 和 CanvasProjection，在前端应用层组装；任何真实依赖失败都显示对应错误。
+- [x] archive/unarchive 保留 Canvas；归档会话可读取但禁止发布和布局编辑。Session delete 成功或
+  幂等重试确认 Provider 已不存在后删除 Canvas 聚合；若 DB 删除失败，返回 retryable 错误，重复
+  delete 必须继续完成清理。不得增加 Session 影子状态做对账。
+
+完成门禁：OpenAPI 生成物无漂移，HTTP 测试覆盖空投影、刷新读取、revision 冲突、归档、删除重试、
+跨 Actor 拒绝和 Store 故障。
+
+#### 7.1.5 阶段 4：Aegis Canvas MCP 与 Agent 工作流
+
+- [x] 在 Control Plane 增加 `/mcp/canvas` 薄 facade 和唯一首版工具
+  `canvas.publish_query_chart`。输入只包含公开 Session ID、idempotency key、datasource UID、PromQL、
+  绝对时间范围、step、title 和受限 visualization/VizConfig；禁止传查询结果或 Provider ID。
+- [x] MCP 使用独立 bearer token，并在服务端绑定配置中的固定 Tenant/Org/User；忽略模型声明的
+  Actor。每次发布仍通过 Agent Provider 验证 Session 存在且 active，再调用同一个 Canvas Service，
+  不复制持久化逻辑。
+- [x] 通过 Provider-neutral 的 Turn context 把当前公开 Session ID 和发布规则提供给 Agent：先调用
+  官方 Grafana MCP `query_prometheus` range，只有成功且用户意图需要图表时才调用 Canvas MCP；
+  datasource、PromQL 和绝对范围必须与刚成功的查询一致。Codex/OpenCode adapter 只负责各自的
+  context 投影，不各自实现 Canvas 协议。
+- [x] 把 Canvas MCP 加入 Codex/OpenCode 的固定 MCP 清单和启动合同检查。工具返回稳定结构
+  `{chart_id, canvas_revision}`；失败查询、instant 查询、缺少绝对范围或未授权 Session 不得发布。
+- [ ] 先用固定 Provider 版本合同测试确认两者都能保留 Canvas MCP 的成功结果。
+- [x] 增加 `canvas.updated` 公共事件，payload 只含 Session ID、Chart ID、operation 和 revision；不得透传
+  Provider tool result。若实时事件丢失，持久化仍已完成，重新 GET Canvas 必须恢复，不增加 Event Store。
+- [x] OpenCode 1.18.18 采用混合协议：V2 仅创建调用方 Session ID，V1 `prompt_async`、MCP 执行和全局
+  `/event` 负责 Agent 回合；V1 事件在 Adapter 内转换，不改变 Canvas 或公共 Session 契约。
+
+完成门禁：Codex 与 OpenCode 使用同一 MCP schema 完成“自然语言 -> PromQL -> Grafana 查询成功 ->
+发布 Query-backed Chart”，失败路径不产生数据库记录。
+
+#### 7.1.6 阶段 5：Grafana Plugin 恢复与编辑
+
+- [x] 将 Workbench 模型切换到当前 v1 生成契约，移除真实链路对旧 `pluginBackend.ts` Query 类型的
+  依赖。保留现有 DataSourceApi + PanelRenderer，不新增截图或样本缓存。
+- [x] `openSession` 同时加载 Provider 消息和持久化 Canvas；Chart 使用持久化的 datasource UID、
+  PromQL、绝对范围、step 和 VizConfig 重新查询。数据源不存在、失权、超时和查询错误显示可重试
+  Chart 级错误，不能删除定义或回退 fixture。
+- [x] 收到 `canvas.updated` 后按 revision 重新 GET Canvas，以服务端 projection 覆盖临时 Chart；
+  现有 `query_prometheus` 参数解析只保留为流内 optimistic preview，并在持久化 projection 到达后按
+  Chart ID/operation 合并，不能成为恢复事实来源。
+- [x] 将 `updateCanvas` 改为异步真实写入：本地乐观显示，PUT 成功后采用服务端 projection；409 时
+  重新读取并提示用户重试，网络失败回滚到最后确认 revision。真实模式启用布局切换、排序、删除、
+  active chart 和显示/隐藏，fixture 模式仍与真实存储完全隔离。
+- [ ] 切换 Session、刷新、SSE 中断和组件卸载时取消旧请求；晚到响应必须按 Session ID + revision
+  丢弃，不能把前一个 Session 的 Canvas 合并到当前页面。
+
+完成门禁：前端 controller/reducer/gateway/component 测试覆盖恢复、乐观合并、409、晚到响应、
+删除、数据源错误和无 fixture fallback。
+
+#### 7.1.7 阶段 6：端到端验收、运维与发布
+
+- [ ] 增加真实 E2E：自然语言请求指标图 -> Agent 生成 PromQL -> 官方 Grafana MCP 查到真实
+  Prometheus -> Canvas MCP 发布 -> 插件原生绘图；记录查询前后 SQLite 行数和公共 revision。
+- [ ] 验证浏览器刷新、重新打开 Session、Control Plane 容器重启、Agent Provider 重启后均恢复
+  同一 Canvas；Datasource 删除/停用时保留定义并显示可恢复错误，恢复 Datasource 后可再次绘制。
+- [ ] 验证重复 MCP 调用不重复建图、同 key 异 payload 被拒绝、并发布局编辑返回冲突、跨 Actor
+  100% 拒绝、归档只读、删除级联和 DB 不可写/磁盘满时 fail-closed。
+- [ ] 增加结构测试直接检查 Schema 和持久化内容，证明没有 Session 消息、工具结果、Prometheus
+  samples/series/frames、截图、Provider ID 或凭据；日志测试证明不输出 PromQL 全文和 DB path。
+- [x] 暴露低基数指标：Canvas 读写耗时/错误、revision conflict、MCP 发布结果、SQLite busy、migration
+  version 和 DB 文件大小；不得把 Session/Chart/Datasource ID 放进 metric label。当前端点提供 Canvas
+  操作计数、发布计数、错误、冲突、通知、SQLite busy、migration version、DB 文件大小和累计耗时。
+- [x] 更新本地 smoke、部署文档、备份恢复 runbook 和发布说明。先在单实例环境开启
+  `AEGIS_CANVAS_ENABLED=true`；回滚前做一致备份，旧二进制不得对新 Schema 执行写入。
+
+最终验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Agent 完成 Grafana 查询并发布 Chart 后，
+刷新页面、重新打开会话或重启 Control Plane 都能恢复同一 Canvas 布局和 Chart Definition，插件
+会重新查询 Grafana 并绘制。删除 Agent 会话后对应投影按既定策略清理；删除或停用数据源时保留
+定义并显示可恢复错误。整个闭环不得新增 Aegis Session/Turn/Message 持久化，也不得保存指标样本。
 
 验收标准：
 
@@ -432,15 +628,15 @@ Canvas 后续验收标准：用户不需要打开 Codex/OpenCode 自带 UI；Age
 
 ## 后续阶段：Playbook 日志与高级运行观测
 
-状态：**部分完成，不阻塞当前 Agent → Playbook 主链路。** 基础参数、启动、取消、retry、SSE
-状态同步、Human Task、Approval、Artifact 列表和下载已接入；日志展示及 Artifact 文本预览仍待稳定的
+状态：**部分完成，不阻塞当前 Agent → Playbook 主链路。** 基础参数、启动、取消、retry、完整 Run SSE
+状态快照、cursor 分页、Human Task、Approval、Artifact 列表和下载已接入；日志展示及 Artifact 文本预览仍待稳定的
 provider-neutral 契约。
 
 后续必须完成：
 
 - [x] Human Task 的 JSON 输入、提交幂等和等待状态恢复。
 - [x] Approval 的 approve/reject/rewind 和重复提交保护。
-- [x] Artifact 列表和下载入口；文本预览、截断提示和非文本媒体处理待补。
+- [x] Artifact 列表和下载入口；下载使用完整 Plugin Resource URL，Run 切换会清理旧列表且加载错误可见。文本预览、截断提示和非文本媒体处理待补。
 - [ ] Run/Step 日志、SSE 断线重连、大小限制和 Provider 路径净化；先增加稳定端口和 OpenAPI 契约。
 - [x] 刷新页面后通过 Run 查询恢复待处理任务、审批和 Artifact 状态。
 - Playwright 真实 Grafana + Dagu + Agent 组合验收。
@@ -469,19 +665,19 @@ provider-neutral 契约。
 
 ### 9.2 Artifact 展示（待后续具体实现）
 
-状态：**部分完成。** 当前已接入 Artifact 列表和下载入口；文本预览、截断提示、媒体类型处理、权限错误和更完整的刷新恢复仍未完成。Artifact `path` 只能作为服务端不透明引用，不能进入领域模型或被前端拼接成 Provider 地址。
+状态：**部分完成。** 当前已接入 Artifact 列表和带 Plugin Resource 前缀的下载入口，Run 切换会清理旧列表且加载错误不再静默忽略；历史 Run 选择、文本预览、截断提示、媒体类型处理、权限错误和更完整的刷新恢复仍未完成。Artifact `path` 只能作为服务端不透明引用，不能进入领域模型或被前端拼接成 Provider 地址。
 
 后续实现项：
 
 - [ ] 使用已有 `previewArtifact` 实现文本预览，展示媒体类型、大小、更新时间和 `truncated` 状态；超限时明确提示并提供下载原文。
 - [ ] 对 PNG/JPEG/SVG、Audio、Embedded Resource 等类型采用受控预览或下载；未知媒体不得直接当 HTML 渲染，不信任 SVG 不执行脚本。
-- [ ] 列表、预览和下载增加 loading、空态、403/404、过期 Run 和网络中断状态；下载 URL 必须由 Control Plane 生成并校验权限。
+- [ ] 列表、预览和下载补齐 loading、空态、403/404、过期 Run 和网络中断状态；下载 URL 已改为完整 Control Plane Plugin Resource URL，服务端权限校验仍必须保持。
 - [ ] 刷新页面后根据 Run 重新拉取 Artifact，处理列表变化、重复事件、删除/过期引用和下载重试。
 - [ ] 如需进入 Agent 消息或 Canvas，先定义 provider-neutral 视觉产物契约，不复用 Workbench 本地 Canvas 状态作为持久化事实。
 
 测试与验收：
 
-- [ ] gateway 契约测试覆盖列表、预览、下载 URL 编码、媒体类型和截断字段。
+- [ ] gateway 契约测试已覆盖列表、预览、下载 URL 前缀与编码；媒体类型分支、截断字段和错误状态测试仍待补。
 - [ ] 前端测试覆盖文本预览、截断、非文本下载、无权访问、空列表和刷新恢复。
 - [ ] 安全测试确认路径穿越、外部 URL、脚本化 SVG 和超大响应均被拒绝或限制。
 - [ ] 真实 E2E 验证 `mcp.call` 产生的报告 Artifact 可在插件内定位、预览或下载，且不暴露 Dagu 文件系统路径。

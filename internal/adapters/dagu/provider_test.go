@@ -200,6 +200,28 @@ func TestProviderListsOnlyPublicRunsForRequestedPlaybook(t *testing.T) {
 	}
 }
 
+func TestProviderPaginatesRunsWithOpaqueCursor(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		_, _ = w.Write([]byte(`{"dagRuns":[
+			{"dagRunId":"run_first123","name":"pbk_abcdefgh","statusLabel":"success"},
+			{"dagRunId":"run_second12","name":"pbk_abcdefgh","statusLabel":"failed"},
+			{"dagRunId":"run_third123","name":"pbk_abcdefgh","statusLabel":"running"}
+		]}`))
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	provider, _ := NewProvider(client)
+	first, err := provider.ListRuns(context.Background(), domain.ActorContext{}, ports.PlaybookRef{ID: "pbk_abcdefgh"}, domain.PageRequest{Limit: 2})
+	if err != nil || len(first.Items) != 2 || !first.HasMore || first.NextCursor == "" {
+		t.Fatalf("first page = %#v, err = %v", first, err)
+	}
+	second, err := provider.ListRuns(context.Background(), domain.ActorContext{}, ports.PlaybookRef{ID: "pbk_abcdefgh"}, domain.PageRequest{Limit: 2, Cursor: first.NextCursor})
+	if err != nil || len(second.Items) != 1 || second.Items[0].Ref.ID != "run_third123" || second.HasMore || second.NextCursor != "" {
+		t.Fatalf("second page = %#v, err = %v", second, err)
+	}
+}
+
 func TestProviderRecoversIdempotentCreateConflict(t *testing.T) {
 	t.Parallel()
 	requests := 0

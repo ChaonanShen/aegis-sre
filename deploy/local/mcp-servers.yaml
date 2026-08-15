@@ -30,3 +30,15 @@ servers:
     max_text_bytes: 262144
     max_structured_bytes: 524288
     max_binary_bytes: 8388608
+  canvas:
+    url: http://control-plane:8080/mcp/canvas
+    bearer_token_file: /run/secrets/canvas-mcp-token
+    allowed_tools:
+      - canvas.publish_query_chart
+    connect_timeout: 5s
+    handshake_timeout: 10s
+    call_timeout: 30s
+    total_timeout: 45s
+    max_text_bytes: 32768
+    max_structured_bytes: 262144
+    max_binary_bytes: 262144

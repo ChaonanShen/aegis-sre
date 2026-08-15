@@ -27,9 +27,31 @@ func (e ApprovalDecisionDecision) Valid() bool {
 	}
 }
 
+// Defines values for CanvasProjectionLayout.
+const (
+	CanvasProjectionLayoutFlex    CanvasProjectionLayout = "flex"
+	CanvasProjectionLayoutGrid2x2 CanvasProjectionLayout = "grid-2x2"
+	CanvasProjectionLayoutGrid3x2 CanvasProjectionLayout = "grid-3x2"
+)
+
+// Valid indicates whether the value is a known member of the CanvasProjectionLayout enum.
+func (e CanvasProjectionLayout) Valid() bool {
+	switch e {
+	case CanvasProjectionLayoutFlex:
+		return true
+	case CanvasProjectionLayoutGrid2x2:
+		return true
+	case CanvasProjectionLayoutGrid3x2:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CapabilityName.
 const (
 	CapabilityNameAgent        CapabilityName = "agent"
+	CapabilityNameCanvas       CapabilityName = "canvas"
 	CapabilityNameGrafanaRead  CapabilityName = "grafana_read"
 	CapabilityNameGrafanaWrite CapabilityName = "grafana_write"
 	CapabilityNameKnowledge    CapabilityName = "knowledge"
@@ -40,6 +62,8 @@ const (
 func (e CapabilityName) Valid() bool {
 	switch e {
 	case CapabilityNameAgent:
+		return true
+	case CapabilityNameCanvas:
 		return true
 	case CapabilityNameGrafanaRead:
 		return true
@@ -69,6 +93,21 @@ func (e CapabilityStatus) Valid() bool {
 	case Degraded:
 		return true
 	case Unavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChartDefinitionVisualization.
+const (
+	Timeseries ChartDefinitionVisualization = "timeseries"
+)
+
+// Valid indicates whether the value is a known member of the ChartDefinitionVisualization enum.
+func (e ChartDefinitionVisualization) Valid() bool {
+	switch e {
+	case Timeseries:
 		return true
 	default:
 		return false
@@ -327,6 +366,27 @@ func (e SessionStatus) Valid() bool {
 	}
 }
 
+// Defines values for UpdateCanvasRequestLayout.
+const (
+	UpdateCanvasRequestLayoutFlex    UpdateCanvasRequestLayout = "flex"
+	UpdateCanvasRequestLayoutGrid2x2 UpdateCanvasRequestLayout = "grid-2x2"
+	UpdateCanvasRequestLayoutGrid3x2 UpdateCanvasRequestLayout = "grid-3x2"
+)
+
+// Valid indicates whether the value is a known member of the UpdateCanvasRequestLayout enum.
+func (e UpdateCanvasRequestLayout) Valid() bool {
+	switch e {
+	case UpdateCanvasRequestLayoutFlex:
+		return true
+	case UpdateCanvasRequestLayoutGrid2x2:
+		return true
+	case UpdateCanvasRequestLayoutGrid3x2:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for UpdateKnowledgeBaseRequestStatus.
 const (
 	UpdateKnowledgeBaseRequestStatusActive   UpdateKnowledgeBaseRequestStatus = "active"
@@ -429,6 +489,27 @@ type ArtifactPreview struct {
 // BusinessID defines model for BusinessID.
 type BusinessID = string
 
+// CanvasItem defines model for CanvasItem.
+type CanvasItem struct {
+	Chart    ChartDefinition `json:"chart"`
+	Position int             `json:"position"`
+}
+
+// CanvasProjection defines model for CanvasProjection.
+type CanvasProjection struct {
+	ActiveChartId *BusinessID            `json:"active_chart_id"`
+	CreatedAt     *time.Time             `json:"created_at,omitempty"`
+	Items         []CanvasItem           `json:"items"`
+	Layout        CanvasProjectionLayout `json:"layout"`
+	Revision      int64                  `json:"revision"`
+	SessionId     BusinessID             `json:"session_id"`
+	UpdatedAt     *time.Time             `json:"updated_at,omitempty"`
+	Visible       bool                   `json:"visible"`
+}
+
+// CanvasProjectionLayout defines model for CanvasProjection.Layout.
+type CanvasProjectionLayout string
+
 // Capability defines model for Capability.
 type Capability struct {
 	Name   CapabilityName   `json:"name"`
@@ -446,6 +527,22 @@ type CapabilityStatus string
 type CapabilityList struct {
 	Items []Capability `json:"items"`
 }
+
+// ChartDefinition defines model for ChartDefinition.
+type ChartDefinition struct {
+	CreatedAt     time.Time                    `json:"created_at"`
+	Description   string                       `json:"description"`
+	Id            BusinessID                   `json:"id"`
+	Query         QueryDefinition              `json:"query"`
+	Revision      int64                        `json:"revision"`
+	Title         string                       `json:"title"`
+	UpdatedAt     time.Time                    `json:"updated_at"`
+	Visualization ChartDefinitionVisualization `json:"visualization"`
+	VizConfig     map[string]interface{}       `json:"viz_config"`
+}
+
+// ChartDefinitionVisualization defines model for ChartDefinition.Visualization.
+type ChartDefinitionVisualization string
 
 // CreateDocumentRequest defines model for CreateDocumentRequest.
 type CreateDocumentRequest struct {
@@ -678,6 +775,20 @@ type Problem struct {
 // ProblemCode defines model for Problem.Code.
 type ProblemCode string
 
+// QueryDefinition defines model for QueryDefinition.
+type QueryDefinition struct {
+	CreatedAt     time.Time  `json:"created_at"`
+	DatasourceUid string     `json:"datasource_uid"`
+	Expression    string     `json:"expression"`
+	Id            BusinessID `json:"id"`
+	Range         struct {
+		From        time.Time `json:"from"`
+		StepSeconds int64     `json:"step_seconds"`
+		To          time.Time `json:"to"`
+	} `json:"range"`
+	Version int64 `json:"version"`
+}
+
 // ServiceEntry defines model for ServiceEntry.
 type ServiceEntry struct {
 	FolderUid string             `json:"folder_uid"`
@@ -733,6 +844,17 @@ type StartTurnRequest struct {
 	Message  string    `json:"message"`
 }
 
+// UpdateCanvasRequest defines model for UpdateCanvasRequest.
+type UpdateCanvasRequest struct {
+	ActiveChartId   *BusinessID               `json:"active_chart_id"`
+	Layout          UpdateCanvasRequestLayout `json:"layout"`
+	OrderedChartIds []BusinessID              `json:"ordered_chart_ids"`
+	Visible         bool                      `json:"visible"`
+}
+
+// UpdateCanvasRequestLayout defines model for UpdateCanvasRequest.Layout.
+type UpdateCanvasRequestLayout string
+
 // UpdateDocumentRequest defines model for UpdateDocumentRequest.
 type UpdateDocumentRequest struct {
 	Service string   `json:"service"`
@@ -771,6 +893,9 @@ type ApprovalID = BusinessID
 
 // ArtifactPath defines model for ArtifactPath.
 type ArtifactPath = string
+
+// CanvasRevision defines model for CanvasRevision.
+type CanvasRevision = string
 
 // Cursor defines model for Cursor.
 type Cursor = string
@@ -919,6 +1044,11 @@ type ResolveAgentApprovalParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
+// UpdateSessionCanvasParams defines parameters for UpdateSessionCanvas.
+type UpdateSessionCanvasParams struct {
+	IfMatch CanvasRevision `json:"If-Match"`
+}
+
 // CancelTurnParams defines parameters for CancelTurn.
 type CancelTurnParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
@@ -964,6 +1094,9 @@ type UpdateSessionJSONRequestBody = UpdateSessionRequest
 
 // ResolveAgentApprovalJSONRequestBody defines body for ResolveAgentApproval for application/json ContentType.
 type ResolveAgentApprovalJSONRequestBody = ApprovalDecision
+
+// UpdateSessionCanvasJSONRequestBody defines body for UpdateSessionCanvas for application/json ContentType.
+type UpdateSessionCanvasJSONRequestBody = UpdateCanvasRequest
 
 // StartTurnJSONRequestBody defines body for StartTurn for application/json ContentType.
 type StartTurnJSONRequestBody = StartTurnRequest

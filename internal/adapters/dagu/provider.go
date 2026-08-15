@@ -179,12 +179,16 @@ func (provider *Provider) ListRuns(ctx context.Context, _ domain.ActorContext, r
 	if limit <= 0 || limit > 200 {
 		limit = 50
 	}
-	labeledRuns, err := provider.client.ListRunsByLabel(ctx, playbookRunLabel(string(ref.ID)), limit+1)
+	start, err := decodeRunCursor(request.Cursor)
+	if err != nil {
+		return domain.Page[ports.PlaybookRunState]{}, err
+	}
+	labeledRuns, err := provider.client.ListRunsByLabel(ctx, playbookRunLabel(string(ref.ID)), start+limit+1)
 	if err != nil {
 		return domain.Page[ports.PlaybookRunState]{}, err
 	}
 	// 兼容旧版以 pbk_* 作为 Dagu Run 名称的历史记录。
-	legacyRuns, err := provider.client.ListRuns(ctx, string(ref.ID), limit+1)
+	legacyRuns, err := provider.client.ListRuns(ctx, string(ref.ID), start+limit+1)
 	if err != nil {
 		return domain.Page[ports.PlaybookRunState]{}, err
 	}
@@ -202,11 +206,19 @@ func (provider *Provider) ListRuns(ctx context.Context, _ domain.ActorContext, r
 		seen[run.DAGRunID] = struct{}{}
 		items = append(items, mapRun(ports.PlaybookRunRef{ID: domain.ID(run.DAGRunID), PlaybookID: ref.ID}, run))
 	}
+	if start >= len(items) {
+		return domain.Page[ports.PlaybookRunState]{Items: []ports.PlaybookRunState{}}, nil
+	}
+	items = items[start:]
 	hasMore := len(items) > limit
 	if hasMore {
 		items = items[:limit]
 	}
-	return domain.Page[ports.PlaybookRunState]{Items: items, HasMore: hasMore}, nil
+	next := ""
+	if hasMore {
+		next = encodeRunCursor(start + len(items))
+	}
+	return domain.Page[ports.PlaybookRunState]{Items: items, NextCursor: next, HasMore: hasMore}, nil
 }
 
 func (provider *Provider) GetRun(ctx context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef) (ports.PlaybookRunState, error) {
@@ -342,7 +354,9 @@ func (stream *runEventStream) Next(ctx context.Context) (domain.Event, error) {
 		return domain.Event{}, err
 	}
 	stream.sequence++
-	payload, _ := json.Marshal(map[string]string{"status": string(state.Status)})
+	payloadValue := runStateJSON(state)
+	payloadValue["sequence"] = stream.sequence
+	payload, _ := json.Marshal(payloadValue)
 	event := domain.Event{ID: domain.ID(fmt.Sprintf("evt_%s_%d", stream.ref.ID, stream.sequence)), Type: domain.EventRunUpdated, RunID: stream.ref.ID, Sequence: stream.sequence, OccurredAt: time.Now().UTC(), Payload: payload}
 	if terminalRunStatus(state.Status) {
 		stream.closed = true
@@ -436,6 +450,33 @@ func terminalRunStatus(status domain.RunStatus) bool {
 	return status == domain.RunSucceeded || status == domain.RunFailed || status == domain.RunCancelled
 }
 
+// runStateJSON 生成可直接用于 REST 与 SSE 的完整公开快照，避免事件只携带状态导致客户端丢失步骤信息。
+func runStateJSON(state ports.PlaybookRunState) map[string]any {
+	steps := make([]map[string]any, 0, len(state.Steps))
+	for _, step := range state.Steps {
+		item := map[string]any{"id": step.ID, "name": step.Name, "status": step.Status}
+		if !step.StartedAt.IsZero() {
+			item["started_at"] = step.StartedAt
+		}
+		if !step.FinishedAt.IsZero() {
+			item["ended_at"] = step.FinishedAt
+		}
+		if step.HumanTask != nil {
+			item["human_task"] = step.HumanTask
+		}
+		if step.Approval != nil {
+			item["approval"] = step.Approval
+		}
+		steps = append(steps, item)
+	}
+	value := map[string]any{"id": state.Ref.ID, "playbook_id": state.Ref.PlaybookID, "status": state.Status, "started_at": state.StartedAt, "updated_at": time.Now().UTC(), "steps": steps}
+	if !state.FinishedAt.IsZero() {
+		value["ended_at"] = state.FinishedAt
+		value["updated_at"] = state.FinishedAt
+	}
+	return value
+}
+
 func playbookDAGName(id domain.ID) (string, error) {
 	if err := requireIDPrefix(id, "pbk_"); err != nil {
 		return "", err
@@ -468,6 +509,25 @@ func decodePageCursor(cursor string) (int, error) {
 		return 0, errors.New("invalid page cursor")
 	}
 	return page, nil
+}
+
+func encodeRunCursor(offset int) string {
+	return base64.RawURLEncoding.EncodeToString([]byte("run:" + strconv.Itoa(offset)))
+}
+
+func decodeRunCursor(cursor string) (int, error) {
+	if cursor == "" {
+		return 0, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil || !strings.HasPrefix(string(decoded), "run:") {
+		return 0, errors.New("invalid run cursor")
+	}
+	offset, err := strconv.Atoi(strings.TrimPrefix(string(decoded), "run:"))
+	if err != nil || offset < 0 {
+		return 0, errors.New("invalid run cursor")
+	}
+	return offset, nil
 }
 
 func dagMetadata(raw json.RawMessage, spec string) (string, string) {

@@ -88,8 +88,12 @@ flowchart LR
 - Agent、Knowledge、Playbook Provider 适配。
 - 工具策略、审批路由、幂等语义适配、trace 传播和受控错误。
 - 暴露 Aegis 产品领域 MCP。
+- 按 ADR 0007 保存 Query-backed Chart Definition 和 Canvas 布局投影。
 
-Control Plane 默认无状态，不复制 Provider 数据，也不维护 Provider 状态的影子表或摘要索引。公共资源标识优先使用调用方生成 ID、Provider 原生 metadata/tag 或确定性命名；若仍无法避免暴露 Provider 内部 ID，必须在对应垂直切片中提交 ADR 后再决定最小方案。
+Control Plane 默认不复制 Provider 数据，也不维护 Provider 状态的影子表或摘要索引。唯一首版例外是
+ADR 0007 明确归 Aegis 所有的 Canvas 产品投影，它使用最小 SQLite 保存查询定义和布局，不保存 Agent
+会话或 Grafana 查询结果。公共资源标识优先使用调用方生成 ID、Provider 原生 metadata/tag 或确定性
+命名；若仍无法避免暴露 Provider 内部 ID，必须在对应垂直切片中提交 ADR 后再决定最小方案。
 
 `Session`、`Turn`、`Message` 和统一事件只是 Aegis 对前端提供的防腐层命令、查询投影与
 流式协议，不是要求 Control Plane 保存的领域实体。冻结公共契约只保证前端不感知
@@ -228,19 +232,23 @@ Dagu REST API 必须启用独立服务凭据。Control Plane 从只读挂载的�
 | Agent Session、Turn、消息、工具调用和 Agent Approval | Codex/OpenCode | 直接 list/read/resume/archive/delete 与流转，不保存映射、状态、消息或事件历史 |
 | KnowledgeBase/Collection、Document、解析状态、Chunk、Embedding 和索引 | 当前 Knowledge Provider（目标 RAGLite，回退 RAGFlow） | 直接适配与授权收敛，不建立跨 Provider 影子资源 |
 | Playbook YAML、Run、Step、Human Task、Approval、日志和 Artifact | Dagu | 直接适配，不保存映射或摘要索引 |
+| Query-backed Chart Definition 与 Canvas 布局 | Aegis Canvas SQLite | 保存产品投影；按公开 Session ID + Actor scope 关联，不保存 Session 或查询样本 |
 | request/trace ID | 请求上下文与可观测性后端 | 传播并写结构化日志，不作为业务记录保存 |
-| 幂等状态 | 对应 Provider | 适配 Provider 原生能力或调用方生成的稳定操作 ID |
+| 幂等状态 | 对应 Provider；Canvas 发布归 Aegis | Provider 操作适配原生能力；Canvas SQLite 保存发布 key 和请求摘要 |
 
 ## 5. 持久化决策门
 
-Aegis Control Plane 当前不部署自有数据库。接入每个 Provider 时必须先验证：
+Aegis Control Plane 只按 ADR 0007 为 Canvas 部署最小 SQLite；该数据库不是通用资源库。接入每个
+Provider 或新增其他持久化前仍必须验证：
 
 - 是否支持调用方生成资源 ID 或幂等键。
 - 是否支持 metadata、tag、名称或其他可查询的外部引用。
 - 是否能从 Provider 恢复列表、详情、审批和运行历史。
 - 是否能在不向浏览器暴露 Provider 类型、内部 ID 或凭据的前提下形成公共资源引用。
 
-只有出现经过真实契约测试证明、且无法由 Grafana 或对应 Provider 承载的产品自有状态时，才能通过 ADR 引入最小持久化。ADR 必须说明事实来源、数据生命周期、备份恢复、迁移和删除策略；不得预建跨所有 Provider 的通用映射数据库。
+只有出现经过真实契约测试证明、且无法由 Grafana 或对应 Provider 承载的产品自有状态时，才能通过
+ADR 引入最小持久化。Canvas 已通过 ADR 0007 完成该决策；其 SQLite 不得扩展为跨 Provider 的通用
+映射数据库。后续 ADR 仍必须说明事实来源、数据生命周期、备份恢复、迁移和删除策略。
 
 ## 6. 对外 API 草案
 
@@ -248,6 +256,7 @@ Aegis Control Plane 当前不部署自有数据库。接入每个 Provider 时�
 /api/v1/sessions
 /api/v1/sessions/{id}/turns:stream
 /api/v1/sessions/{id}/approvals/{approvalId}:resolve
+/api/v1/sessions/{id}/canvas
 
 /api/v1/services
 /api/v1/knowledge-bases
@@ -290,6 +299,7 @@ Thread/Turn/Item 重建最终会话视图。若 Provider 不能重放断线期�
 ```text
 Grafana + Aegis Plugin
 Aegis Control Plane
+Aegis Canvas SQLite（Control Plane 单实例本地持久卷）
 Codex App Server 或 OpenCode Server
 RAGLite Provider（默认目标）或 RAGFlow（迁移期回退）
 Dagu Server / Scheduler / Worker
@@ -302,6 +312,9 @@ Aegis mcp.call Runner
 Agent Provider 的数据目录或官方持久卷必须独立挂载并进入对应 Provider 的备份恢复流程。
 这是对成熟组件状态的部署管理，不是由 Aegis 复制 Session/Turn 数据。Codex App Server
 进程监管也只负责启动、健康检查、重连和退出，不实现会话存储或 Agent 编排。
+
+Canvas SQLite 使用与 Agent Provider 分离的 `/var/lib/aegis/canvas` 持久卷。首版 Control Plane
+只能运行一个副本，SQLite 文件不得放在共享网络文件系统；备份和恢复按 ADR 0007 执行。
 
 仓库根 `compose.yaml` 提供最小可复现链路。Grafana 和 Dagu 只绑定 loopback；Control Plane、Grafana MCP 和 MCP 鉴权网关不发布主机端口；MCP 网络为内部网络。一次性 Grafana Bootstrap 使用本地管理员凭据创建 Viewer Service Account，将 Token 写入共享卷后退出，它是部署初始化任务而不是新的产品服务。
 

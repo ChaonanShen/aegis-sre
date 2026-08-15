@@ -54,10 +54,18 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
           if (mounted.current) setRuns((current) => upsertRun(current, next));
           return;
         }
+        let terminalSeen = false;
         for await (const next of gateway.streamRun(activeRunId, 0, controller.signal)) {
           if (!mounted.current) return;
           setRuns((current) => upsertRun(current, next));
-          if (terminal(next.status)) return;
+          if (terminal(next.status)) {
+            terminalSeen = true;
+            return;
+          }
+        }
+        if (!terminalSeen && mounted.current) {
+          const next = await gateway.getRun(activeRunId, controller.signal);
+          if (mounted.current) setRuns((current) => upsertRun(current, next));
         }
       } catch (reason) {
         if (mounted.current && !isAbortError(reason)) {
@@ -77,9 +85,13 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
   }, [activeRunId, gateway]);
 
   useEffect(() => {
+    setArtifacts(undefined);
     if (!latestRun || !gateway.listArtifacts || !terminal(latestRun.status)) return;
     const controller = new AbortController();
-    void gateway.listArtifacts(latestRun.id, controller.signal).then(setArtifacts, () => undefined);
+    void gateway.listArtifacts(latestRun.id, controller.signal).then(
+      (items) => { if (mounted.current) setArtifacts(items); },
+      (reason) => { if (mounted.current && !isAbortError(reason)) setError(toError(reason).message); }
+    );
     return () => controller.abort();
   }, [gateway, latestRun]);
 

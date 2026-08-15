@@ -1,5 +1,4 @@
 import { Folder } from '../../app/model';
-import type { Query as ContractQuery } from '../../api/generated/pluginBackend';
 
 export type SessionStatus = 'active' | 'archived';
 export type SessionVisibility = 'private' | 'team';
@@ -16,7 +15,7 @@ export interface SessionSummary {
   visibility: SessionVisibility;
   forkedFrom?: string;
   updatedAt: string;
-  messageCount: number;
+  messageCount?: number;
   preview: string;
 }
 
@@ -37,7 +36,19 @@ export interface SavedChartPreview {
   /** 持久化的 Dashboard v2 VizConfig，不包含查询、布局或查询结果。 */
   vizConfig?: unknown;
   /** 持久化 Query；range 是不会随刷新漂移的绝对时间范围。 */
-  query?: ContractQuery;
+  query?: SavedQuery;
+}
+
+export interface SavedQuery {
+  id: string;
+  session_id: string;
+  version: number;
+  spec: {
+    datasource_uid: string;
+    expression: string;
+    range: { from: string; to: string; step_seconds: number };
+  };
+  created_at: string;
 }
 
 export interface ToolCall {
@@ -67,6 +78,8 @@ export interface CanvasPreview {
   visible: boolean;
   layout: CanvasLayout;
   charts: SavedChartPreview[];
+  revision?: number;
+  activeChartId?: string;
 }
 
 /** Layout values registered by the public Canvas contract. */
@@ -158,5 +171,6 @@ export type AgentEvent =
     }
   | { type: 'interrupt'; payload: PendingHITL }
   | { type: 'folder_changed'; payload: { folderUid: string } }
+  | { type: 'canvas_updated'; payload: { sessionId: string; chartId: string; operationId: string; revision: number } }
   | { type: 'done'; payload: { turnId: string; replayed: boolean } }
   | { type: 'error'; payload: { code: number; message: string; retryable: boolean } };

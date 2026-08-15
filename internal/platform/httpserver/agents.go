@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -18,7 +20,16 @@ import (
 
 const maxAgentJSONBytes int64 = 1 << 20
 
-func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider) {
+type canvasDeleter interface {
+	Delete(context.Context, domain.ActorContext, domain.ID) error
+}
+
+type canvasIntegration interface {
+	canvasDeleter
+	Subscribe(context.Context, domain.ActorContext, domain.ID) (<-chan domain.Event, func(), error)
+}
+
+func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, canvas canvasIntegration) {
 	if provider == nil {
 		return
 	}
@@ -132,8 +143,15 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider) {
 		if !ok {
 			return
 		}
-		if handleProviderError(w, request, provider.DeleteSession(request.Context(), actorFromRequest(request), ref)) {
+		providerErr := provider.DeleteSession(request.Context(), actorFromRequest(request), ref)
+		if providerErr != nil && !isNotFoundError(providerErr) {
+			handleProviderError(w, request, providerErr)
 			return
+		}
+		if canvas != nil {
+			if handleCanvasError(w, request, canvas.Delete(request.Context(), actorFromRequest(request), ref.ID)) {
+				return
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -163,7 +181,7 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider) {
 		}
 		actor := actorFromRequest(request)
 		turn, stream, err := provider.StartTurn(request.Context(), actor, ref, ports.StartTurnInput{
-			Message: body.Message, Mentions: body.Mentions, OperationID: key, FolderUID: actor.FolderUID,
+			Message: body.Message, Mentions: body.Mentions, OperationID: key, FolderUID: actor.FolderUID, CanvasContext: canvasTurnContext(canvas, ref.ID),
 		})
 		if handleProviderError(w, request, err) {
 			return
@@ -174,7 +192,7 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider) {
 			return
 		}
 		started := domain.Event{ID: stableAgentEventID(ref.ID, turn.ID, key), Type: domain.EventTurnStarted, SessionID: ref.ID, TurnID: turn.ID, Sequence: 0, OccurredAt: time.Now().UTC(), Payload: json.RawMessage(`{"status":"running"}`)}
-		streamSSE(w, request, &prefixedEventStream{first: started, stream: stream})
+		streamSSE(w, request, &prefixedEventStream{first: started, stream: stream}, canvas)
 	})
 	// net/http 的路径变量必须占满整个 segment，因此把公开契约中的 :cancel 后缀一并解析。
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/turns/{turn_action}", func(w http.ResponseWriter, request *http.Request) {
@@ -227,6 +245,18 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider) {
 	})
 }
 
+func canvasTurnContext(canvas canvasIntegration, sessionID domain.ID) string {
+	if canvas == nil {
+		return ""
+	}
+	return fmt.Sprintf(`[Aegis SRE Agent context] You are an observability assistant. Help the user investigate metrics through the authorized Grafana MCP, especially Prometheus data scraped from the local node-exporter. Prefer focused PromQL such as up, rate(node_cpu_seconds_total[5m]), node_memory_MemAvailable_bytes, and node_filesystem_avail_bytes when they match the request; explain assumptions and time range briefly. Current public session_id is %s. For chart requests, first use the authorized Grafana MCP query_prometheus range tool and verify it succeeds. Only after a successful query and explicit chart intent, call canvas.publish_query_chart with the exact datasource_uid, PromQL expression, absolute UTC from/to range, and step from that query. When the query result contains Unix-second sample timestamps, derive from/to from the minimum and maximum returned timestamps using UTC ISO conversion (new Date(timestamp * 1000).toISOString()); preserve the trailing Z and never manually shift by the local timezone or guess from a displayed clock. The viz_config argument MUST use this exact Canvas envelope shape: {"kind":"VizConfig","group":"timeseries","version":"v1","spec":{"options":{},"fieldConfig":{}}}. Put legend and tooltip under spec.options, and Grafana field settings under spec.fieldConfig; do not put them at the top level. Do not publish instant queries, failed queries, samples, screenshots, or provider-specific identifiers. Canvas stores the query definition and layout; the plugin re-queries Prometheus to draw the chart.`, sessionID)
+}
+
+func isNotFoundError(err error) bool {
+	var appErr *domain.AppError
+	return errors.As(err, &appErr) && appErr.Code == domain.ErrorNotFound
+}
+
 func agentPageLimit(w http.ResponseWriter, request *http.Request) (int, bool) {
 	value := request.URL.Query().Get("limit")
 	if value == "" {
@@ -272,7 +302,7 @@ func validAgentText(value string, limit int) bool {
 }
 
 func agentSessionJSON(session ports.AgentSession) map[string]any {
-	return map[string]any{"id": session.Ref.ID, "title": session.Title, "status": session.Status, "created_at": session.CreatedAt, "updated_at": session.UpdatedAt}
+	return map[string]any{"id": session.Ref.ID, "title": session.Title, "status": session.Status, "created_at": session.CreatedAt, "updated_at": session.UpdatedAt, "message_count": session.MessageCount, "preview": session.Preview}
 }
 
 func agentSessionDetailJSON(detail ports.AgentSessionDetail) map[string]any {

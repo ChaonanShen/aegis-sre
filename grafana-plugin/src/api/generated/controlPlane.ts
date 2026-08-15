@@ -74,6 +74,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/sessions/{session_id}/canvas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionID"];
+            };
+            cookie?: never;
+        };
+        get: operations["getSessionCanvas"];
+        put: operations["updateSessionCanvas"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sessions/{session_id}/turns/{turn_id}:cancel": {
         parameters: {
             query?: never;
@@ -575,7 +593,7 @@ export interface components {
         };
         Capability: {
             /** @enum {string} */
-            name: "agent" | "knowledge" | "playbook" | "grafana_read" | "grafana_write";
+            name: "agent" | "knowledge" | "playbook" | "canvas" | "grafana_read" | "grafana_write";
             /** @enum {string} */
             status: "available" | "unavailable" | "degraded";
             reason?: string;
@@ -601,6 +619,10 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+            /** @description Persisted user/assistant message count; null when the provider cannot supply it in a list operation. */
+            message_count?: number | null;
+            /** @description Latest user message preview; null when unavailable without loading session detail. */
+            preview?: string | null;
         };
         SessionPage: components["schemas"]["PageMetadata"] & {
             items: components["schemas"]["Session"][];
@@ -608,6 +630,65 @@ export interface components {
         SessionDetail: {
             session: components["schemas"]["Session"];
             messages?: components["schemas"]["Message"][];
+        };
+        QueryDefinition: {
+            id: components["schemas"]["BusinessID"];
+            /** Format: int64 */
+            version: number;
+            datasource_uid: string;
+            expression: string;
+            range: {
+                /** Format: date-time */
+                from: string;
+                /** Format: date-time */
+                to: string;
+                /** Format: int64 */
+                step_seconds: number;
+            };
+            /** Format: date-time */
+            created_at: string;
+        };
+        ChartDefinition: {
+            id: components["schemas"]["BusinessID"];
+            /** Format: int64 */
+            revision: number;
+            query: components["schemas"]["QueryDefinition"];
+            title: string;
+            description: string;
+            /** @enum {string} */
+            visualization: "timeseries";
+            viz_config: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        CanvasItem: {
+            chart: components["schemas"]["ChartDefinition"];
+            position: number;
+        };
+        CanvasProjection: {
+            session_id: components["schemas"]["BusinessID"];
+            visible: boolean;
+            /** @enum {string} */
+            layout: "grid-2x2" | "grid-3x2" | "flex";
+            active_chart_id: components["schemas"]["BusinessID"] | null;
+            /** Format: int64 */
+            revision: number;
+            items: components["schemas"]["CanvasItem"][];
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        UpdateCanvasRequest: {
+            visible: boolean;
+            /** @enum {string} */
+            layout: "grid-2x2" | "grid-3x2" | "flex";
+            active_chart_id: components["schemas"]["BusinessID"] | null;
+            ordered_chart_ids: components["schemas"]["BusinessID"][];
         };
         Message: {
             id: components["schemas"]["BusinessID"];
@@ -850,6 +931,7 @@ export interface components {
         SessionID: components["schemas"]["BusinessID"];
         TurnID: components["schemas"]["BusinessID"];
         SessionStatusFilter: "active" | "archived";
+        CanvasRevision: string;
         ApprovalID: components["schemas"]["BusinessID"];
         KnowledgeBaseID: components["schemas"]["BusinessID"];
         DocumentID: components["schemas"]["BusinessID"];
@@ -1032,6 +1114,59 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": string;
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    getSessionCanvas: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: components["parameters"]["SessionID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Persisted Canvas projection and query-backed chart definitions */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasProjection"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    updateSessionCanvas: {
+        parameters: {
+            query?: never;
+            header: {
+                "If-Match": components["parameters"]["CanvasRevision"];
+            };
+            path: {
+                session_id: components["parameters"]["SessionID"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateCanvasRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated Canvas projection */
+            200: {
+                headers: {
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CanvasProjection"];
                 };
             };
             default: components["responses"]["Problem"];

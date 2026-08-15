@@ -48,16 +48,19 @@ func TestPinnedOpenCodeContractContainsRequiredSessionOperations(t *testing.T) {
 		path   string
 		method string
 	}{
-		{path: "/api/session", method: "get"},
+		// V2 is limited to caller-owned session creation (and conflict recovery).
 		{path: "/api/session", method: "post"},
 		{path: "/api/session/{sessionID}", method: "get"},
-		{path: "/api/session/{sessionID}/prompt", method: "post"},
-		{path: "/api/session/{sessionID}/event", method: "get"},
-		{path: "/api/session/{sessionID}/history", method: "get"},
-		{path: "/api/session/{sessionID}/interrupt", method: "post"},
-		{path: "/api/session/{sessionID}/permission/{requestID}/reply", method: "post"},
+		// V1 owns session listing, reads, prompts, cancellation and global events.
+		{path: "/session", method: "get"},
+		{path: "/session/{sessionID}", method: "get"},
 		{path: "/session/{sessionID}", method: "patch"},
 		{path: "/session/{sessionID}", method: "delete"},
+		{path: "/session/{sessionID}/message", method: "get"},
+		{path: "/session/{sessionID}/prompt_async", method: "post"},
+		{path: "/session/{sessionID}/abort", method: "post"},
+		{path: "/event", method: "get"},
+		{path: "/config", method: "get"},
 	} {
 		methods := document.Paths[operation.path]
 		if len(methods[operation.method]) == 0 {
@@ -119,8 +122,8 @@ func TestOpenCodeDeploymentPinsRuntimeAndModelWithoutSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(config), `"model": "deepseek/deepseek-v4-flash"`) {
-		t.Fatal("OpenCode deployment must select DeepSeek V4 Flash")
+	if !strings.Contains(string(config), `"model": "deepseek/deepseek-chat"`) {
+		t.Fatal("OpenCode deployment must select DeepSeek Chat")
 	}
 	if strings.Contains(strings.ToLower(string(config)), "sk-") {
 		t.Fatal("OpenCode configuration must not contain an API key")

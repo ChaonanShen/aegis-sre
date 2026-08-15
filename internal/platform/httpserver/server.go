@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	canvasapp "github.com/1024XEngineer/aegis-sre/internal/application/canvas"
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
 	"github.com/1024XEngineer/aegis-sre/internal/ports"
 )
@@ -34,6 +35,9 @@ type dependencies struct {
 	knowledgeHealth func(context.Context) error
 	knowledgeMCP    http.Handler
 	playbookMCP     http.Handler
+	canvas          *canvasapp.Service
+	canvasHealth    func(context.Context) error
+	canvasMCP       http.Handler
 }
 
 func WithAgentProvider(provider ports.AgentProvider) Option {
@@ -74,6 +78,19 @@ func WithPlaybookMCP(handler http.Handler) Option {
 	return func(deps *dependencies) { deps.playbookMCP = handler }
 }
 
+func WithCanvasService(service *canvasapp.Service) Option {
+	return func(deps *dependencies) {
+		deps.canvas = service
+		if service != nil {
+			deps.canvasHealth = service.Check
+		}
+	}
+}
+
+func WithCanvasMCP(handler http.Handler) Option {
+	return func(deps *dependencies) { deps.canvasMCP = handler }
+}
+
 func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server {
 	if logger == nil {
 		logger = slog.Default()
@@ -85,6 +102,13 @@ func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, healthResponse{Status: "live"})
+	})
+	mux.HandleFunc("GET /metrics/canvas", func(w http.ResponseWriter, _ *http.Request) {
+		if deps.canvas == nil {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "canvas metrics unavailable"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"canvas": deps.canvas.MetricsSnapshot()})
 	})
 	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, request *http.Request) {
 		statuses := dependencyStatuses(request.Context(), cfg, deps)
@@ -109,6 +133,9 @@ func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server
 	if deps.playbookMCP != nil {
 		mux.Handle("/mcp/playbooks", deps.playbookMCP)
 	}
+	if deps.canvasMCP != nil {
+		mux.Handle("/mcp/canvas", deps.canvasMCP)
+	}
 
 	return &http.Server{
 		Addr:              cfg.HTTPAddress,
@@ -126,6 +153,8 @@ func dependencyConfigured(name config.Capability, cfg config.Config, deps depend
 		return deps.playbooks != nil || cfg.Endpoints[name] != ""
 	case config.CapabilityKnowledge:
 		return deps.knowledge != nil || cfg.Endpoints[name] != ""
+	case config.CapabilityCanvas:
+		return deps.canvas != nil || cfg.CanvasEnabled
 	default:
 		return cfg.Endpoints[name] != ""
 	}

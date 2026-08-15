@@ -1,18 +1,10 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "model": "deepseek/deepseek-v4-flash",
-  "small_model": "deepseek/deepseek-v4-flash",
+  "model": "deepseek/deepseek-chat",
+  "small_model": "deepseek/deepseek-chat",
   "autoupdate": false,
   "provider": {
-    "deepseek": {
-      "models": {
-        "deepseek-v4-flash": {
-          "interleaved": {
-            "field": "reasoning_content"
-          }
-        }
-      }
-    }
+    "deepseek": {}
   },
   "mcp": {
     "grafana-read": {
@@ -31,6 +23,16 @@
       "oauth": false,
       "headers": {
         "Authorization": "Bearer {env:PLAYBOOK_MCP_TOKEN}"
+      },
+      "enabled": true,
+      "timeout": 10000
+    },
+    "canvas": {
+      "type": "remote",
+      "url": "http://control-plane:8080/mcp/canvas",
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {env:CANVAS_MCP_TOKEN}"
       },
       "enabled": true,
       "timeout": 10000

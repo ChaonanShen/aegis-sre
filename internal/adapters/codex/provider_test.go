@@ -119,6 +119,9 @@ func TestProviderListsAndCreatesSessionsWithoutLeakingCodexIDs(t *testing.T) {
 	if err != nil || len(page.Items) != 1 || !page.HasMore || page.Items[0].Status != domain.SessionBusy || string(page.Items[0].Ref.ID) == threadUUID {
 		t.Fatalf("page = %#v, err = %v", page, err)
 	}
+	if page.Items[0].MessageCount == nil || *page.Items[0].MessageCount != 0 || page.Items[0].Preview == nil || *page.Items[0].Preview != "preview" {
+		t.Fatalf("session summary = %#v", page.Items[0])
+	}
 	if fake.calls[0].method != "thread/list" || fake.calls[0].params["archived"] != false || fake.calls[0].params["cursor"] != "cursor" || fake.calls[0].params["limit"] != float64(25) {
 		t.Fatalf("list call = %#v", fake.calls[0])
 	}
@@ -282,9 +285,14 @@ func TestProviderStartsTurnWithoutDroppingEarlyNotificationsAndCancelsExplicitly
 	if startedPayload.CallID == "" || startedPayload.CallID != completedPayload.CallID || !startedPayload.CallID.Valid() {
 		t.Fatalf("call IDs = %q / %q", startedPayload.CallID, completedPayload.CallID)
 	}
+	fake.notifications <- Notification{Method: "item/completed", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turnId":"` + turnUUID + `","item":{"id":"tool-no-duration","type":"commandExecution","status":"completed"}}`)}
+	withoutDuration, err := stream.Next(ctx)
+	if err != nil || withoutDuration.Type != domain.EventToolCompleted || !strings.Contains(string(withoutDuration.Payload), `"duration_ms":null`) {
+		t.Fatalf("missing duration = %#v, err = %v", withoutDuration, err)
+	}
 	fake.notifications <- Notification{Method: "turn/completed", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turn":{"id":"` + turnUUID + `","status":"completed","items":[]}}`)}
 	terminal, err := stream.Next(ctx)
-	if err != nil || terminal.Type != domain.EventTurnCompleted || terminal.Sequence != 4 || !strings.Contains(string(terminal.Payload), `"succeeded"`) {
+	if err != nil || terminal.Type != domain.EventTurnCompleted || terminal.Sequence != 5 || !strings.Contains(string(terminal.Payload), `"succeeded"`) {
 		t.Fatalf("terminal = %#v, err = %v", terminal, err)
 	}
 	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {

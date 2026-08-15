@@ -21,7 +21,7 @@ export function SessionListItem({ session, active, onOpen }: SessionListItemProp
       <span className="session-meta">
         <span>{session.folderTitle}</span>
         <span>·</span>
-        <span>{session.messageCount} 条消息</span>
+        <span>{session.messageCount === undefined ? '消息数未知' : `${session.messageCount} 条消息`}</span>
         <time dateTime={session.updatedAt}>{formatUpdatedAt(session.updatedAt)}</time>
       </span>
       <span className="session-badges">

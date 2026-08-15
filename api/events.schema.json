@@ -19,7 +19,8 @@
         "turn.started",
         "turn.completed",
         "turn.failed",
-        "run.updated"
+        "run.updated",
+        "canvas.updated"
       ]
     },
     "session_id": { "$ref": "#/$defs/business_id" },
@@ -38,7 +39,8 @@
         { "$ref": "#/$defs/turn_started" },
         { "$ref": "#/$defs/turn_completed" },
         { "$ref": "#/$defs/turn_failed" },
-        { "$ref": "#/$defs/run_updated" }
+        { "$ref": "#/$defs/run_updated" },
+        { "$ref": "#/$defs/canvas_updated" }
       ]
     }
   },
@@ -141,6 +143,16 @@
         },
         "step_id": { "type": "string" },
         "summary": { "type": "string" }
+      }
+    },
+    "canvas_updated": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["chart_id", "operation_id", "revision"],
+      "properties": {
+        "chart_id": { "$ref": "#/$defs/business_id" },
+        "operation_id": { "type": "string", "minLength": 8, "maxLength": 128 },
+        "revision": { "type": "integer", "minimum": 0 }
       }
     }
   }

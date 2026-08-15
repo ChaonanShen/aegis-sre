@@ -112,6 +112,43 @@ paths:
                 type: string
         default:
           $ref: '#/components/responses/Problem'
+  /sessions/{session_id}/canvas:
+    parameters:
+      - $ref: '#/components/parameters/SessionID'
+    get:
+      operationId: getSessionCanvas
+      responses:
+        '200':
+          description: Persisted Canvas projection and query-backed chart definitions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CanvasProjection'
+        default:
+          $ref: '#/components/responses/Problem'
+    put:
+      operationId: updateSessionCanvas
+      parameters:
+        - $ref: '#/components/parameters/CanvasRevision'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCanvasRequest'
+      responses:
+        '200':
+          description: Updated Canvas projection
+          headers:
+            ETag:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CanvasProjection'
+        default:
+          $ref: '#/components/responses/Problem'
   /sessions/{session_id}/turns/{turn_id}:cancel:
     parameters:
       - $ref: '#/components/parameters/SessionID'
@@ -732,6 +769,13 @@ components:
         type: string
         enum: [active, archived]
         default: active
+    CanvasRevision:
+      name: If-Match
+      in: header
+      required: true
+      schema:
+        type: string
+        pattern: '^"canvas:[0-9]+"$'
     ApprovalID:
       name: approval_id
       in: path
@@ -821,7 +865,7 @@ components:
       properties:
         name:
           type: string
-          enum: [agent, knowledge, playbook, grafana_read, grafana_write]
+          enum: [agent, knowledge, playbook, canvas, grafana_read, grafana_write]
         status:
           type: string
           enum: [available, unavailable, degraded]
@@ -869,6 +913,15 @@ components:
         updated_at:
           type: string
           format: date-time
+        message_count:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: Persisted user/assistant message count; null when the provider cannot supply it in a list operation.
+        preview:
+          type: string
+          nullable: true
+          description: Latest user message preview; null when unavailable without loading session detail.
     SessionPage:
       allOf:
         - $ref: '#/components/schemas/PageMetadata'
@@ -890,6 +943,134 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Message'
+    QueryDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, version, datasource_uid, expression, range, created_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/BusinessID'
+        version: {type: integer, format: int64, minimum: 1}
+        datasource_uid:
+          type: string
+          minLength: 1
+          maxLength: 512
+        expression:
+          type: string
+          minLength: 1
+          maxLength: 16384
+        range:
+          type: object
+          additionalProperties: false
+          required: [from, to, step_seconds]
+          properties:
+            from:
+              type: string
+              format: date-time
+            to:
+              type: string
+              format: date-time
+            step_seconds:
+              type: integer
+              format: int64
+              minimum: 1
+        created_at:
+          type: string
+          format: date-time
+    ChartDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, revision, query, title, description, visualization, viz_config, created_at, updated_at]
+      properties:
+        id:
+          $ref: '#/components/schemas/BusinessID'
+        revision:
+          type: integer
+          format: int64
+          minimum: 1
+        query:
+          $ref: '#/components/schemas/QueryDefinition'
+        title:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        description:
+          type: string
+          maxLength: 4096
+        visualization:
+          type: string
+          enum: [timeseries]
+        viz_config:
+          type: object
+          additionalProperties: true
+          maxProperties: 4
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    CanvasItem:
+      type: object
+      additionalProperties: false
+      required: [chart, position]
+      properties:
+        chart:
+          $ref: '#/components/schemas/ChartDefinition'
+        position:
+          type: integer
+          minimum: 0
+    CanvasProjection:
+      type: object
+      additionalProperties: false
+      required: [session_id, visible, layout, active_chart_id, revision, items]
+      properties:
+        session_id:
+          $ref: '#/components/schemas/BusinessID'
+        visible:
+          type: boolean
+        layout:
+          type: string
+          enum: [grid-2x2, grid-3x2, flex]
+        active_chart_id:
+          allOf:
+            - $ref: '#/components/schemas/BusinessID'
+          nullable: true
+        revision:
+          type: integer
+          format: int64
+          minimum: 0
+        items:
+          type: array
+          maxItems: 20
+          items:
+            $ref: '#/components/schemas/CanvasItem'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    UpdateCanvasRequest:
+      type: object
+      additionalProperties: false
+      required: [visible, layout, active_chart_id, ordered_chart_ids]
+      properties:
+        visible:
+          type: boolean
+        layout:
+          type: string
+          enum: [grid-2x2, grid-3x2, flex]
+        active_chart_id:
+          allOf:
+            - $ref: '#/components/schemas/BusinessID'
+          nullable: true
+        ordered_chart_ids:
+          type: array
+          maxItems: 20
+          uniqueItems: true
+          items:
+            $ref: '#/components/schemas/BusinessID'
     Message:
       type: object
       additionalProperties: false

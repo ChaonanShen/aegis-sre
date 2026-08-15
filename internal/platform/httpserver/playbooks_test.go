@@ -90,7 +90,8 @@ func (fake *playbookHTTPFake) ResolveApproval(_ context.Context, _ domain.ActorC
 
 func (fake *playbookHTTPFake) StreamRun(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRunRef, after int64) (ports.EventStream, error) {
 	fake.runRef = ref
-	return &contracttest.EventStream{Events: []domain.Event{{ID: "evt_abcdefgh", Type: domain.EventRunUpdated, RunID: ref.ID, Sequence: after + 1, OccurredAt: time.Date(2026, 8, 13, 1, 0, 0, 0, time.UTC), Payload: json.RawMessage(`{"status":"running"}`)}}}, fake.err
+	payload := json.RawMessage(`{"id":"run_abcdefgh","playbook_id":"pbk_diagnose","status":"running","sequence":8,"started_at":"2026-08-13T01:00:00Z","updated_at":"2026-08-13T01:00:01Z","steps":[{"id":"inspect","name":"Inspect","status":"running"}]}`)
+	return &contracttest.EventStream{Events: []domain.Event{{ID: "evt_abcdefgh", Type: domain.EventRunUpdated, RunID: ref.ID, Sequence: after + 1, OccurredAt: time.Date(2026, 8, 13, 1, 0, 0, 0, time.UTC), Payload: payload}}}, fake.err
 }
 
 func (fake *playbookHTTPFake) ListArtifacts(_ context.Context, _ domain.ActorContext, _ ports.PlaybookRunRef) ([]ports.ArtifactRef, error) {
@@ -191,7 +192,7 @@ func TestRunEventStreamResumesAfterSequence(t *testing.T) {
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh/events?after_sequence=7", ""))
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "id: 8") || !strings.Contains(response.Body.String(), `"run_id":"run_abcdefgh"`) {
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "id: 8") || !strings.Contains(response.Body.String(), `"run_id":"run_abcdefgh"`) || !strings.Contains(response.Body.String(), `"playbook_id":"pbk_diagnose"`) || !strings.Contains(response.Body.String(), `"steps":[{"id":"inspect"`) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
 }

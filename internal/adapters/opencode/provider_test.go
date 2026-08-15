@@ -84,23 +84,19 @@ func TestProviderFiltersNativeArchiveStateAndProjectsPagedMessages(t *testing.T)
 	t.Parallel()
 	provider, _ := newOpenCodeProvider(t, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
-		case "/api/session":
-			_, _ = w.Write([]byte(`{"data":[{"id":"ses_active123","title":"Active","time":{"created":1786672800000,"updated":1786672900000}},{"id":"ses_archive1","title":"Archived","time":{"created":1786672800000,"updated":1786672900000,"archived":1786673000000}}],"cursor":{"next":"next"}}`))
-		case "/api/session/ses_archive1":
-			_, _ = w.Write([]byte(`{"data":{"id":"ses_archive1","title":"Archived","time":{"created":1786672800000,"updated":1786672900000,"archived":1786673000000}}}`))
-		case "/api/session/ses_archive1/message":
-			if request.URL.Query().Get("cursor") == "page-2" {
-				_, _ = w.Write([]byte(`{"data":[{"id":"msg_assistant","type":"assistant","time":{"created":1786672820000},"agent":"build","model":{"providerID":"x","modelID":"y"},"content":[{"type":"text","text":"done"}]}],"cursor":{}}`))
-				return
-			}
-			_, _ = w.Write([]byte(`{"data":[{"id":"msg_user","type":"user","time":{"created":1786672810000},"text":"check"}],"cursor":{"next":"page-2"}}`))
+		case "/session":
+			_, _ = w.Write([]byte(`[{"id":"ses_active123","title":"Active","time":{"created":1786672800000,"updated":1786672900000}},{"id":"ses_archive1","title":"Archived","time":{"created":1786672800000,"updated":1786672900000,"archived":1786673000000}}]`))
+		case "/session/ses_archive1":
+			_, _ = w.Write([]byte(`{"id":"ses_archive1","title":"Archived","time":{"created":1786672800000,"updated":1786672900000,"archived":1786673000000}}`))
+		case "/session/ses_archive1/message":
+			_, _ = w.Write([]byte(`[{"info":{"id":"msg_user","role":"user","time":{"created":1786672810000}},"parts":[{"type":"text","text":"check"}]},{"info":{"id":"msg_assistant","role":"assistant","time":{"created":1786672820000}},"parts":[{"type":"text","text":"done"}]}]`))
 		default:
 			t.Errorf("unexpected path: %s", request.URL.Path)
 			w.WriteHeader(http.StatusNotFound)
 		}
 	}))
 	page, err := provider.ListSessions(context.Background(), domain.ActorContext{}, ports.ListAgentSessionsInput{Page: domain.PageRequest{Limit: 50}, Status: domain.SessionArchived})
-	if err != nil || len(page.Items) != 1 || page.Items[0].Ref.ID != "ses_archive1" || !page.HasMore {
+	if err != nil || len(page.Items) != 1 || page.Items[0].Ref.ID != "ses_archive1" || page.HasMore {
 		t.Fatalf("page = %#v, err = %v", page, err)
 	}
 	detail, err := provider.ReadSession(context.Background(), domain.ActorContext{}, ports.AgentSessionRef{ID: "ses_archive1"})
@@ -161,32 +157,44 @@ func TestProviderUsesNativeMutationsAndReportsUnarchiveGap(t *testing.T) {
 func TestProviderStreamsDurableTurnEventsAndVerifiesCancellationOwnership(t *testing.T) {
 	t.Parallel()
 	var messageID string
+	promptDone := make(chan struct{})
 	provider, _ := newOpenCodeProvider(t, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		switch {
-		case request.Method == http.MethodPost && request.URL.Path == "/api/session/ses_abcdefgh/prompt":
+		case request.Method == http.MethodGet && request.URL.Path == "/config":
+			_, _ = w.Write([]byte(`{"model":"deepseek/deepseek-chat"}`))
+		case request.Method == http.MethodPost && request.URL.Path == "/session/ses_abcdefgh/prompt_async":
 			var body struct {
-				ID string `json:"id"`
+				MessageID string `json:"messageID"`
 			}
 			_ = json.NewDecoder(request.Body).Decode(&body)
-			messageID = body.ID
-			_, _ = w.Write([]byte(`{"data":{"admittedSeq":7,"id":"` + messageID + `","sessionID":"ses_abcdefgh","prompt":{"text":"check"},"delivery":"queue","timeCreated":1}}`))
-		case request.Method == http.MethodGet && request.URL.Path == "/api/session/ses_abcdefgh/event":
-			if request.URL.Query().Get("after") != "7" {
-				t.Errorf("after = %q", request.URL.Query().Get("after"))
-			}
+			messageID = body.MessageID
+			close(promptDone)
+			w.WriteHeader(http.StatusNoContent)
+		case request.Method == http.MethodGet && request.URL.Path == "/event":
 			w.Header().Set("Content-Type", "text/event-stream")
+			if flusher, ok := w.(http.Flusher); ok {
+				w.WriteHeader(http.StatusOK)
+				flusher.Flush()
+			}
+			select {
+			case <-promptDone:
+			case <-request.Context().Done():
+				return
+			}
 			frames := []string{
-				`{"id":"evt_text0001","type":"session.next.text.ended","durable":{"aggregateID":"ses_abcdefgh","seq":8,"version":1},"data":{"timestamp":1786673000000,"sessionID":"ses_abcdefgh","assistantMessageID":"msg_assistant","textID":"text-1","text":"healthy"}}`,
-				`{"id":"evt_tool0001","type":"session.next.tool.called","durable":{"aggregateID":"ses_abcdefgh","seq":9,"version":1},"data":{"timestamp":1786673000100,"sessionID":"ses_abcdefgh","assistantMessageID":"msg_assistant","callID":"provider-call","tool":"query_metrics","input":{"expr":"up"},"provider":{"executed":true}}}`,
-				`{"id":"evt_tool0002","type":"session.next.tool.success","durable":{"aggregateID":"ses_abcdefgh","seq":10,"version":1},"data":{"timestamp":1786673000200,"sessionID":"ses_abcdefgh","assistantMessageID":"msg_assistant","callID":"provider-call","structured":{},"content":[],"provider":{"executed":true}}}`,
-				`{"id":"evt_step0001","type":"session.next.step.ended","durable":{"aggregateID":"ses_abcdefgh","seq":11,"version":1},"data":{"timestamp":1786673000300,"sessionID":"ses_abcdefgh","assistantMessageID":"msg_assistant","finish":"stop","cost":0,"tokens":{"input":1,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}}}`,
+				`{"id":"evt_assistant","type":"message.updated","properties":{"sessionID":"ses_abcdefgh","info":{"role":"assistant","id":"msg_assistant","parentID":"` + messageID + `"}}}`,
+				`{"id":"evt_tool1","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"query_metrics","callID":"provider-call","messageID":"msg_assistant","state":{"status":"pending","input":{}}}}}`,
+				`{"id":"evt_tool_running","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"query_metrics","callID":"provider-call","messageID":"msg_assistant","state":{"status":"running","input":{"expr":"up"}}}}}`,
+				`{"id":"evt_tool2","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"query_metrics","callID":"provider-call","messageID":"msg_assistant","state":{"status":"completed","input":{"expr":"up"}}}}}`,
+				`{"id":"evt_delta","type":"message.part.delta","properties":{"sessionID":"ses_abcdefgh","messageID":"msg_assistant","partID":"prt_text","field":"text","delta":"healthy"}}`,
+				`{"id":"evt_step","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"step-finish","reason":"stop","messageID":"msg_assistant"}}}`,
 			}
 			for _, frame := range frames {
 				_, _ = w.Write([]byte("data: " + frame + "\n\n"))
 			}
-		case request.Method == http.MethodGet && request.URL.Path == "/api/session/ses_abcdefgh/message":
-			_, _ = w.Write([]byte(`{"data":[{"id":"` + messageID + `","type":"user","time":{"created":1},"text":"check"}],"cursor":{}}`))
-		case request.Method == http.MethodPost && request.URL.Path == "/api/session/ses_abcdefgh/interrupt":
+		case request.Method == http.MethodGet && request.URL.Path == "/session/ses_abcdefgh/message":
+			_, _ = w.Write([]byte(`[{"info":{"id":"` + messageID + `","role":"user","time":{"created":1}},"parts":[{"type":"text","text":"check"}]}]`))
+		case request.Method == http.MethodPost && request.URL.Path == "/session/ses_abcdefgh/abort":
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Errorf("unexpected request: %s %s", request.Method, request.URL.Path)
@@ -201,7 +209,7 @@ func TestProviderStreamsDurableTurnEventsAndVerifiesCancellationOwnership(t *tes
 	defer stream.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	want := []domain.EventType{domain.EventMessageDelta, domain.EventToolStarted, domain.EventToolCompleted, domain.EventTurnCompleted}
+	want := []domain.EventType{domain.EventToolStarted, domain.EventToolStarted, domain.EventToolCompleted, domain.EventMessageDelta, domain.EventTurnCompleted}
 	for sequence, eventType := range want {
 		event, err := stream.Next(ctx)
 		if err != nil || event.Type != eventType || event.Sequence != int64(sequence+1) || event.SessionID != "ses_abcdefgh" || event.TurnID != turn.ID || !event.ID.Valid() {
@@ -209,6 +217,12 @@ func TestProviderStreamsDurableTurnEventsAndVerifiesCancellationOwnership(t *tes
 		}
 		if strings.Contains(string(event.ID), "evt_") && string(event.ID) == "evt_text0001" {
 			t.Fatalf("provider event ID leaked: %q", event.ID)
+		}
+		if event.Type == domain.EventToolCompleted && !strings.Contains(string(event.Payload), `"duration_ms":null`) {
+			t.Fatalf("missing duration must remain null: %s", event.Payload)
+		}
+		if sequence == 1 && !strings.Contains(string(event.Payload), `"expr":"up"`) {
+			t.Fatalf("running tool input was not projected: %s", event.Payload)
 		}
 	}
 	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {
@@ -219,11 +233,19 @@ func TestProviderStreamsDurableTurnEventsAndVerifiesCancellationOwnership(t *tes
 	}
 }
 
+func TestOpenCodeToolSummaryPreservesStructuredErrors(t *testing.T) {
+	t.Parallel()
+	got := openCodeToolSummary(map[string]any{"error": map[string]any{"code": "denied", "message": "write blocked"}})
+	if got != `{"code":"denied","message":"write blocked"}` {
+		t.Fatalf("summary = %#v", got)
+	}
+}
+
 func TestProviderRejectsCancellationForTurnOutsideSession(t *testing.T) {
 	t.Parallel()
 	provider, _ := newOpenCodeProvider(t, http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		if request.URL.Path == "/api/session/ses_abcdefgh/message" {
-			_, _ = w.Write([]byte(`{"data":[],"cursor":{}}`))
+		if request.URL.Path == "/session/ses_abcdefgh/message" {
+			_, _ = w.Write([]byte(`[]`))
 			return
 		}
 		t.Errorf("unexpected request: %s %s", request.Method, request.URL.Path)
@@ -232,5 +254,86 @@ func TestProviderRejectsCancellationForTurnOutsideSession(t *testing.T) {
 	var appErr *domain.AppError
 	if !errors.As(err, &appErr) || appErr.Code != domain.ErrorNotFound || appErr.Retryable {
 		t.Fatalf("error = %#v", err)
+	}
+}
+
+func TestProviderProjectsV1GlobalEventsForCurrentSession(t *testing.T) {
+	t.Parallel()
+	frames := []string{
+		`{"id":"evt_other","type":"message.updated","properties":{"sessionID":"ses_other","info":{"role":"assistant","id":"msg_other","parentID":"msg_v1"}}}`,
+		`{"id":"evt_assistant","type":"message.updated","properties":{"sessionID":"ses_abcdefgh","info":{"role":"assistant","id":"msg_assistant","parentID":"msg_v1","sessionID":"ses_abcdefgh"}}}`,
+		`{"id":"evt_pending","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"grafana-read_query_prometheus","callID":"provider-call","messageID":"msg_assistant","state":{"status":"pending","input":{}}}}}`,
+		`{"id":"evt_running","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"grafana-read_query_prometheus","callID":"provider-call","messageID":"msg_assistant","state":{"status":"running","input":{"expr":"up"}}}}}`,
+		`{"id":"evt_completed","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"tool","tool":"grafana-read_query_prometheus","callID":"provider-call","messageID":"msg_assistant","state":{"status":"completed","input":{"expr":"up"},"output":"ok"}}}}`,
+		`{"id":"evt_delta","type":"message.part.delta","properties":{"sessionID":"ses_abcdefgh","messageID":"msg_assistant","partID":"prt_text","field":"text","delta":"healthy"}}`,
+		`{"id":"evt_stop","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"step-finish","reason":"stop","messageID":"msg_assistant"}}}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = w.Write([]byte("data: " + frame + "\n\n"))
+		}
+	}))
+	defer server.Close()
+	response, err := server.Client().Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	codec, _ := agentid.New([]byte("0123456789abcdef0123456789abcdef"))
+	stream := newOpenCodeV1EventStream(response.Body, codec, "ses_abcdefgh", "turn_abcdefgh", "msg_v1")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	want := []domain.EventType{domain.EventToolStarted, domain.EventToolStarted, domain.EventToolCompleted, domain.EventMessageDelta, domain.EventTurnCompleted}
+	for sequence, eventType := range want {
+		event, err := stream.Next(ctx)
+		if err != nil || event.Type != eventType || event.Sequence != int64(sequence+1) || event.SessionID != "ses_abcdefgh" || event.TurnID != "turn_abcdefgh" {
+			t.Fatalf("event %d = %#v, err = %v", sequence, event, err)
+		}
+		if event.Type == domain.EventToolStarted && strings.Contains(string(event.Payload), "provider-call") {
+			t.Fatalf("provider call ID leaked: %s", event.Payload)
+		}
+		if sequence == 1 && !strings.Contains(string(event.Payload), `"expr":"up"`) {
+			t.Fatalf("running tool input was not projected: %s", event.Payload)
+		}
+		if event.Type == domain.EventToolCompleted && !strings.Contains(string(event.Payload), `"summary":"ok"`) {
+			t.Fatalf("tool output was not projected: %s", event.Payload)
+		}
+	}
+	if _, err := stream.Next(ctx); !errors.Is(err, io.EOF) {
+		t.Fatalf("stream after terminal event = %v", err)
+	}
+}
+
+func TestOpenCodeV1RejectsForeignNestedOwnershipAndRequiresOwnershipEvidence(t *testing.T) {
+	t.Parallel()
+	frames := []string{
+		`{"id":"evt_other_assistant","type":"message.updated","properties":{"info":{"role":"assistant","id":"msg_other","parentID":"msg_v1","sessionID":"ses_other"}}}`,
+		`{"id":"evt_assistant","type":"message.updated","properties":{"info":{"role":"assistant","id":"msg_assistant","parentID":"msg_v1","sessionID":"ses_abcdefgh"}}}`,
+		`{"id":"evt_other_tool","type":"message.part.updated","properties":{"part":{"type":"tool","tool":"read","callID":"foreign-call","messageID":"msg_assistant","sessionID":"ses_other","state":{"status":"pending","input":{"path":"/other"}}}}}`,
+		`{"id":"evt_current_tool","type":"message.part.updated","properties":{"part":{"type":"tool","tool":"read","callID":"current-call","messageID":"msg_assistant","state":{"status":"pending","input":{"path":"/current"}}}}}`,
+		`{"id":"evt_stop","type":"message.part.updated","properties":{"sessionID":"ses_abcdefgh","part":{"type":"step-finish","reason":"stop","messageID":"msg_assistant"}}}`,
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = w.Write([]byte("data: " + frame + "\n\n"))
+		}
+	}))
+	defer server.Close()
+	response, err := server.Client().Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	codec, _ := agentid.New([]byte("0123456789abcdef0123456789abcdef"))
+	stream := newOpenCodeV1EventStream(response.Body, codec, "ses_abcdefgh", "turn_abcdefgh", "msg_v1")
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if event, err := stream.Next(ctx); err != nil || event.Type != domain.EventToolStarted || !strings.Contains(string(event.Payload), "/current") || strings.Contains(string(event.Payload), "/other") {
+		t.Fatalf("event = %#v, err = %v", event, err)
+	}
+	if event, err := stream.Next(ctx); err != nil || event.Type != domain.EventTurnCompleted {
+		t.Fatalf("terminal event = %#v, err = %v", event, err)
 	}
 }

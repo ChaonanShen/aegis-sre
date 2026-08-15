@@ -31,7 +31,11 @@ func NewProvider(client *Client, codec *agentid.Codec) (*Provider, error) {
 func (provider *Provider) Check(ctx context.Context) error { return provider.client.Check(ctx) }
 
 func (provider *Provider) ListSessions(ctx context.Context, _ domain.ActorContext, input ports.ListAgentSessionsInput) (domain.Page[ports.AgentSession], error) {
-	sessions, next, err := provider.client.ListSessions(ctx, input.Page.Limit, input.Page.Cursor)
+	start, err := decodeV1Offset(input.Page.Cursor)
+	if err != nil {
+		return domain.Page[ports.AgentSession]{}, invalidOpenCodeArgument(err)
+	}
+	sessions, err := provider.client.ListSessionsV1(ctx, input.Page.Limit, start)
 	if err != nil {
 		return domain.Page[ports.AgentSession]{}, err
 	}
@@ -42,7 +46,12 @@ func (provider *Provider) ListSessions(ctx context.Context, _ domain.ActorContex
 			items = append(items, projected)
 		}
 	}
-	return domain.Page[ports.AgentSession]{Items: items, NextCursor: next, HasMore: next != ""}, nil
+	hasMore := len(sessions) == input.Page.Limit && len(sessions) > 0
+	next := ""
+	if hasMore {
+		next = encodeV1Offset(start + len(sessions))
+	}
+	return domain.Page[ports.AgentSession]{Items: items, NextCursor: next, HasMore: hasMore}, nil
 }
 
 func (provider *Provider) CreateSession(ctx context.Context, actor domain.ActorContext, input ports.CreateAgentSessionInput) (ports.AgentSession, error) {
@@ -84,7 +93,7 @@ func (provider *Provider) ReadSession(ctx context.Context, _ domain.ActorContext
 	if err := validateOpenCodeSessionRef(ref); err != nil {
 		return ports.AgentSessionDetail{}, err
 	}
-	session, err := provider.client.GetSession(ctx, string(ref.ID))
+	session, err := provider.client.GetSessionV1(ctx, string(ref.ID))
 	if err != nil {
 		return ports.AgentSessionDetail{}, err
 	}
@@ -131,15 +140,23 @@ func (provider *Provider) StartTurn(ctx context.Context, actor domain.ActorConte
 		return ports.AgentTurnRef{}, nil, invalidOpenCodeArgument(err)
 	}
 	messageID := "msg_" + strings.TrimPrefix(string(turnID), "turn_")
-	admitted, err := provider.client.Prompt(ctx, string(session.ID), messageID, input.Message)
-	if err != nil {
-		return ports.AgentTurnRef{}, nil, &domain.AppError{Code: domain.ErrorProviderResultUnknown, Message: "OpenCode prompt admission result is unknown", Retryable: false, Cause: err}
+	message := input.Message
+	if input.CanvasContext != "" {
+		message = input.CanvasContext + "\n\n" + message
 	}
-	body, err := provider.client.SubscribeEvents(ctx, string(session.ID), strconv.FormatInt(admitted.Sequence, 10))
+	model, err := provider.client.DefaultModel(ctx)
 	if err != nil {
 		return ports.AgentTurnRef{}, nil, err
 	}
-	return ports.AgentTurnRef{ID: turnID}, newOpenCodeEventStream(body, provider.codec, session.ID, turnID), nil
+	body, err := provider.client.SubscribeGlobalEventsV1(ctx)
+	if err != nil {
+		return ports.AgentTurnRef{}, nil, err
+	}
+	if err := provider.client.PromptAsyncV1(ctx, string(session.ID), messageID, model, "build", message); err != nil {
+		_ = body.Close()
+		return ports.AgentTurnRef{}, nil, &domain.AppError{Code: domain.ErrorProviderResultUnknown, Message: "OpenCode prompt admission result is unknown", Retryable: false, Cause: err}
+	}
+	return ports.AgentTurnRef{ID: turnID}, newOpenCodeV1EventStream(body, provider.codec, session.ID, turnID, messageID), nil
 }
 
 func (provider *Provider) CancelTurn(ctx context.Context, _ domain.ActorContext, session ports.AgentSessionRef, turn ports.AgentTurnRef) error {
@@ -157,23 +174,32 @@ func (provider *Provider) CancelTurn(ctx context.Context, _ domain.ActorContext,
 	if !found {
 		return &domain.AppError{Code: domain.ErrorNotFound, Message: "agent turn not found", Retryable: false}
 	}
-	return provider.client.Interrupt(ctx, string(session.ID))
+	return provider.client.AbortSessionV1(ctx, string(session.ID))
 }
 
 func (provider *Provider) messageExists(ctx context.Context, sessionID, messageID string) (bool, error) {
 	cursor := ""
 	seen := map[string]struct{}{}
 	for {
-		messages, next, err := provider.client.ListMessages(ctx, sessionID, cursor, 200)
+		before := ""
+		if cursor != "" {
+			before = cursor
+		}
+		messages, err := provider.client.ListMessagesV1(ctx, sessionID, before, 200)
 		if err != nil {
 			return false, err
 		}
 		for _, message := range messages {
-			if message.ID == messageID {
+			providerMessageID, ok := v1MessageID(message)
+			if ok && providerMessageID == messageID {
 				return true, nil
 			}
 		}
-		if next == "" {
+		if len(messages) < 200 {
+			return false, nil
+		}
+		next, ok := v1MessageID(messages[0])
+		if !ok || next == "" {
 			return false, nil
 		}
 		if _, duplicate := seen[next]; duplicate {
@@ -194,10 +220,38 @@ type openCodeEventStream struct {
 	terminal  bool
 }
 
+type openCodeV1EventStream struct {
+	body             io.ReadCloser
+	scanner          *bufio.Scanner
+	codec            *agentid.Codec
+	sessionID        domain.ID
+	turnID           domain.ID
+	messageID        string
+	sequence         int64
+	terminal         bool
+	assistantMessage map[string]struct{}
+	textDeltas       map[string]struct{}
+}
+
 func newOpenCodeEventStream(body io.ReadCloser, codec *agentid.Codec, sessionID, turnID domain.ID) *openCodeEventStream {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 64<<10), int(maxResponseBytes))
 	return &openCodeEventStream{body: body, scanner: scanner, codec: codec, sessionID: sessionID, turnID: turnID}
+}
+
+func newOpenCodeV1EventStream(body io.ReadCloser, codec *agentid.Codec, sessionID, turnID domain.ID, messageID string) *openCodeV1EventStream {
+	scanner := bufio.NewScanner(body)
+	scanner.Buffer(make([]byte, 64<<10), int(maxResponseBytes))
+	return &openCodeV1EventStream{
+		body:             body,
+		scanner:          scanner,
+		codec:            codec,
+		sessionID:        sessionID,
+		turnID:           turnID,
+		messageID:        messageID,
+		assistantMessage: map[string]struct{}{},
+		textDeltas:       map[string]struct{}{},
+	}
 }
 
 func (stream *openCodeEventStream) Next(ctx context.Context) (domain.Event, error) {
@@ -227,7 +281,57 @@ func (stream *openCodeEventStream) Next(ctx context.Context) (domain.Event, erro
 
 func (stream *openCodeEventStream) Close() error { return stream.body.Close() }
 
+func (stream *openCodeV1EventStream) Next(ctx context.Context) (domain.Event, error) {
+	if stream.terminal {
+		return domain.Event{}, io.EOF
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return domain.Event{}, ctx.Err()
+		default:
+		}
+		data, err := stream.nextSSEData()
+		if err != nil {
+			return domain.Event{}, err
+		}
+		event, ok, err := stream.project(data)
+		if err != nil {
+			return domain.Event{}, &domain.AppError{Code: domain.ErrorProviderResultUnknown, Message: "OpenCode V1 event cannot be projected", Retryable: false, Cause: err}
+		}
+		if ok {
+			stream.terminal = event.Type == domain.EventTurnCompleted || event.Type == domain.EventTurnFailed
+			return event, nil
+		}
+	}
+}
+
+func (stream *openCodeV1EventStream) Close() error { return stream.body.Close() }
+
 func (stream *openCodeEventStream) nextSSEData() (json.RawMessage, error) {
+	var lines []string
+	for stream.scanner.Scan() {
+		line := stream.scanner.Text()
+		if line == "" {
+			if len(lines) == 0 {
+				continue
+			}
+			return json.RawMessage(strings.Join(lines, "\n")), nil
+		}
+		if value, ok := strings.CutPrefix(line, "data:"); ok {
+			lines = append(lines, strings.TrimPrefix(value, " "))
+		}
+	}
+	if err := stream.scanner.Err(); err != nil {
+		return nil, err
+	}
+	if len(lines) > 0 {
+		return json.RawMessage(strings.Join(lines, "\n")), nil
+	}
+	return nil, io.EOF
+}
+
+func (stream *openCodeV1EventStream) nextSSEData() (json.RawMessage, error) {
 	var lines []string
 	for stream.scanner.Scan() {
 		line := stream.scanner.Text()
@@ -289,7 +393,7 @@ func (stream *openCodeEventStream) project(raw json.RawMessage) (domain.Event, b
 		if event.Type == "session.next.tool.failed" {
 			status = "failed"
 		}
-		eventType, payload = domain.EventToolCompleted, map[string]any{"call_id": callID, "status": status, "duration_ms": 0}
+		eventType, payload = domain.EventToolCompleted, map[string]any{"call_id": callID, "status": status, "duration_ms": nil}
 	case "session.next.step.ended":
 		if strings.Contains(strings.ToLower(event.Data.Finish), "tool") {
 			return domain.Event{}, false, nil
@@ -313,6 +417,197 @@ func (stream *openCodeEventStream) project(raw json.RawMessage) (domain.Event, b
 	return domain.Event{ID: publicEventID, Type: eventType, SessionID: stream.sessionID, TurnID: stream.turnID, Sequence: stream.sequence, OccurredAt: occurredAt, Payload: content}, true, nil
 }
 
+func (stream *openCodeV1EventStream) project(raw json.RawMessage) (domain.Event, bool, error) {
+	var event struct {
+		ID         string          `json:"id"`
+		Type       string          `json:"type"`
+		Properties json.RawMessage `json:"properties"`
+	}
+	if json.Unmarshal(raw, &event) != nil || event.ID == "" || event.Type == "" {
+		return domain.Event{}, false, errors.New("invalid OpenCode V1 event")
+	}
+	properties := map[string]any{}
+	if len(event.Properties) > 0 && json.Unmarshal(event.Properties, &properties) != nil {
+		return domain.Event{}, false, errors.New("invalid OpenCode V1 event properties")
+	}
+	if !stream.ownsV1Event(properties) {
+		return domain.Event{}, false, nil
+	}
+
+	switch event.Type {
+	case "message.updated":
+		info, _ := properties["info"].(map[string]any)
+		if info == nil || info["role"] != "assistant" {
+			return domain.Event{}, false, nil
+		}
+		messageID, _ := info["id"].(string)
+		parentID, _ := info["parentID"].(string)
+		if parentID != stream.messageID || messageID == "" {
+			return domain.Event{}, false, nil
+		}
+		stream.assistantMessage[messageID] = struct{}{}
+		if finish, _ := info["finish"].(string); finish == "stop" {
+			return stream.v1Event(event.ID, domain.EventTurnCompleted, map[string]any{"status": "succeeded"})
+		}
+		return domain.Event{}, false, nil
+	case "message.part.delta":
+		messageID, _ := properties["messageID"].(string)
+		if !stream.isAssistantMessage(messageID) || properties["field"] != "text" {
+			return domain.Event{}, false, nil
+		}
+		delta, _ := properties["delta"].(string)
+		partID, _ := properties["partID"].(string)
+		if delta == "" {
+			return domain.Event{}, false, nil
+		}
+		if partID != "" {
+			stream.textDeltas[partID] = struct{}{}
+		}
+		return stream.v1Event(event.ID, domain.EventMessageDelta, map[string]any{"delta": delta})
+	case "message.part.updated":
+		part, _ := properties["part"].(map[string]any)
+		if part == nil {
+			return domain.Event{}, false, nil
+		}
+		messageID, _ := part["messageID"].(string)
+		if !stream.isAssistantMessage(messageID) {
+			return domain.Event{}, false, nil
+		}
+		partType, _ := part["type"].(string)
+		switch partType {
+		case "tool":
+			return stream.projectV1Tool(event.ID, part)
+		case "step-finish":
+			reason, _ := part["reason"].(string)
+			switch reason {
+			case "stop":
+				return stream.v1Event(event.ID, domain.EventTurnCompleted, map[string]any{"status": "succeeded"})
+			case "error", "failed":
+				return stream.v1Event(event.ID, domain.EventTurnFailed, map[string]any{"code": "agent_failed", "message": "Agent turn failed", "retryable": false})
+			}
+		}
+		return domain.Event{}, false, nil
+	case "session.status":
+		status, _ := properties["status"].(map[string]any)
+		statusType, _ := status["type"].(string)
+		switch statusType {
+		case "error", "failed":
+			return stream.v1Event(event.ID, domain.EventTurnFailed, map[string]any{"code": "agent_failed", "message": "Agent turn failed", "retryable": false})
+		case "idle":
+			if len(stream.assistantMessage) > 0 {
+				return stream.v1Event(event.ID, domain.EventTurnCompleted, map[string]any{"status": "succeeded"})
+			}
+		}
+	}
+	return domain.Event{}, false, nil
+}
+
+// ownsV1Event 对全局事件流执行 fail-closed 归属判断。OpenCode 的真实事件
+// 可能只在 info/part 或 messageID 中携带 Session 线索，不能只依赖顶层字段；
+// 没有任何可验证归属的事件也必须丢弃，避免跨会话串线。
+func (stream *openCodeV1EventStream) ownsV1Event(properties map[string]any) bool {
+	owned := false
+	checkSession := func(value any) bool {
+		sessionID, ok := value.(string)
+		if !ok || sessionID == "" {
+			return true
+		}
+		owned = true
+		return sessionID == string(stream.sessionID)
+	}
+	if !checkSession(properties["sessionID"]) {
+		return false
+	}
+	if info, _ := properties["info"].(map[string]any); info != nil {
+		if !checkSession(info["sessionID"]) {
+			return false
+		}
+	}
+	if part, _ := properties["part"].(map[string]any); part != nil {
+		if !checkSession(part["sessionID"]) {
+			return false
+		}
+		if messageID, _ := part["messageID"].(string); messageID != "" {
+			owned = true
+			if !stream.isAssistantMessage(messageID) {
+				return false
+			}
+		}
+	}
+	if messageID, _ := properties["messageID"].(string); messageID != "" {
+		owned = true
+		if !stream.isAssistantMessage(messageID) {
+			return false
+		}
+	}
+	return owned
+}
+
+func (stream *openCodeV1EventStream) projectV1Tool(eventID string, part map[string]any) (domain.Event, bool, error) {
+	callID, _ := part["callID"].(string)
+	tool, _ := part["tool"].(string)
+	state, _ := part["state"].(map[string]any)
+	status, _ := state["status"].(string)
+	if callID == "" {
+		return domain.Event{}, false, nil
+	}
+	encodedCallID, err := stream.codec.EncodeCallKey(string(stream.sessionID) + "\x00" + callID)
+	if err != nil {
+		return domain.Event{}, false, err
+	}
+	if status == "pending" || status == "running" {
+		input, _ := state["input"].(map[string]any)
+		return stream.v1Event(eventID, domain.EventToolStarted, map[string]any{"call_id": encodedCallID, "server": "agent", "tool": tool, "arguments": input, "access": openCodeToolAccess(tool)})
+	}
+	if status != "completed" && status != "error" && status != "failed" {
+		return domain.Event{}, false, nil
+	}
+	result := "succeeded"
+	if status != "completed" {
+		result = "failed"
+	}
+	return stream.v1Event(eventID, domain.EventToolCompleted, map[string]any{"call_id": encodedCallID, "status": result, "summary": openCodeToolSummary(state), "duration_ms": nil})
+}
+
+func openCodeToolSummary(state map[string]any) any {
+	value, ok := state["output"]
+	if !ok || value == nil {
+		value = state["error"]
+	}
+	if value == nil {
+		return nil
+	}
+	if text, ok := value.(string); ok {
+		return text
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	return string(encoded)
+}
+
+func (stream *openCodeV1EventStream) isAssistantMessage(messageID string) bool {
+	if messageID == "" {
+		return false
+	}
+	if messageID == stream.messageID {
+		return false
+	}
+	_, ok := stream.assistantMessage[messageID]
+	return ok
+}
+
+func (stream *openCodeV1EventStream) v1Event(eventID string, eventType domain.EventType, payload any) (domain.Event, bool, error) {
+	stream.sequence++
+	publicEventID, err := stream.codec.EncodeEventKey(string(stream.sessionID) + "\x00" + string(stream.turnID) + "\x00" + eventID)
+	if err != nil {
+		return domain.Event{}, false, err
+	}
+	content, _ := json.Marshal(payload)
+	return domain.Event{ID: publicEventID, Type: eventType, SessionID: stream.sessionID, TurnID: stream.turnID, Sequence: stream.sequence, OccurredAt: time.Now().UTC(), Payload: content}, true, nil
+}
+
 func openCodeToolAccess(tool string) string {
 	lower := strings.ToLower(tool)
 	for _, marker := range []string{"get", "list", "read", "query", "search", "find"} {
@@ -332,35 +627,29 @@ func (provider *Provider) readAllMessages(ctx context.Context, sessionID string)
 	seen := map[string]struct{}{}
 	var messages []ports.AgentMessage
 	for {
-		page, next, err := provider.client.ListMessages(ctx, sessionID, cursor, 200)
+		before := ""
+		if cursor != "" {
+			before = cursor
+		}
+		page, err := provider.client.ListMessagesV1(ctx, sessionID, before, 200)
 		if err != nil {
 			return nil, err
 		}
 		for _, message := range page {
-			role := ports.AgentMessageRole("")
-			content := message.Text
-			switch message.Type {
-			case "user":
-				role = ports.AgentMessageUser
-			case "assistant":
-				role = ports.AgentMessageAssistant
-				var parts []string
-				for _, part := range message.Content {
-					if part.Type == "text" && part.Text != "" {
-						parts = append(parts, part.Text)
-					}
-				}
-				content = strings.Join(parts, "\n")
-			default:
-				continue
-			}
-			id, err := provider.codec.EncodeMessageKey(sessionID + "\x00" + message.ID)
+			projected, ok, err := projectV1Message(sessionID, provider.codec, message)
 			if err != nil {
 				return nil, err
 			}
-			messages = append(messages, ports.AgentMessage{ID: id, Role: role, Content: content, CreatedAt: unixMilliseconds(message.Time.Created)})
+			if !ok {
+				continue
+			}
+			messages = append(messages, projected)
 		}
-		if next == "" {
+		if len(page) < 200 {
+			return messages, nil
+		}
+		next, ok := v1MessageID(page[0])
+		if !ok || next == "" {
 			return messages, nil
 		}
 		if _, duplicate := seen[next]; duplicate {
@@ -370,6 +659,70 @@ func (provider *Provider) readAllMessages(ctx context.Context, sessionID string)
 		cursor = next
 	}
 }
+
+func projectV1Message(sessionID string, codec *agentid.Codec, message V1Message) (ports.AgentMessage, bool, error) {
+	var info struct {
+		ID   string `json:"id"`
+		Role string `json:"role"`
+		Time struct {
+			Created int64 `json:"created"`
+		} `json:"time"`
+	}
+	if err := json.Unmarshal(message.Info, &info); err != nil || info.ID == "" {
+		return ports.AgentMessage{}, false, errors.New("invalid OpenCode V1 message")
+	}
+	var role ports.AgentMessageRole
+	switch info.Role {
+	case "user":
+		role = ports.AgentMessageUser
+	case "assistant":
+		role = ports.AgentMessageAssistant
+	default:
+		return ports.AgentMessage{}, false, nil
+	}
+	var parts []string
+	for _, raw := range message.Parts {
+		var part struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		}
+		if json.Unmarshal(raw, &part) == nil && part.Type == "text" && part.Text != "" {
+			parts = append(parts, part.Text)
+		}
+	}
+	id, err := codec.EncodeMessageKey(sessionID + "\x00" + info.ID)
+	if err != nil {
+		return ports.AgentMessage{}, false, err
+	}
+	return ports.AgentMessage{ID: id, Role: role, Content: strings.Join(parts, "\n"), CreatedAt: unixMilliseconds(info.Time.Created)}, true, nil
+}
+
+func v1MessageID(message V1Message) (string, bool) {
+	var info struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(message.Info, &info) != nil || info.ID == "" {
+		return "", false
+	}
+	return info.ID, true
+}
+
+func decodeV1Offset(cursor string) (int, error) {
+	if cursor == "" {
+		return 0, nil
+	}
+	value, ok := strings.CutPrefix(cursor, "v1:")
+	if !ok {
+		return 0, errors.New("invalid OpenCode V1 session cursor")
+	}
+	offset, err := strconv.Atoi(value)
+	if err != nil || offset < 0 {
+		return 0, errors.New("invalid OpenCode V1 session cursor")
+	}
+	return offset, nil
+}
+
+func encodeV1Offset(offset int) string { return "v1:" + strconv.Itoa(offset) }
 
 func projectSession(session Session) ports.AgentSession {
 	status := domain.SessionActive

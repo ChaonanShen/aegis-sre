@@ -211,7 +211,7 @@ export default function WorkbenchPage() {
                 )}
                 <CanvasStrip
                   canvas={opened.canvas}
-                  editingEnabled={runtimeMode === 'fixture'}
+                  editingEnabled={true}
                   onChange={(canvas) => controller.updateCanvas(() => canvas)}
                   key={opened.session.id}
                 />

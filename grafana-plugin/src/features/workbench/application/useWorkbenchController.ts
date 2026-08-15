@@ -383,7 +383,7 @@ export function useWorkbenchController({
   }, []);
 
   const reconcileCommand = useCallback(
-    async (command: FailedCommand, runID: number): Promise<boolean> => {
+    async (command: FailedCommand, runID: number, live: OpenedSession): Promise<boolean> => {
       const controller = new AbortController();
       reconcileControllerRef.current?.abort();
       reconcileControllerRef.current = controller;
@@ -398,7 +398,8 @@ export function useWorkbenchController({
             index >= previousMessageCount && role === 'assistant' && streamStatus === 'complete'
         );
         if (committed) {
-          publishOpened(persisted);
+          // Provider 历史接口可能只投影文本；保留本次流中已确认的工具卡和结果。
+          publishOpened(mergePersistedSession(persisted, live));
           failedCommandRef.current = undefined;
           failedCommandSessionIdRef.current = undefined;
           setLastFailedInput(undefined);
@@ -467,6 +468,16 @@ export function useWorkbenchController({
               activeTurnIdRef.current = event.payload.turnId;
               continue;
             }
+            if (event.type === 'canvas_updated') {
+              if (gateway.getCanvas) {
+                const latest = await gateway.getCanvas(command.input.sessionId, controller.signal);
+                if (routeSessionIdRef.current === command.input.sessionId) {
+                  current = { ...current, canvas: latest };
+                  publishOpened(current);
+                }
+              }
+              continue;
+            }
             const applied = applyAgentEvent(current, event, command.assistantMessageId);
             current = applied.session;
             publishOpened(current);
@@ -514,7 +525,7 @@ export function useWorkbenchController({
         return;
       }
       const stopped = stopRequestedRef.current && isAbortError(failure);
-      const committed = await reconcileCommand(command, runID);
+      const committed = await reconcileCommand(command, runID, current);
       if (runID !== streamRunRef.current) {
         clearStream();
         return;
@@ -737,6 +748,16 @@ export function useWorkbenchController({
             return;
           }
           current = mergeLatestCanvas(current, openedRef.current);
+          if (event.type === 'canvas_updated') {
+            if (gateway.getCanvas) {
+              const latest = await gateway.getCanvas(opened.session.id, controller.signal);
+              if (routeSessionIdRef.current === opened.session.id) {
+                current = { ...current, canvas: latest };
+                publishOpened(current);
+              }
+            }
+            continue;
+          }
           current = applyAgentEvent(current, event, assistantMessageId).session;
           publishOpened(current);
           if (event.type === 'interrupt') {
@@ -788,8 +809,41 @@ export function useWorkbenchController({
       const canvas = update(opened.canvas);
       const next = { ...opened, canvas };
       publishOpened(next);
+      if (gateway.updateCanvas) {
+        void gateway
+          .updateCanvas(opened.session.id, canvas)
+          .then((persisted) => {
+            const current = openedRef.current;
+            if (current?.session.id === opened.session.id && current.canvas === canvas) {
+              publishOpened({ ...current, canvas: persisted });
+            }
+          })
+          .catch(() => {
+            const current = openedRef.current;
+            if (current?.session.id === opened.session.id && current.canvas === canvas) {
+              if (gateway.getCanvas) {
+                void gateway
+                  .getCanvas(opened.session.id)
+                  .then((latest) => {
+                    const refreshed = openedRef.current;
+                    if (refreshed?.session.id === opened.session.id) {
+                      publishOpened({ ...refreshed, canvas: latest });
+                    }
+                  })
+                  .catch(() => {
+                    const refreshed = openedRef.current;
+                    if (refreshed?.session.id === opened.session.id && refreshed.canvas === canvas) {
+                      publishOpened({ ...refreshed, canvas: opened.canvas });
+                    }
+                  });
+              } else {
+                publishOpened({ ...current, canvas: opened.canvas });
+              }
+            }
+          });
+      }
     },
-    [publishOpened]
+    [gateway, publishOpened]
   );
 
   const archiveCurrentSession = useCallback(async () => {
@@ -828,21 +882,24 @@ export function useWorkbenchController({
     }
   }, [gateway, loadSessions, publishOpened, streaming]);
 
-  const renameCurrentSession = useCallback(async (title: string) => {
-    const opened = openedRef.current;
-    const value = title.trim();
-    if (!opened || !value || opened.session.id !== routeSessionIdRef.current || streaming) return false;
-    try {
-      const summary = await gateway.renameSession(opened.session.id, value);
-      if (openedRef.current?.session.id !== summary.id || routeSessionIdRef.current !== summary.id) return false;
-      publishOpened({ ...openedRef.current, session: summary });
-      await loadSessions();
-      return true;
-    } catch (error) {
-      if (!isAbortError(error)) setArchiveError(toError(error).message);
-      return false;
-    }
-  }, [gateway, loadSessions, publishOpened, streaming]);
+  const renameCurrentSession = useCallback(
+    async (title: string) => {
+      const opened = openedRef.current;
+      const value = title.trim();
+      if (!opened || !value || opened.session.id !== routeSessionIdRef.current || streaming) return false;
+      try {
+        const summary = await gateway.renameSession(opened.session.id, value);
+        if (openedRef.current?.session.id !== summary.id || routeSessionIdRef.current !== summary.id) return false;
+        publishOpened({ ...openedRef.current, session: summary });
+        await loadSessions();
+        return true;
+      } catch (error) {
+        if (!isAbortError(error)) setArchiveError(toError(error).message);
+        return false;
+      }
+    },
+    [gateway, loadSessions, publishOpened, streaming]
+  );
 
   const deleteCurrentSession = useCallback(async () => {
     const opened = openedRef.current;
@@ -949,6 +1006,21 @@ export function useWorkbenchController({
     },
     deleteCurrentSession,
   };
+}
+
+function mergePersistedSession(persisted: OpenedSession, live: OpenedSession): OpenedSession {
+  const liveByID = new Map(live.messages.map((message) => [message.id, message]));
+  const messages = persisted.messages.map((message) => {
+    const current = liveByID.get(message.id);
+    return current?.toolCalls?.length ? { ...message, toolCalls: current.toolCalls } : message;
+  });
+  const persistedIDs = new Set(messages.map((message) => message.id));
+  for (const message of live.messages) {
+    if (message.role === 'tool' && !persistedIDs.has(message.id)) {
+      messages.push(message);
+    }
+  }
+  return { ...persisted, messages, session: { ...persisted.session, messageCount: messages.length } };
 }
 
 function newMessageId(): string {

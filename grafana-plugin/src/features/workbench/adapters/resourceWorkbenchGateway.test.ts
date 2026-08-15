@@ -13,6 +13,23 @@ describe('Control Plane Workbench gateway', () => {
     ]);
   });
 
+  test('loads every session page through the opaque cursor', async () => {
+    const second = { ...session, id: 'ses_second123', title: 'Second' };
+    const backendSrv = {
+      fetch: jest
+        .fn()
+        .mockReturnValueOnce(of({ data: { items: [session], has_more: true, next_cursor: 'next page' }, status: 200 } as FetchResponse))
+        .mockReturnValueOnce(of({ data: { items: [second], has_more: false }, status: 200 } as FetchResponse)),
+    } as unknown as BackendSrv;
+    const gateway = createResourceWorkbenchGateway({ backendSrv });
+
+    await expect(gateway.listSessions()).resolves.toEqual([
+      expect.objectContaining({ id: session.id }),
+      expect.objectContaining({ id: second.id }),
+    ]);
+    expect((backendSrv.fetch as jest.Mock).mock.calls[1][0].url).toContain('?cursor=next%20page');
+  });
+
   test('creates a session with an idempotency key and without browser Folder authority', async () => {
     const backendSrv = fakeBackend({ data: session });
     const gateway = createResourceWorkbenchGateway({ backendSrv });
@@ -31,6 +48,64 @@ describe('Control Plane Workbench gateway', () => {
       })
     );
     expect(request.data).not.toHaveProperty('folder_uid');
+  });
+
+  test('loads and updates the persisted Canvas projection with its revision', async () => {
+    const projection = {
+      session_id: session.id,
+      visible: true,
+      layout: 'grid-2x2',
+      active_chart_id: 'cht_abcdefgh',
+      revision: 3,
+      items: [
+        {
+          position: 0,
+          chart: {
+            id: 'cht_abcdefgh',
+            revision: 1,
+            query: {
+              id: 'qry_abcdefgh',
+              version: 1,
+              datasource_uid: 'prom-main',
+              expression: 'up',
+              range: { from: '2026-08-15T00:00:00Z', to: '2026-08-15T01:00:00Z', step_seconds: 30 },
+              created_at: '2026-08-15T01:00:00Z',
+            },
+            title: 'Availability',
+            description: '',
+            visualization: 'timeseries',
+            viz_config: {
+              kind: 'VizConfig',
+              group: 'timeseries',
+              version: 'v1',
+              spec: { options: {}, fieldConfig: {} },
+            },
+            created_at: '2026-08-15T01:00:00Z',
+            updated_at: '2026-08-15T01:00:00Z',
+          },
+        },
+      ],
+    };
+    const backendSrv = {
+      fetch: jest.fn((request: BackendSrvRequest) =>
+        of({
+          data: request.url?.endsWith('/canvas') ? projection : { session, messages: [] },
+          status: 200,
+          statusText: 'OK',
+          ok: true,
+          headers: new Headers(),
+        } as FetchResponse<unknown>)
+      ),
+      chunked: jest.fn(),
+    } as unknown as BackendSrv;
+    const gateway = createResourceWorkbenchGateway({ backendSrv });
+    await expect(gateway.openSession(session.id)).resolves.toMatchObject({
+      canvas: { revision: 3, charts: [{ id: 'cht_abcdefgh' }] },
+    });
+    await gateway.updateCanvas!(session.id, { ...projectionToCanvas(projection), visible: false });
+    const update = (backendSrv.fetch as jest.Mock).mock.calls.at(-1)?.[0] as BackendSrvRequest;
+    expect(update.headers).toMatchObject({ 'If-Match': '"canvas:3"' });
+    expect(update.data).toMatchObject({ visible: false, ordered_chart_ids: ['cht_abcdefgh'] });
   });
 
   test('maps stable SSE events and sends the turn idempotency key', async () => {
@@ -76,6 +151,32 @@ describe('Control Plane Workbench gateway', () => {
         url: expect.stringContaining(`/api/v1/sessions/${session.id}/turns:stream`),
         data: { message: 'CPU', mentions: ['service:api'] },
         headers: { 'Idempotency-Key': 'client-turn-1' },
+      })
+    );
+  });
+
+  test('maps canvas.updated into a refreshable Workbench event', async () => {
+    const backendSrv = fakeBackend({
+      chunks: [
+        event({
+          event_type: 'canvas.updated',
+          payload: { chart_id: 'cht_abcdefgh', operation_id: 'operation-1', revision: 2 },
+          turn_id: 'turn_0123456789',
+        }),
+        event({ event_type: 'turn.completed', turn_id: 'turn_0123456789', payload: { status: 'succeeded' } }),
+      ],
+    });
+    const gateway = createResourceWorkbenchGateway({ backendSrv });
+    const events = await collect(
+      gateway.streamMessage(
+        { clientTurnId: 'client-turn-1', sessionId: session.id, input: 'chart', mentions: [] },
+        new AbortController().signal
+      )
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'canvas_updated',
+        payload: expect.objectContaining({ chartId: 'cht_abcdefgh', revision: 2 }),
       })
     );
   });
@@ -179,6 +280,36 @@ const session = {
   created_at: '2026-08-13T01:00:00Z',
   updated_at: '2026-08-13T01:01:00Z',
 };
+
+function projectionToCanvas(projection: any) {
+  return {
+    visible: projection.visible,
+    layout: projection.layout,
+    revision: projection.revision,
+    activeChartId: projection.active_chart_id,
+    charts: projection.items.map((item: any) => {
+      const chart = item.chart;
+      return {
+        id: chart.id,
+        title: chart.title,
+        description: chart.description,
+        visualization: 'line' as const,
+        vizConfig: chart.viz_config,
+        query: {
+          id: chart.query.id,
+          session_id: 'ses_abcdefgh',
+          version: chart.query.version,
+          spec: {
+            datasource_uid: chart.query.datasource_uid,
+            expression: chart.query.expression,
+            range: chart.query.range,
+          },
+          created_at: chart.query.created_at,
+        },
+      };
+    }),
+  };
+}
 
 let sequence = 0;
 function event(input: { event_type: string; payload: object; turn_id?: string }): string {

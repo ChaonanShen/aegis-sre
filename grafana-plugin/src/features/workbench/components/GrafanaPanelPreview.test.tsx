@@ -20,6 +20,10 @@ describe('GrafanaPanelPreview', () => {
     jest.clearAllMocks();
   });
 
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
   test('使用 Query 的绝对时间范围查询，并用 VizConfig 渲染原生图表', async () => {
     const frame = toDataFrame({
       refId: 'A',
@@ -59,6 +63,27 @@ describe('GrafanaPanelPreview', () => {
     );
   });
 
+  test('兼容 Canvas v1 VizConfig 并使用 Grafana 原生渲染器', async () => {
+    const frame = toDataFrame({
+      refId: 'A',
+      fields: [
+        { name: 'Time', type: FieldType.time, values: [1784714950000, 1784714965000] },
+        { name: 'Value', type: FieldType.number, values: [1, 2] },
+      ],
+    });
+    const query = jest.fn((_request: DataQueryRequest) => of({ data: [frame], state: LoadingState.Done }));
+    mockedGetDataSourceSrv.mockReturnValue({
+      get: jest.fn(async () => ({ type: 'prometheus', query })),
+    } as unknown as ReturnType<typeof getDataSourceSrv>);
+    const chart = definitionChart();
+    chart.vizConfig = { ...(chart.vizConfig as Record<string, unknown>), version: 'v1' };
+
+    render(<ChartPreview chart={chart} />);
+
+    await waitFor(() => expect(mockedPanelRenderer).toHaveBeenCalled());
+    expect(mockedPanelRenderer.mock.calls.at(-1)?.[0]).toEqual(expect.objectContaining({ pluginId: 'timeseries' }));
+  });
+
   test('显式 fixture 图表仍使用本地预览，不会查询数据源', () => {
     const get = jest.fn();
     mockedGetDataSourceSrv.mockReturnValue({ get } as unknown as ReturnType<typeof getDataSourceSrv>);
@@ -93,7 +118,41 @@ describe('GrafanaPanelPreview', () => {
     expect(teardown).toHaveBeenCalledTimes(1);
   });
 
+  test('同一毫秒恢复多张图时为每条查询生成唯一 requestId', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_786_788_206_818);
+    const query = jest.fn((_request: DataQueryRequest) => of({ data: [], state: LoadingState.Done }));
+    mockedGetDataSourceSrv.mockReturnValue({
+      get: jest.fn(async () => ({ type: 'prometheus', query })),
+    } as unknown as ReturnType<typeof getDataSourceSrv>);
+    const charts = Array.from({ length: 6 }, (_, index) => {
+      const chart = definitionChart();
+      chart.id = `chart-${index}`;
+      chart.query = {
+        ...chart.query!,
+        id: `query-${index}`,
+        spec: {
+          ...chart.query!.spec,
+          expression: `rate(http_requests_total{instance=\"node-${index}\"}[5m])`,
+        },
+      };
+      return chart;
+    });
+
+    render(
+      <>
+        {charts.map((chart) => (
+          <ChartPreview chart={chart} key={chart.id} />
+        ))}
+      </>
+    );
+
+    await waitFor(() => expect(query).toHaveBeenCalledTimes(6));
+    const requestIds = query.mock.calls.map(([request]) => request.requestId);
+    expect(new Set(requestIds).size).toBe(6);
+  });
+
   test('数据源失败时显示原因，并允许重新查询', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(1_786_788_206_818);
     const query = jest
       .fn((_request: DataQueryRequest) => of({ data: [], state: LoadingState.Done }))
       .mockImplementationOnce(() => throwError(() => new Error('Prometheus 暂时不可用')));
@@ -108,6 +167,7 @@ describe('GrafanaPanelPreview', () => {
 
     expect(await screen.findByText('查询完成，但没有数据')).toBeInTheDocument();
     expect(query).toHaveBeenCalledTimes(2);
+    expect(query.mock.calls[0][0].requestId).not.toBe(query.mock.calls[1][0].requestId);
   });
 
   test('缺少 Query 时显示可理解状态，不会退回 fixture 曲线', () => {
