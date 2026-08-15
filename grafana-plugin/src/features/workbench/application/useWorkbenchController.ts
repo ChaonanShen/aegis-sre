@@ -788,8 +788,24 @@ export function useWorkbenchController({
       const canvas = update(opened.canvas);
       const next = { ...opened, canvas };
       publishOpened(next);
+      if (gateway.updateCanvas) {
+        void gateway
+          .updateCanvas(opened.session.id, canvas)
+          .then((persisted) => {
+            const current = openedRef.current;
+            if (current?.session.id === opened.session.id && current.canvas === canvas) {
+              publishOpened({ ...current, canvas: persisted });
+            }
+          })
+          .catch(() => {
+            const current = openedRef.current;
+            if (current?.session.id === opened.session.id && current.canvas === canvas) {
+              publishOpened({ ...current, canvas: opened.canvas });
+            }
+          });
+      }
     },
-    [publishOpened]
+    [gateway, publishOpened]
   );
 
   const archiveCurrentSession = useCallback(async () => {
@@ -828,21 +844,24 @@ export function useWorkbenchController({
     }
   }, [gateway, loadSessions, publishOpened, streaming]);
 
-  const renameCurrentSession = useCallback(async (title: string) => {
-    const opened = openedRef.current;
-    const value = title.trim();
-    if (!opened || !value || opened.session.id !== routeSessionIdRef.current || streaming) return false;
-    try {
-      const summary = await gateway.renameSession(opened.session.id, value);
-      if (openedRef.current?.session.id !== summary.id || routeSessionIdRef.current !== summary.id) return false;
-      publishOpened({ ...openedRef.current, session: summary });
-      await loadSessions();
-      return true;
-    } catch (error) {
-      if (!isAbortError(error)) setArchiveError(toError(error).message);
-      return false;
-    }
-  }, [gateway, loadSessions, publishOpened, streaming]);
+  const renameCurrentSession = useCallback(
+    async (title: string) => {
+      const opened = openedRef.current;
+      const value = title.trim();
+      if (!opened || !value || opened.session.id !== routeSessionIdRef.current || streaming) return false;
+      try {
+        const summary = await gateway.renameSession(opened.session.id, value);
+        if (openedRef.current?.session.id !== summary.id || routeSessionIdRef.current !== summary.id) return false;
+        publishOpened({ ...openedRef.current, session: summary });
+        await loadSessions();
+        return true;
+      } catch (error) {
+        if (!isAbortError(error)) setArchiveError(toError(error).message);
+        return false;
+      }
+    },
+    [gateway, loadSessions, publishOpened, streaming]
+  );
 
   const deleteCurrentSession = useCallback(async () => {
     const opened = openedRef.current;

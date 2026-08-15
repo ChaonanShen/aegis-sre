@@ -67,6 +67,8 @@ export interface CanvasPreview {
   visible: boolean;
   layout: CanvasLayout;
   charts: SavedChartPreview[];
+  revision?: number;
+  activeChartId?: string;
 }
 
 /** Layout values registered by the public Canvas contract. */

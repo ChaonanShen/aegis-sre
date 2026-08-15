@@ -19,9 +19,11 @@ type ContractSession = components['schemas']['Session'];
 type ContractSessionDetail = components['schemas']['SessionDetail'];
 type ContractSessionPage = components['schemas']['SessionPage'];
 type ContractMessage = components['schemas']['Message'];
+type ContractCanvasProjection = components['schemas']['CanvasProjection'];
 type Problem = components['schemas']['Problem'];
 
 const sessionsPath = '/api/v1/sessions';
+const canvasPath = (sessionId: string) => `${sessionsPath}/${encodeURIComponent(sessionId)}/canvas`;
 const maxErrorResponseBytes = 64 * 1024;
 
 export interface ResourceWorkbenchGatewayOptions {
@@ -42,8 +44,11 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
       return page.items.map((session) => toSessionSummary(session));
     },
     async openSession(sessionId, signal) {
-      const detail = await resources().request(sessionPath(sessionId), isSessionDetail, { signal });
-      return toOpenedSession(detail);
+      const [detail, canvas] = await Promise.all([
+        resources().request(sessionPath(sessionId), isSessionDetail, { signal }),
+        resources().request(canvasPath(sessionId), isCanvasProjection, { signal }),
+      ]);
+      return toOpenedSession(detail, canvas);
     },
     async createSession(input, signal) {
       const session = await resources().request(sessionsPath, isSession, {
@@ -72,6 +77,20 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
     },
     async deleteSession(sessionId, signal) {
       await resources().requestVoid(sessionPath(sessionId), { method: 'DELETE', signal });
+    },
+    async updateCanvas(sessionId, canvas, signal) {
+      const projection = await resources().request(canvasPath(sessionId), isCanvasProjection, {
+        method: 'PUT',
+        data: {
+          visible: canvas.visible,
+          layout: canvas.layout,
+          active_chart_id: canvas.activeChartId ?? null,
+          ordered_chart_ids: canvas.charts.map((chart) => chart.id),
+        },
+        headers: { 'If-Match': `"canvas:${canvas.revision ?? 0}"` },
+        signal,
+      });
+      return toCanvasPreview(projection);
     },
     async getContext(folderUid, signal) {
       throwIfAborted(signal);
@@ -264,12 +283,12 @@ function mapEvent(event: AegisEvent, clientTurnId: string, lastToolCallID?: stri
   }
 }
 
-function toOpenedSession(detail: ContractSessionDetail): OpenedSession {
+function toOpenedSession(detail: ContractSessionDetail, canvas: ContractCanvasProjection): OpenedSession {
   const messages = (detail.messages ?? []).map(toMessage);
   return {
     session: toSessionSummary(detail.session, messages),
     messages,
-    canvas: { visible: false, layout: 'grid-2x2', charts: [] },
+    canvas: toCanvasPreview(canvas),
   };
 }
 
@@ -277,7 +296,42 @@ function emptyOpenedSession(session: ContractSession): OpenedSession {
   return {
     session: toSessionSummary(session),
     messages: [],
-    canvas: { visible: false, layout: 'grid-2x2', charts: [] },
+    canvas: { visible: false, layout: 'grid-2x2', charts: [], revision: 0 },
+  };
+}
+
+function toCanvasPreview(projection: ContractCanvasProjection): OpenedSession['canvas'] {
+  return {
+    visible: projection.visible,
+    layout: projection.layout,
+    revision: projection.revision,
+    activeChartId: projection.active_chart_id ?? undefined,
+    charts: projection.items
+      .slice()
+      .sort((left, right) => left.position - right.position)
+      .map(({ chart }) => ({
+        id: chart.id,
+        title: chart.title,
+        description: chart.description,
+        visualization: 'line',
+        renderMode: 'definition',
+        vizConfig: chart.viz_config,
+        query: {
+          id: chart.query.id,
+          session_id: projection.session_id,
+          version: chart.query.version,
+          spec: {
+            datasource_uid: chart.query.datasource_uid,
+            expression: chart.query.expression,
+            range: {
+              from: chart.query.range.from,
+              to: chart.query.range.to,
+              step_seconds: chart.query.range.step_seconds,
+            },
+          },
+          created_at: chart.query.created_at,
+        },
+      })),
   };
 }
 
@@ -316,6 +370,18 @@ function isSessionPage(value: unknown): value is ContractSessionPage {
   const record = asRecord(value);
   return Boolean(
     record && Array.isArray(record.items) && record.items.every(isSession) && typeof record.has_more === 'boolean'
+  );
+}
+
+function isCanvasProjection(value: unknown): value is ContractCanvasProjection {
+  const record = asRecord(value);
+  return Boolean(
+    record &&
+    typeof record.session_id === 'string' &&
+    typeof record.visible === 'boolean' &&
+    typeof record.layout === 'string' &&
+    typeof record.revision === 'number' &&
+    Array.isArray(record.items)
   );
 }
 
