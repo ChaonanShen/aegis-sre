@@ -58,6 +58,7 @@ const (
 	CapabilityPlaybook   Capability = "playbook"
 	CapabilityKnowledge  Capability = "knowledge"
 	CapabilityGrafanaMCP Capability = "grafana_mcp"
+	CapabilityCanvas     Capability = "canvas"
 )
 
 type Config struct {

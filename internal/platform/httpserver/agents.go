@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
@@ -18,7 +19,11 @@ import (
 
 const maxAgentJSONBytes int64 = 1 << 20
 
-func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider) {
+type canvasDeleter interface {
+	Delete(context.Context, domain.ActorContext, domain.ID) error
+}
+
+func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, canvas canvasDeleter) {
 	if provider == nil {
 		return
 	}
@@ -132,8 +137,15 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider) {
 		if !ok {
 			return
 		}
-		if handleProviderError(w, request, provider.DeleteSession(request.Context(), actorFromRequest(request), ref)) {
+		providerErr := provider.DeleteSession(request.Context(), actorFromRequest(request), ref)
+		if providerErr != nil && !isNotFoundError(providerErr) {
+			handleProviderError(w, request, providerErr)
 			return
+		}
+		if canvas != nil {
+			if handleCanvasError(w, request, canvas.Delete(request.Context(), actorFromRequest(request), ref.ID)) {
+				return
+			}
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -225,6 +237,11 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider) {
 		}
 		streamSSE(w, request, stream)
 	})
+}
+
+func isNotFoundError(err error) bool {
+	var appErr *domain.AppError
+	return errors.As(err, &appErr) && appErr.Code == domain.ErrorNotFound
 }
 
 func agentPageLimit(w http.ResponseWriter, request *http.Request) (int, bool) {

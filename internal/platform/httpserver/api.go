@@ -44,10 +44,15 @@ func apiHandler(cfg config.Config, deps dependencies) http.Handler {
 			{Name: "playbook", Status: statuses[config.CapabilityPlaybook].status, Reason: statuses[config.CapabilityPlaybook].reason},
 			{Name: "grafana_read", Status: statuses[config.CapabilityGrafanaMCP].status, Reason: statuses[config.CapabilityGrafanaMCP].reason},
 			{Name: "grafana_write", Status: "unavailable", Reason: "not configured"},
+			{Name: "canvas", Status: statuses[config.CapabilityCanvas].status, Reason: statuses[config.CapabilityCanvas].reason},
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"items": items})
 	})
-	registerAgentHandlers(mux, deps.agents)
+	var canvas canvasDeleter
+	if deps.canvas != nil {
+		canvas = deps.canvas
+	}
+	registerAgentHandlers(mux, deps.agents, canvas)
 	registerPlaybookHandlers(mux, deps.playbooks)
 	registerKnowledgeHandlers(mux, deps.knowledge, deps.knowledgeIDs)
 	registerCanvasHandlers(mux, deps.canvas)
@@ -89,7 +94,7 @@ type dependencyStatus struct {
 
 func dependencyStatuses(ctx context.Context, cfg config.Config, deps dependencies) map[config.Capability]dependencyStatus {
 	statuses := make(map[config.Capability]dependencyStatus)
-	for _, name := range []config.Capability{config.CapabilityAgent, config.CapabilityPlaybook, config.CapabilityKnowledge, config.CapabilityGrafanaMCP} {
+	for _, name := range []config.Capability{config.CapabilityAgent, config.CapabilityPlaybook, config.CapabilityKnowledge, config.CapabilityGrafanaMCP, config.CapabilityCanvas} {
 		if !dependencyConfigured(name, cfg, deps) {
 			statuses[name] = dependencyStatus{status: "unavailable", reason: "not configured"}
 			continue
@@ -104,6 +109,9 @@ func dependencyStatuses(ctx context.Context, cfg config.Config, deps dependencie
 	}
 	if deps.knowledge != nil {
 		statuses[config.CapabilityKnowledge] = probeDependency(ctx, deps.knowledgeHealth)
+	}
+	if deps.canvas != nil {
+		statuses[config.CapabilityCanvas] = probeDependency(ctx, deps.canvasHealth)
 	}
 	return statuses
 }

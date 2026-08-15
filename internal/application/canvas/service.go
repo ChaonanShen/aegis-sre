@@ -17,6 +17,13 @@ func New(agents ports.AgentProvider, store ports.CanvasStore) *Service {
 	return &Service{agents: agents, store: store}
 }
 
+func (service *Service) Check(ctx context.Context) error {
+	if service == nil || service.store == nil {
+		return unavailable("Canvas persistence is not configured", nil)
+	}
+	return service.store.Check(ctx)
+}
+
 func (service *Service) Get(ctx context.Context, actor domain.ActorContext, sessionID domain.ID) (domain.CanvasProjection, error) {
 	if err := service.validate(ctx, actor, sessionID, false); err != nil {
 		return domain.CanvasProjection{}, err

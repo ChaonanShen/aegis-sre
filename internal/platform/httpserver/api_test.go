@@ -33,7 +33,7 @@ func TestCapabilitiesRequireActorAndReportUnavailable(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if len(body.Items) != 5 || body.Items[0].Status != "unavailable" {
+	if len(body.Items) != 6 || body.Items[0].Status != "unavailable" || body.Items[5].Name != "canvas" || body.Items[5].Status != "unavailable" {
 		t.Fatalf("unexpected capabilities: %+v", body.Items)
 	}
 }

@@ -36,6 +36,7 @@ type dependencies struct {
 	knowledgeMCP    http.Handler
 	playbookMCP     http.Handler
 	canvas          *canvasapp.Service
+	canvasHealth    func(context.Context) error
 }
 
 func WithAgentProvider(provider ports.AgentProvider) Option {
@@ -77,7 +78,12 @@ func WithPlaybookMCP(handler http.Handler) Option {
 }
 
 func WithCanvasService(service *canvasapp.Service) Option {
-	return func(deps *dependencies) { deps.canvas = service }
+	return func(deps *dependencies) {
+		deps.canvas = service
+		if service != nil {
+			deps.canvasHealth = service.Check
+		}
+	}
 }
 
 func New(cfg config.Config, logger *slog.Logger, options ...Option) *http.Server {
@@ -132,6 +138,8 @@ func dependencyConfigured(name config.Capability, cfg config.Config, deps depend
 		return deps.playbooks != nil || cfg.Endpoints[name] != ""
 	case config.CapabilityKnowledge:
 		return deps.knowledge != nil || cfg.Endpoints[name] != ""
+	case config.CapabilityCanvas:
+		return deps.canvas != nil || cfg.CanvasEnabled
 	default:
 		return cfg.Endpoints[name] != ""
 	}
