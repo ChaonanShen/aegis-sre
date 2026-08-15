@@ -88,6 +88,7 @@ services:
       - ./deploy/local/secrets/deepseek-api-key:/run/secrets/deepseek-api-key:ro
       - ./deploy/local/secrets/grafana-mcp-caller-token:/run/secrets/grafana-mcp-caller-token:ro
       - ./deploy/local/secrets/playbook-mcp-token:/run/secrets/playbook-mcp-token:ro
+      - ./deploy/local/secrets/canvas-mcp-token:/run/secrets/canvas-mcp-token:ro
       - ./deploy/local/secrets/opencode-server-password:/run/secrets/opencode-server-password:ro
     depends_on:
       grafana-mcp-gateway:

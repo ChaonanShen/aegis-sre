@@ -34,6 +34,16 @@
       },
       "enabled": true,
       "timeout": 10000
+    },
+    "canvas": {
+      "type": "remote",
+      "url": "http://control-plane:8080/mcp/canvas",
+      "oauth": false,
+      "headers": {
+        "Authorization": "Bearer {env:CANVAS_MCP_TOKEN}"
+      },
+      "enabled": true,
+      "timeout": 10000
     }
   },
   "tools": {

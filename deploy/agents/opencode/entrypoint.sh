@@ -19,6 +19,7 @@ read_secret() {
 export DEEPSEEK_API_KEY="$(read_secret DEEPSEEK_API_KEY /run/secrets/deepseek-api-key)"
 export GRAFANA_MCP_TOKEN="$(read_secret GRAFANA_MCP_TOKEN /run/secrets/grafana-mcp-caller-token)"
 export PLAYBOOK_MCP_TOKEN="$(read_secret PLAYBOOK_MCP_TOKEN /run/secrets/playbook-mcp-token)"
+export CANVAS_MCP_TOKEN="$(read_secret CANVAS_MCP_TOKEN /run/secrets/canvas-mcp-token)"
 if [ -n "${KNOWLEDGE_MCP_URL:-}" ]; then
   export KNOWLEDGE_MCP_TOKEN="$(read_secret KNOWLEDGE_MCP_TOKEN /run/secrets/knowledge-mcp-token)"
 fi
