@@ -74,8 +74,8 @@ agent-playbook-e2e:
 
 canvas-e2e: local-secrets plugin-backend-build plugin-build
 	@: $${CANVAS_SMOKE_PROMETHEUS_UID:?set CANVAS_SMOKE_PROMETHEUS_UID}
-	docker compose -p aegis-sre-audit-canvas up --build --wait
-	./scripts/smoke-local-canvas.mjs
+	GRAFANA_PORT=$${CANVAS_SMOKE_GRAFANA_PORT:-3300} DAGU_PORT=$${CANVAS_SMOKE_DAGU_PORT:-28081} docker compose -p aegis-sre-audit-canvas up --build --wait
+	GRAFANA_PORT=$${CANVAS_SMOKE_GRAFANA_PORT:-3300} ./scripts/smoke-local-canvas.mjs
 
 local-playbook-smoke:
 	./scripts/smoke-local-playbook.sh
