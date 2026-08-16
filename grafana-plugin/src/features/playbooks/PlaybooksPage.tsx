@@ -30,20 +30,25 @@ export default function PlaybooksPage() {
   );
   const tail = location.pathname.split(`/${ROUTES.Playbooks}/`)[1] ?? '';
   const [resourceId, action] = tail.split('/');
+  const writable = activeFolder?.permission === 'Edit' || activeFolder?.permission === 'Admin';
+  const admin = activeFolder?.permission === 'Admin';
 
   if (!gateway) {
     return <div className="playbook-loading">当前没有可访问的 Grafana Folder。</div>;
   }
   if (!resourceId) {
-    return <PlaybookListRoute gateway={gateway} />;
+    return <PlaybookListRoute gateway={gateway} writable={runtimeMode === 'fixture' || writable} />;
   }
   if (resourceId === 'new') {
+    if (runtimeMode !== 'fixture' && !writable) {
+      return <div className="playbook-loading">当前 Folder 只有查看权限。</div>;
+    }
     return <PlaybookEditor gateway={gateway} onSaved={(saved) => navigate(prefixRoute(`${ROUTES.Playbooks}/${saved.id}`))} />;
   }
-  return <PlaybookResourceRoute edit={action === 'edit'} gateway={gateway} id={resourceId} key={`${activeFolder?.uid}:${resourceId}:${action}`} />;
+  return <PlaybookResourceRoute admin={runtimeMode === 'fixture' || admin} edit={action === 'edit'} gateway={gateway} id={resourceId} key={`${activeFolder?.uid}:${resourceId}:${action}`} writable={runtimeMode === 'fixture' || writable} />;
 }
 
-function PlaybookListRoute({ gateway }: { gateway: PlaybookCrudGateway }) {
+function PlaybookListRoute({ gateway, writable }: { gateway: PlaybookCrudGateway; writable: boolean }) {
   const navigate = useNavigate();
   const controller = usePlaybooksController({ gateway });
   const [query, setQuery] = useState('');
@@ -59,6 +64,7 @@ function PlaybookListRoute({ gateway }: { gateway: PlaybookCrudGateway }) {
       playbooks={controller.state.data}
       query={query}
       setQuery={setQuery}
+      writable={writable}
     />
   );
 }
@@ -68,11 +74,13 @@ function PlaybookList({
   playbooks,
   query,
   setQuery,
+  writable,
 }: {
   onOpen: (id: string) => void;
   playbooks: PlaybookSummary[];
   query: string;
   setQuery: (value: string) => void;
+  writable: boolean;
 }) {
   const navigate = useNavigate();
   const filtered = useMemo(() => {
@@ -83,9 +91,11 @@ function PlaybookList({
     <main className="playbooks-page">
       <header className="playbook-page-header">
         <div><h1>Playbooks</h1><p>使用原生 Dagu YAML 管理可重复执行的流程定义。</p></div>
-        <button className="playbook-button primary" onClick={() => navigate(prefixRoute(`${ROUTES.Playbooks}/new`))} type="button">
-          <Plus size={13} /> 新建 Playbook
-        </button>
+        {writable && (
+          <button className="playbook-button primary" onClick={() => navigate(prefixRoute(`${ROUTES.Playbooks}/new`))} type="button">
+            <Plus size={13} /> 新建 Playbook
+          </button>
+        )}
       </header>
       <div className="playbook-toolbar">
         <label className="playbook-search">
@@ -108,7 +118,7 @@ function PlaybookList({
   );
 }
 
-function PlaybookResourceRoute({ edit, gateway, id }: { edit: boolean; gateway: PlaybookCrudGateway; id: string }) {
+function PlaybookResourceRoute({ admin, edit, gateway, id, writable }: { admin: boolean; edit: boolean; gateway: PlaybookCrudGateway; id: string; writable: boolean }) {
   const navigate = useNavigate();
   const state = usePlaybook(gateway, id);
   if (state.status === 'loading') {
@@ -117,14 +127,17 @@ function PlaybookResourceRoute({ edit, gateway, id }: { edit: boolean; gateway: 
   if (state.status === 'error') {
     return <LoadError error={state.error} retry={state.reload} />;
   }
+  if (edit && !writable) {
+    return <div className="playbook-loading">当前 Folder 只有查看权限。</div>;
+  }
   return edit ? (
     <PlaybookEditor gateway={gateway} onSaved={(saved) => navigate(prefixRoute(`${ROUTES.Playbooks}/${saved.id}`))} playbook={state.data} />
   ) : (
-    <PlaybookDetail gateway={gateway} playbook={state.data} />
+    <PlaybookDetail admin={admin} gateway={gateway} playbook={state.data} writable={writable} />
   );
 }
 
-function PlaybookDetail({ gateway, playbook }: { gateway: PlaybookCrudGateway; playbook: PlaybookDocument }) {
+function PlaybookDetail({ admin, gateway, playbook, writable }: { admin: boolean; gateway: PlaybookCrudGateway; playbook: PlaybookDocument; writable: boolean }) {
   const navigate = useNavigate();
   const [tab, setTab] = useState<'dag' | 'yaml' | 'runs'>('dag');
   const [deleting, setDeleting] = useState(false);
@@ -158,8 +171,8 @@ function PlaybookDetail({ gateway, playbook }: { gateway: PlaybookCrudGateway; p
           <p>{playbook.description}</p>
         </div>
         <div className="playbook-header-actions">
-          <button className="playbook-button secondary" onClick={() => navigate(prefixRoute(`${ROUTES.Playbooks}/${playbook.id}/edit`))} type="button">编辑</button>
-          <button className="playbook-button danger" disabled={deleting} onClick={() => void remove()} type="button">{deleting ? '删除中…' : '删除'}</button>
+          {writable && <button className="playbook-button secondary" onClick={() => navigate(prefixRoute(`${ROUTES.Playbooks}/${playbook.id}/edit`))} type="button">编辑</button>}
+          {admin && <button className="playbook-button danger" disabled={deleting} onClick={() => void remove()} type="button">{deleting ? '删除中…' : '删除'}</button>}
         </div>
       </header>
       {error && <div className="playbook-editor-error" role="alert">{error}</div>}
@@ -170,7 +183,7 @@ function PlaybookDetail({ gateway, playbook }: { gateway: PlaybookCrudGateway; p
       </div>
       {tab === 'dag' && <section className="playbook-panel">{projection ? <PlaybookDag steps={projection.steps} /> : <div className="playbook-empty compact">当前 YAML 无法生成简化 DAG 预览，请查看原生源码。</div>}</section>}
       {tab === 'yaml' && <section className="playbook-panel"><pre aria-label="Playbook YAML">{playbook.source}</pre></section>}
-      {tab === 'runs' && <PlaybookRunsPanel gateway={gateway} playbookId={playbook.id} parameters={projection?.parameters} />}
+      {tab === 'runs' && <PlaybookRunsPanel admin={admin} gateway={gateway} playbookId={playbook.id} parameters={projection?.parameters} writable={writable} />}
     </main>
   );
 }

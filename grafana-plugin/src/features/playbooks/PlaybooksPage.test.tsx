@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AppServicesProvider } from '../../app/AppServices';
 import { AppShellProvider } from '../../app/AppShellContext';
+import { FolderPermission } from '../../app/model';
 import { PlaybookDocument, PlaybookRunRecord } from './crudModel';
 import { PlaybookCrudGateway } from './ports/PlaybookCrudGateway';
 import PlaybooksPage from './PlaybooksPage';
@@ -110,6 +111,23 @@ describe('PlaybooksPage native Dagu CRUD', () => {
       'pbk_scope_abcdefgh', { source: controllerSource }, expect.any(AbortSignal)
     );
   });
+
+  test('maps View Edit and Admin Folder capabilities to Playbook actions', async () => {
+    const view = renderPage('/a/grafana-plugin-app/playbooks', fakeGateway(), 'View');
+    await screen.findByText('diagnose-api');
+    expect(screen.queryByRole('button', { name: '新建 Playbook' })).not.toBeInTheDocument();
+    view.unmount();
+
+    const edit = renderPage('/a/grafana-plugin-app/playbooks/pbk_scope_abcdefgh', fakeGateway(), 'Edit');
+    await screen.findByText('diagnose-api', { selector: 'code' });
+    expect(screen.getByRole('button', { name: '编辑' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '删除' })).not.toBeInTheDocument();
+    edit.unmount();
+
+    renderPage('/a/grafana-plugin-app/playbooks/pbk_scope_abcdefgh', fakeGateway(), 'Admin');
+    await screen.findByText('diagnose-api', { selector: 'code' });
+    expect(screen.getByRole('button', { name: '删除' })).toBeInTheDocument();
+  });
 });
 
 function document(source = firstSource): PlaybookDocument {
@@ -141,13 +159,13 @@ function fakeGateway(): jest.Mocked<PlaybookCrudGateway> {
   return gateway;
 }
 
-function renderPage(initialEntry: string, gateway: PlaybookCrudGateway) {
+function renderPage(initialEntry: string, gateway: PlaybookCrudGateway, permission: FolderPermission = 'Admin') {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <AppServicesProvider
         services={{
           folderGateway: {
-            listFolders: async () => [{ uid: 'ops', title: 'Operations', permission: 'Admin', serviceCount: 0 }],
+            listFolders: async () => [{ uid: 'ops', title: 'Operations', permission, serviceCount: 0 }],
           },
           playbookGateway: gateway,
         }}

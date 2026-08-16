@@ -3,14 +3,17 @@ import { PlaybookRunRecord } from '../crudModel';
 import { PlaybookParameter } from '../model';
 import { PlaybookCrudGateway } from '../ports/PlaybookCrudGateway';
 
-export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { gateway: PlaybookCrudGateway; playbookId: string; parameters?: PlaybookParameter[] }) {
+export function PlaybookRunsPanel({ admin = true, gateway, playbookId, parameters = [], writable = true }: { admin?: boolean; gateway: PlaybookCrudGateway; playbookId: string; parameters?: PlaybookParameter[]; writable?: boolean }) {
   const [runs, setRuns] = useState<PlaybookRunRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [humanInput, setHumanInput] = useState('{}');
   const [actionBusy, setActionBusy] = useState(false);
-  const [artifacts, setArtifacts] = useState<Awaited<ReturnType<NonNullable<PlaybookCrudGateway['listArtifacts']>>> | undefined>();
+  const [artifactState, setArtifactState] = useState<{
+    runId: string;
+    items: Awaited<ReturnType<NonNullable<PlaybookCrudGateway['listArtifacts']>>>;
+  }>();
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(parameters.map((item) => [item.name, item.defaultValue])));
   const mounted = useRef(true);
 
@@ -51,12 +54,12 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
       try {
         if (!gateway.streamRun) {
           const next = await gateway.getRun(activeRunId, controller.signal);
-          if (mounted.current) setRuns((current) => upsertRun(current, next));
+          if (mounted.current) {setRuns((current) => upsertRun(current, next));}
           return;
         }
         let terminalSeen = false;
         for await (const next of gateway.streamRun(activeRunId, 0, controller.signal)) {
-          if (!mounted.current) return;
+          if (!mounted.current) {return;}
           setRuns((current) => upsertRun(current, next));
           if (terminal(next.status)) {
             terminalSeen = true;
@@ -65,7 +68,7 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
         }
         if (!terminalSeen && mounted.current) {
           const next = await gateway.getRun(activeRunId, controller.signal);
-          if (mounted.current) setRuns((current) => upsertRun(current, next));
+          if (mounted.current) {setRuns((current) => upsertRun(current, next));}
         }
       } catch (reason) {
         if (mounted.current && !isAbortError(reason)) {
@@ -73,7 +76,7 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
             const next = await gateway.getRun(activeRunId, controller.signal);
             setRuns((current) => upsertRun(current, next));
           } catch (fallbackReason) {
-            if (!isAbortError(fallbackReason)) setError(toError(reason).message);
+            if (!isAbortError(fallbackReason)) {setError(toError(reason).message);}
           }
         }
       }
@@ -85,38 +88,39 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
   }, [activeRunId, gateway]);
 
   useEffect(() => {
-    setArtifacts(undefined);
-    if (!latestRun || !gateway.listArtifacts || !terminal(latestRun.status)) return;
+    if (!latestRun || !gateway.listArtifacts || !terminal(latestRun.status)) {return;}
     const controller = new AbortController();
     void gateway.listArtifacts(latestRun.id, controller.signal).then(
-      (items) => { if (mounted.current) setArtifacts(items); },
-      (reason) => { if (mounted.current && !isAbortError(reason)) setError(toError(reason).message); }
+      (items) => { if (mounted.current) {setArtifactState({ runId: latestRun.id, items });} },
+      (reason) => { if (mounted.current && !isAbortError(reason)) {setError(toError(reason).message);} }
     );
     return () => controller.abort();
   }, [gateway, latestRun]);
 
+  const artifacts = artifactState && artifactState.runId === latestRun?.id ? artifactState.items : undefined;
+
   const completeHumanTask = useCallback(async () => {
-    if (!activeRun || !waitingInput || !gateway.completeHumanTask || actionBusy) return;
+    if (!activeRun || !waitingInput || !gateway.completeHumanTask || actionBusy) {return;}
     let input: Record<string, unknown>;
     try { input = JSON.parse(humanInput) as Record<string, unknown>; } catch { setError('Human Task 输入必须是合法 JSON。'); return; }
     setActionBusy(true); setError('');
     try {
       await gateway.completeHumanTask(activeRun.id, waitingInput.id, input, `human-${crypto.randomUUID()}`);
       const next = await gateway.getRun(activeRun.id);
-      if (mounted.current) setRuns((current) => upsertRun(current, next));
-    } catch (reason) { if (!isAbortError(reason)) setError(toError(reason).message); }
-    finally { if (mounted.current) setActionBusy(false); }
+      if (mounted.current) {setRuns((current) => upsertRun(current, next));}
+    } catch (reason) { if (!isAbortError(reason)) {setError(toError(reason).message);} }
+    finally { if (mounted.current) {setActionBusy(false);} }
   }, [actionBusy, activeRun, gateway, humanInput, waitingInput]);
 
   const resolveApproval = useCallback(async (decision: 'approve' | 'reject' | 'rewind') => {
-    if (!activeRun || !waitingApproval || !gateway.resolveApproval || actionBusy) return;
+    if (!activeRun || !waitingApproval || !gateway.resolveApproval || actionBusy) {return;}
     setActionBusy(true); setError('');
     try {
       await gateway.resolveApproval(activeRun.id, waitingApproval.id, decision, {}, `approval-${crypto.randomUUID()}`);
       const next = await gateway.getRun(activeRun.id);
-      if (mounted.current) setRuns((current) => upsertRun(current, next));
-    } catch (reason) { if (!isAbortError(reason)) setError(toError(reason).message); }
-    finally { if (mounted.current) setActionBusy(false); }
+      if (mounted.current) {setRuns((current) => upsertRun(current, next));}
+    } catch (reason) { if (!isAbortError(reason)) {setError(toError(reason).message);} }
+    finally { if (mounted.current) {setActionBusy(false);} }
   }, [actionBusy, activeRun, gateway, waitingApproval]);
 
   const start = useCallback(async () => {
@@ -171,7 +175,7 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
     setBusy(true);
     setError('');
     try {
-      if (!gateway.retryRun) return;
+      if (!gateway.retryRun) {return;}
       const next = await gateway.retryRun(latestRun.id, `retry-${crypto.randomUUID()}`);
       if (mounted.current) {
         setRuns((current) => upsertRun(current, next));
@@ -192,14 +196,14 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
       <header>
         <div><h2>运行记录</h2><small>状态直接来自 Dagu，运行期间自动刷新。</small></div>
         <div className="playbook-run-actions">
-          {latestRun && (latestRun.status === 'failed' || latestRun.status === 'cancelled') && (
+          {writable && latestRun && (latestRun.status === 'failed' || latestRun.status === 'cancelled') && (
             <button className="playbook-button secondary" disabled={busy} onClick={() => void retry()} type="button">重试运行</button>
           )}
-          {activeRun ? (
+          {writable && (activeRun ? (
             <button className="playbook-button danger" disabled={busy} onClick={() => void cancel()} type="button">取消运行</button>
           ) : (
             <button className="playbook-button primary" disabled={busy} onClick={() => void start()} type="button">{busy ? '启动中…' : '运行 Playbook'}</button>
-          )}
+          ))}
         </div>
       </header>
       {parameters.length > 0 && !activeRun && (
@@ -213,14 +217,14 @@ export function PlaybookRunsPanel({ gateway, playbookId, parameters = [] }: { ga
         </div>
       )}
       {error && <div className="playbook-editor-error" role="alert">{error}</div>}
-      {waitingInput && (
+      {writable && waitingInput && (
         <section aria-label="Human Task" className="playbook-run-interaction">
           <h3>等待人工输入 · {waitingInput.name || waitingInput.id}</h3>
           <textarea aria-label="Human Task JSON 输入" onChange={(event) => setHumanInput(event.currentTarget.value)} value={humanInput} />
           <button className="playbook-button primary" disabled={actionBusy} onClick={() => void completeHumanTask()} type="button">提交输入</button>
         </section>
       )}
-      {waitingApproval && (
+      {admin && waitingApproval && (
         <section aria-label="Approval" className="playbook-run-interaction">
           <h3>等待审批 · {waitingApproval.name || waitingApproval.id}</h3>
           <div className="playbook-run-actions">
