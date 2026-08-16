@@ -2,7 +2,7 @@
 
 Aegis SRE 是一个以 Grafana App Plugin 为入口的开源 SRE 工作台。项目本身只维护产品控制面与必要的集成层，Agent、知识检索、Playbook 编排和 Grafana 工具能力分别交给成熟组件。
 
-当前已完成仓库基线、无状态 Control Plane、v1 公共契约、Plugin Backend 受信代理，以及 Dagu Playbook 到只读 Grafana MCP 的基本执行链。阶段 6 的 Agent 核心链路已经接入 Codex App Server 与 OpenCode Server。阶段 8 已完成 Provider-neutral Knowledge 端口、RAGLite sidecar 与 adapter、RAGFlow 回退 adapter、管理与检索界面、受限 MCP endpoint，以及 OpenCode/Dagu 注册；真实数据质量、迁移和重启恢复仍待用运维文档验收。Codex Knowledge MCP 注册、OpenCode 审批续流和统一 MCP 启动校验仍是明确缺口。
+当前已完成仓库基线、无状态 Control Plane、v1 公共契约、Plugin Backend 受信代理，以及 Dagu Playbook 到只读 Grafana MCP 的基本执行链。阶段 6 的 Agent 核心链路已经接入 Codex App Server 与 OpenCode Server。Knowledge 已有 RAGLite sidecar、adapter、管理页面和受限 MCP 基线，正在按 ADR 0011 收敛为 Knowledge Base、Document、自动索引四态、Passage 和有序引用 Search；RAGFlow 进入只读/回退退出窗口。真实数据质量、迁移和重启恢复仍待验收。
 
 ## 目标组件
 
@@ -11,7 +11,7 @@ Aegis SRE 是一个以 Grafana App Plugin 为入口的开源 SRE 工作台。项
 | Grafana 内产品界面 | Grafana App Plugin | 页面、交互、Resource Gateway |
 | 产品控制面 | Aegis Control Plane | 稳定 API、授权收敛、协议归一化、Provider 适配 |
 | Agent | Codex App Server；OpenCode 可替换 | 仅通过 `AgentProvider` 接入 |
-| 知识库 | RAGLite（默认目标）；RAGFlow（迁移期回退） | Collection、文档解析、Chunk、Embedding、检索 |
+| 知识库 | RAGLite | Knowledge Base、Document、自动索引、Passage、Embedding、检索 |
 | Playbook | Dagu | 原生 YAML、调度、审批、运行、日志、Artifact |
 | Grafana 工具 | Grafana 官方 MCP Server | 指标、日志、告警、Dashboard 等工具 |
 | Workflow 出站工具 | `mcp.call` Dagu Action | 受白名单约束地调用外部 MCP 工具 |
@@ -68,7 +68,7 @@ make local-smoke
 5. 页面仍显示“无可用 Folder”时，先用 `docker compose logs grafana-bootstrap` 确认 bootstrap 成功，再检查当前
    Grafana 用户是否拥有目标 Folder 的 Aegis read action，并强制刷新浏览器以清除旧插件脚本缓存。
 
-Knowledge 是可选部署，不影响基础栈独立运行。默认的轻量 RAGLite 启动与恢复流程见 [RAGLite 本地部署](deploy/raglite/README.md)；迁移窗口内的 [RAGFlow 本地部署](deploy/ragflow/README.md) 仅用于显式回退和对比验收。
+Knowledge 是可选部署，不影响基础栈独立运行。RAGLite 启动与恢复流程见 [RAGLite 本地部署](deploy/raglite/README.md)。RAGFlow 只在退出窗口内用于受控数据迁移和显式回退，不再作为目标运行模式。
 
 Plugin Backend 通过以下环境变量连接 Control Plane：
 
@@ -92,6 +92,7 @@ npm run build
 
 - [目标架构](docs/architecture.md)
 - [详细实施计划](docs/implementation-plan.md)
+- [Knowledge 产品契约收敛执行计划](docs/knowledge-product-contract-execution-plan.md)
 - [迁移记录](docs/migration-notes.md)
 - [轻量 Knowledge Provider 替换调研](docs/research/lightweight-rag-replacement-research.md)
 - [RAGLite 接入详细调研](docs/research/raglite-integration-research.md)
@@ -109,4 +110,4 @@ npm run build
 
 ## License
 
-项目采用 [Apache License 2.0](LICENSE)。Dagu、RAGFlow、Grafana MCP、Codex/OpenCode 等独立部署组件继续遵循各自许可证，不复制到本仓库中维护。
+项目采用 [Apache License 2.0](LICENSE)。RAGLite、Dagu、Grafana MCP、Codex/OpenCode 等独立部署组件继续遵循各自许可证，不复制到本仓库中维护。RAGFlow 在退出窗口结束前仍遵循其原许可证和归档要求。

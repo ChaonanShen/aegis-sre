@@ -1,11 +1,19 @@
-# Knowledge Provider 抽象与 RAGLite 迁移执行计划
+# Knowledge Provider 抽象与 RAGLite 迁移执行计划（历史）
 
-> 状态：执行前方案，待 contract spike 通过后进入实现
+> 状态：已由 ADR 0011 和新的产品契约执行计划取代，仅保留为双 Provider 迁移历史
 >
 > 日期：2026-08-15
 >
 > 关联：docs/adr/0004-knowledge-identity-and-folder-authorization.md、
 > docs/adr/0006-provider-capability-gaps.md、docs/adr/0008-raglite-reassessment.md
+
+目标系统已经决定只支持 RAGLite，不再以 RAGFlow/RAGLite 最大公约数设计 `KnowledgeProvider`。后续不得继续按
+本文的 factory、Provider 选择、threshold、start/stop indexing、Chunk 公共模型或双 Provider contract suite
+实施。新的唯一执行入口是
+[Knowledge 产品契约收敛与 RAGLite 单 Provider 执行计划](knowledge-product-contract-execution-plan.md)。
+
+本文仍用于解释 RAGLite sidecar、数据目录、备份集合和 RAGFlow 退出前的历史迁移背景；与 ADR 0011 冲突时以
+ADR 0011 为准。
 
 基础调研见 [RAGLite 接入详细调研](research/raglite-integration-research.md) 和
 [轻量 RAG 替代方案调研](research/lightweight-rag-replacement-research.md)。

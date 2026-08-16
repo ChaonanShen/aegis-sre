@@ -5,7 +5,7 @@
 以已迁移的 Grafana Plugin Frontend 为产品入口，逐步完成以下可替换架构：
 
 - Codex 为默认 Agent，OpenCode 为可替换实现。
-- Knowledge Provider 负责知识解析与检索；首个替代实现为 RAGLite，RAGFlow 在迁移窗口内保留。
+- Knowledge Provider 负责知识解析与检索；目标态只支持 RAGLite，RAGFlow 仅在退出窗口内保留只读或回退能力。
 - Dagu 为 Playbook 定义和运行引擎。
 - Dagu 支持经过白名单约束的 `mcp.call` 自定义 Action。
 - Grafana 官方 MCP、Aegis Knowledge MCP、Dagu MCP 同时供 Agent 使用。
@@ -18,8 +18,8 @@
 Knowledge Provider 依赖和资源开销较大，放在 Dagu 与 Grafana MCP 基本链路稳定之后接入，但优先于 Agent 会话和 Canvas 增强。
 Knowledge 的公共接口仍先行冻结；完成真实检索与授权验收后保留 MCP 能力，待 Agent 接入时再注册给 Codex/OpenCode。
 
-Knowledge Provider 的抽象、RAGLite sidecar、迁移、回退和删除门槛详见
-[Knowledge Provider 抽象与 RAGLite 迁移执行计划](raglite-knowledge-provider-migration-plan.md)。
+Knowledge 产品契约、RAGLite sidecar 收敛、RAGFlow 退出和发布门槛详见
+[Knowledge 产品契约收敛与 RAGLite 单 Provider 执行计划](knowledge-product-contract-execution-plan.md)。
 
 Grafana Folder RBAC、Knowledge/Playbook/Agent 的资源归属、MCP 用户委托、审批和迁移顺序详见
 [统一权限实施计划](authorization-implementation-plan.md)。该计划是跨模块权限改动的执行门禁；与本文阶段顺序
@@ -165,7 +165,7 @@ internal/application/contracts/
 
 - Agent 会话、回合、审批和历史由 Agent Provider 持久化。
 - Playbook 定义、Run、Step、Human Task、审批、日志和 Artifact 由 Dagu 持久化。
-- Dataset/Collection、Document、解析状态、Chunk、Embedding 和索引由当前选定的 Knowledge Provider 持久化。
+- Knowledge Base、Document、索引任务、Passage、Embedding 和索引由 RAGLite sidecar 持久化。
 - Grafana Folder、权限和可由 Grafana 表达的标签、关联优先复用 Grafana 原生能力。
 - Control Plane 保持无状态的协议归一化、授权收敛和 Provider 适配层，不建立上述运行数据的影子表或摘要索引。
 - 稳定公共 ID、Provider ID 隔离和幂等仍是契约约束，但不得预设通过 PostgreSQL 实现。每个 Provider 垂直切片应先验证调用方生成 ID、原生 metadata/tag、确定性命名和原生幂等能力。
@@ -341,7 +341,7 @@ Dagu 2.13.0 没有重命名历史 DAG Run 的稳定接口，因此 Playbook 改�
 
 ## 9. 阶段 6：Codex 与 OpenCode Agent Provider
 
-状态：**执行中。默认链路已冻结为 Grafana Read + Aegis Playbook MCP；Knowledge Provider 代码保留但默认 disabled。OpenCode + DeepSeek 的本地核心会话闭环已完成真实冒烟；Playbook MCP facade、真实 Run 控制和组合冒烟入口已接入。OpenCode unarchive/approval 按 ADR 0006 明确不接入，Workbench 旧 Session 持久化抽象清理和双 Provider 合同验收仍待完成。**
+状态：**执行中。默认链路已冻结为 Grafana Read + Aegis Playbook MCP；Knowledge Provider 代码保留但默认 disabled。OpenCode + DeepSeek 的本地核心会话闭环已完成真实冒烟；Playbook MCP facade、真实 Run 控制和组合冒烟入口已接入。OpenCode unarchive/approval 按 ADR 0006 明确不接入，Workbench 旧 Session 持久化抽象清理和 Codex/OpenCode 合同验收仍待完成。**
 
 目标：Codex 作为默认 Provider，同时用 OpenCode 证明抽象没有泄漏。Grafana 插件的 Workbench 是唯一会话入口，不增加 Codex 或 OpenCode 独立聊天页面。Session、Turn、消息、审批和历史全部由 Agent Provider 持久化；Aegis 只提供无状态的公共契约、授权收敛、进程监管和协议适配。
 
@@ -686,14 +686,17 @@ provider-neutral 契约。
 - [ ] 安全测试确认路径穿越、外部 URL、脚本化 SVG 和超大响应均被拒绝或限制。
 - [ ] 真实 E2E 验证 `mcp.call` 产生的报告 Artifact 可在插件内定位、预览或下载，且不暴露 Dagu 文件系统路径。
 
-## 11. 阶段 8：Knowledge Provider 迁移垂直切片
+## 11. 阶段 8：Knowledge 产品契约与 RAGLite 垂直切片
 
-状态：**执行中。RAGLite sidecar、Go adapter、factory、容器和本地叠加部署已完成；现有 RAGFlow 实现保留为兼容 Provider。默认配置仍不装配、不启动、不注册 Knowledge MCP，真实文件集、恢复、迁移和质量门禁尚未通过。**
+状态：**重新收敛中。已有 RAGLite sidecar、Go adapter、REST、MCP 和真实页面可复用，但当前双 Provider 公共接口、
+手工索引、threshold、Chunk/score 和前端状态机将由 ADR 0011 取代。真实文件、恢复、迁移和质量门禁尚未通过。**
 
-目标：先完成 Provider contract spike 和 RAGLite 真实闭环，再通过部署级配置切换 Knowledge Provider；当前不启动任何未显式启用的 Provider，也不把未验收的 Knowledge 注册给 OpenCode、Codex 或 Dagu。
+目标：以 Knowledge Base、Document、自动索引四态、失败重试、Passage 和有序引用 Search 为唯一产品契约；目标部署
+只装配 RAGLite。当前不启动未显式启用的 Knowledge，也不把未验收的能力注册给 OpenCode、Codex 或 Dagu。
 
-详细任务、阶段状态、验收指标和 RAGFlow 删除门槛见
-[Knowledge Provider 抽象与 RAGLite 迁移执行计划](raglite-knowledge-provider-migration-plan.md)。本节只保留与整体产品计划相关的语义边界和依赖。
+详细任务、状态机、公共 API、RAGFlow 退出窗口和验收指标见
+[Knowledge 产品契约收敛与 RAGLite 单 Provider 执行计划](knowledge-product-contract-execution-plan.md)。旧的
+[双 Provider 迁移计划](raglite-knowledge-provider-migration-plan.md) 只保留历史背景。
 
 ### 8.0 Runbook、文档与 Playbook 的语义边界
 
@@ -702,13 +705,14 @@ provider-neutral 契约。
 - 当前阶段暂不实现独立 Runbook 模型、API、CRUD 或专用存储；前端 Runbook 区域只保留明确空态，不使用 fixture 冒充真实数据。
 - 后续需要 Runbook 时，优先将其作为 Knowledge 中的一类人类可读文档或标签/分类实现，不创建第二套 Workflow DSL，也不要求它具备执行语义。
 
-### 8.1 基础部署
+### 8.1 新产品契约
 
-- [ ] 固定当前兼容 Provider 和 RAGLite sidecar 的版本、镜像 digest 与配置 checksum。
-- [x] 为选定 Provider 的数据目录、索引、原文件和模型缓存配置持久卷。
-- [ ] 固定 Embedding 模型、DuckDB 扩展和 Pandoc 版本，并完成离线启动预热。
-- [x] 建立 sidecar readiness、单写约束、备份和恢复说明；实际恢复演练仍属于独立计划 P3。
-- [x] 记录不启动 Knowledge Provider 时其他模块的独立开发方式。
+- [x] 接受 ADR 0011，决定目标态只支持 RAGLite。
+- [ ] 将公共类型从 Collection/Chunk/Retrieval 收敛为 KnowledgeBase/Document/Passage/Search/Citation。
+- [ ] Document 状态只保留 queued/indexing/ready/failed；上传自动 queued，失败允许幂等重试。
+- [ ] 删除 threshold、score、start/stop、Provider job ID、Provider Chunk ID、精确页码承诺和公共 scope migration。
+- [ ] 增加 service、tags_any、tags_all 和多 Knowledge Base 检索。
+- [ ] metadata 更新自动重建索引，并通过内部 generation 防止旧任务覆盖新 metadata。
 
 ### 8.1.1 公共标识与最小授权前置
 
@@ -718,16 +722,14 @@ provider-neutral 契约。
 - [x] Knowledge MCP Token 在服务端绑定固定 Actor 与 Folder allowlist，缺失或越界默认拒绝。
 - [x] 覆盖跨 Folder 列表、详情、修改、删除、检索和 MCP 调用的拒绝测试。
 
-### 8.2 Knowledge Adapter
+### 8.2 RAGLite Provider 与部署
 
-- [x] Dataset 创建、更新和删除。
-- [x] 文档上传、开始解析、停止解析和删除。
-- [x] 文档解析状态轮询与状态映射。
-- [x] 文档、Chunk 分页浏览。
-- [x] 混合检索、阈值、Top K 和引用位置映射。
-- [x] 请求超时、只读请求有限重试、响应限额和错误净化。
-- [x] 验证 RAGFlow 与 RAGLite 的公共标识、metadata 查询和 scope 过滤策略，不建立跨 Provider 映射表。
-- [x] 对不确定的变更结果禁止自动重试，并提供 `provider_result_unknown` 对账语义。
+- [ ] provider.sqlite 持久化自动索引队列、状态转换、generation、attempts 和重启恢复。
+- [ ] 上传、任务创建、索引和删除的半成品均可补偿或对账。
+- [ ] Search 只读取 ready Document，强制 Folder/Knowledge Base/service/tag 过滤。
+- [ ] Passage 不返回 DuckDB Chunk ID，location 只作可选显示信息。
+- [ ] 固定 RAGLite、Embedding、DuckDB 扩展、Pandoc 和镜像 digest，并完成离线预热。
+- [ ] 演练 provider.sqlite、raglite.db、originals、模型 revision 和 ID key 的备份恢复。
 
 ### 8.3 Knowledge MCP
 
@@ -736,16 +738,17 @@ provider-neutral 契约。
 - [x] 实现 `knowledge.get_document`。
 - [x] 实现 `knowledge.list_sources`。
 - [x] MCP 工具只接受业务 ID，不接受 Provider Dataset ID。
-- [x] 检索前根据 Actor、Folder 和 Service 收敛范围。
-- [x] 限制结果数量、单 Chunk 长度和总响应大小。
-- [x] 通过真实 MCP 客户端覆盖鉴权、越权拒绝和响应边界，并注册到 OpenCode 与 Dagu；Codex 注册等待阶段 6 启动时序重构。
+- [ ] Search 删除 threshold/score，增加多 Knowledge Base、service 和 tags 过滤。
+- [ ] `get_document` 改用产品化 Passage，并继续限制单 Passage、数量和总响应大小。
+- [ ] 重新通过真实 MCP 客户端覆盖鉴权、越权、ready-only 和响应边界后再注册运行时。
 
 ### 8.4 前端接入
 
-- [x] 实现真实 `KnowledgeGateway` 和管理 Gateway。
-- [x] Runbook 区域保持明确空态；当前不实现 Runbook Gateway、fixture fallback 或向 Playbook 的迁移逻辑。
-- [x] 替换真实模式下的 Knowledge fixture fallback。
-- [x] 展示解析状态、失败原因、引用和原文位置。
+- [x] 已有真实 `KnowledgeGateway` 和管理 Gateway 可作为迁移基线。
+- [ ] 上传后显示 queued，不再显示 pending、手工索引或停止按钮。
+- [ ] failed 提供重试，Passage 分页浏览，Search 不显示相关性百分比。
+- [ ] real 模式只保留 Knowledge Base、Document、Passage 和 Search；Runbook 作为文档/标签，不接回 fixture 模型。
+- [ ] 增加真实能力状态、错误对账、Folder 切换取消和真实浏览器 E2E。
 
 已提交独立评测命令 `go run ./cmd/knowledge-eval`，会拒绝少于 30 条的样例集，并强制检查解析成功率、Top 5 命中率、越权结果和删除残留。下列验收指标只有在真实租户凭据和私有评测集到位并产出报告后才视为通过。
 
@@ -756,7 +759,7 @@ provider-neutral 契约。
 - 解析成功率不低于 95%。
 - 人工标注片段进入 Top 5 的比例不低于 85%。
 - 无权范围的检索请求 100% 被拒绝。
-- 删除文档后在约定时间内不再返回其 Chunk。
+- 删除文档后在约定时间内不再返回其 Passage 或引用。
 - Knowledge Provider 不可用时，前端收到 Aegis 受控错误而不是内部响应体。
 - 不启动 Knowledge Provider 时，Grafana、Dagu 和 Agent 已完成的链路仍可独立开发和运行。
 
@@ -767,7 +770,7 @@ provider-neutral 契约。
 固定测试步骤：
 
 1. 在 Grafana 中准备可触发的测试告警和指标/日志数据。
-2. 在当前选定的 Knowledge Provider 中导入服务说明、历史故障和操作约束。
+2. 在 RAGLite Knowledge Provider 中导入服务说明、历史故障和操作约束。
 3. 在 Dagu 准备只读诊断 Playbook 和需审批修复 Playbook。
 4. 从插件告警页创建 Agent Session。
 5. 验证 Agent 读取 Grafana、Knowledge 和 Dagu。
@@ -802,7 +805,7 @@ provider-neutral 契约。
 - [ ] Secret Manager、Token 轮换和吊销。
 - [ ] 完整审计、敏感字段脱敏和保留策略。
 - [ ] TLS/mTLS、NetworkPolicy 和出站 allowlist。
-- [ ] 当前选定 Knowledge Provider、Dagu 及 Agent Provider 数据备份恢复演练。
+- [ ] RAGLite、Dagu 及 Agent Provider 数据备份恢复演练。
 - [ ] Provider 容量、并发、队列和限流。
 - [ ] OTel traces、metrics、logs 和跨组件 trace ID。
 
@@ -846,7 +849,8 @@ rollback version
 
 1. 保持当前基本 Playbook 执行能力及 OpenCode + DeepSeek 会话闭环稳定，持续运行本地真实冒烟与契约验证（本轮完成）。
 2. 后续阶段补齐 Grafana 插件内的 Run/Step 日志和 Artifact 预览/媒体展示；Human Task、Approval、Artifact 列表/下载已完成，继续消除对 Dagu UI 的产品依赖。
-3. 使用真实 RAGLite Provider 与至少 30 份运维文档执行 Knowledge 质量门禁；RAGFlow 仅作为迁移期对比和回退实现，代码链路、OpenCode/Dagu MCP 和前端已完成，Runbook 页面保持空态。
-4. 重构 Codex App Server 与 Control Plane HTTP 的启动时序后注册 Knowledge MCP，再统一其他已验收 MCP，补齐审批、重启恢复与双 Provider 合同测试，随后完成多用户隔离设计。
+3. 按 ADR 0011 收敛 Knowledge 产品契约和 RAGLite 四态自动索引，完成 RAGFlow 数据迁移、只读/回退窗口与最终退出。
+4. 使用真实 RAGLite 与至少 30 份运维文档执行 Passage、Search、权限、恢复和质量门禁；通过后再向 OpenCode、Dagu
+   和 Codex 注册新 Knowledge MCP，并继续完成多用户隔离设计。
 5. 会话稳定后补齐 Canvas 与视觉 Artifact，再收口 Workbench、Approvals、Alerts 和 Audit 的真实 Gateway。
 6. 完成包含知识检索的黄金 E2E 场景，再进入 Runbook 产品设计、告警沉淀、Playbook 生成和代码分析等功能。

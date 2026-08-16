@@ -1,8 +1,11 @@
 # ADR 0008：RAGLite 作为轻量 Knowledge Provider
 
-- 状态：接受，实施中
+- 状态：已接受；Provider 回退和公共能力部分由 ADR 0011 修订
 - 日期：2026-08-15
-- 关联：取代 ADR 0007（AnythingLLM 提议）
+- 关联：取代 ADR 0007（AnythingLLM 提议）；后续由 ADR 0011 收敛为单一 RAGLite 产品契约
+
+> RAGLite 选型、sidecar 数据归属、固定版本和单 writer 决策继续有效。RAGFlow 回退、手工索引、Chunk
+> 公共模型和能力缺口表述已由 [ADR 0011](0011-knowledge-product-contract-and-raglite-only.md) 取代。
 
 ## 背景
 
@@ -19,8 +22,8 @@ AnythingLLM 与 RAGLite 的比较：RAGLite 虽然不是现成服务，但已经
 3. sidecar 只提供内部 Bearer 鉴权 REST，不暴露 RAGLite 内置 MCP、RAG 生成或任何 Agent 能力。
 4. 通过 RAGLite metadata 写入 `aegis_collection_id`、`aegis_document_id` 和 scope fingerprint；
    每次检索强制追加 scope + collection filter。Provider/数据库内部 ID 不进入 Aegis 公共契约。
-5. 首版基本能力为 collection/document CRUD、上传解析、异步索引、删除、原文件下载、Chunk
-   浏览和混合检索。准确 PDF 页码、硬取消正在执行的索引、索引后 metadata 原地修改暂列能力缺口。
+5. 首版产品能力为 Knowledge Base/Document CRUD、上传后自动索引、四态索引状态、失败重试、原文件下载、
+   Passage 浏览和有序引用检索。准确 PDF 页码和停止运行中任务不进入公共契约；metadata 更新自动重建索引。
 6. DuckDB 写入固定单 worker，服务只支持单实例；RAGLite、DuckDB、Python、Pandoc、Embedding
    模型和 DuckDB 扩展全部固定版本并通过恢复/契约测试后才能接受。
 
@@ -39,7 +42,8 @@ AnythingLLM 与 RAGLite 的比较：RAGLite 虽然不是现成服务，但已经
   Python sidecar + DuckDB/SQLite/目录。
 - Aegis 新增任务恢复和 Provider 状态代码，但不新增自研 RAG 算法或向量数据库。
 - RAGLite 为 MPL-2.0；发布时必须保留许可证和通知，不能把其源码静默并入 Apache-2.0 代码。
-- ADR 0007 的 AnythingLLM 方案被本 ADR 取代，RAGFlow 继续保留显式回退窗口。
+- ADR 0007 的 AnythingLLM 方案被本 ADR 取代；ADR 0011 进一步决定目标系统只支持 RAGLite，RAGFlow
+  仅在退出期间保留一到两个发布周期的只读或回退窗口。
 
 详细工作拆分见
-[RAGLite 接入详细调研](../research/raglite-integration-research.md)。
+[Knowledge 产品契约收敛与 RAGLite 单 Provider 执行计划](../knowledge-product-contract-execution-plan.md)。

@@ -13,7 +13,8 @@ Knowledge、Playbook 和 Agent 会话链路已经接入首版权限，但不能�
 
 - Agent Session、Message 和 Canvas 是 User-owned。列出、打开、改名、归档和删除 Session 只校验当前用户是
   owner；只有发起 Turn、调用 Folder 资源和处理高风险审批时才检查 Folder。
-- Knowledge Base 和 Document 是 Folder-owned。现已迁移到通用 read/write/admin 授权链，并完成真实前端闭环。
+- Knowledge Base 和 Document 是 Folder-owned。通用 read/write/admin 授权链已经具备；真实前端将按 ADR 0011
+  的自动索引、Passage 和 Search 产品契约重新收敛。
 - Playbook、Run、Step、Approval 和 Artifact 是 Folder-owned。现已使用 Dagu 原生 label 保存 Folder ownership，
   并为旧 Org-scoped `pbk_` 资源提供显式 Folder 下的只读兼容窗口。
 - MCP 固定 Token 只代表工作负载。单 Actor 模式可以继续作为过渡部署，多用户模式不得在逐 Turn 委托能力
@@ -30,7 +31,7 @@ Knowledge、Playbook 和 Agent 会话链路已经接入首版权限，但不能�
 | Plugin Backend | RoutePolicy 覆盖 Knowledge、Playbook、Turn、SSE 和下载；默认拒绝未知 API | 真实 Grafana authz 故障与权限撤销场景待 E2E |
 | Control Plane | 使用统一可信 FolderAuthorization，按 read/write/admin 二次校验；成功读取 Provider owner 后记录 resource scope | Audit 查询投影按延期模块设计后续实现 |
 | Folder 前端 | real 模式组合 `/api/search` 与当前用户 permission map，按精确 Folder scope 映射通用 action；无 action 时不可选择 | 多用户权限变更和深链接待真实浏览器验收 |
-| Knowledge | REST、Provider、MCP、真实页面和 Admin 原生 scope 迁移已形成 Folder 权限闭环 | 当前 Folder-owned 资源的跨 Folder 迁移仍需双 Folder 授权流程 |
+| Knowledge | 已有 REST、Provider、MCP、真实页面和 Folder 权限链路 | 按 ADR 0011 收敛为 RAGLite 单 Provider；跨 Folder/scope migration 不进入首版公共模型 |
 | Playbook | Dagu label ownership、父级复核、权限 UI、旧资源只读兼容均已接入 | 真实 Dagu 的跨 Folder/SSE/Artifact 验收待执行 |
 | Agent Session | Session 保持 User-owned；Turn 已发送并校验 Folder context | 仍是单 Actor；approve 因无法恢复可信目标而禁用 |
 | Knowledge/Playbook MCP | 固定 Actor + Folder allowlist；Playbook 写工具默认关闭 | 缺少逐 Turn 用户委托能力，不能开放多用户写工具 |
@@ -49,9 +50,8 @@ Knowledge、Playbook 和 Agent 会话链路已经接入首版权限，但不能�
    Grafana 管理 Folder。
 8. Folder Gateway 不再依赖搜索结果中不存在的插件 `accessControl`，而是读取当前用户 permission map，并覆盖
    Folder 精确 scope、通配 scope、无权限过滤和无效响应 fail-closed 测试。
-9. Knowledge legacy v1 可由 Folder Admin 原地迁移 Provider 原生 scope；Playbook legacy 可显式复制为带 Dagu
-   ownership labels 的新资源，两者均保留可回退事实来源。
-10. `ownership-inventory` 实时读取 Grafana Folder 并枚举 Dagu/RAGFlow/RAGLite 原生 owner，只报告
+9. Knowledge legacy v1 数据改由受控迁移或归档流程处理；目标公共 API 不继续暴露 scope migration。
+10. `ownership-inventory` 实时读取 Grafana Folder 并枚举 Dagu/RAGLite 原生 owner，只报告
     active/orphan/legacy/invalid，不自动治理。
 
 仍未完成且不得绕过的工作：
@@ -72,9 +72,9 @@ RoutePolicy 和模块实现以以下矩阵为首版默认值。后续如果降�
 | Canvas read/update、Turn cancel | 可信 User | Session owner；取消不因 Folder 权限撤销而受阻 |
 | Start Agent Turn | Folder `read` | Session owner + 可信 Folder context |
 | Agent Approval resolve | 首版 Folder `admin` | 从 Provider 恢复真实目标、实时复验；无法恢复则不可用 |
-| Knowledge list/get/search/chunks/download | Folder `read` | Provider 返回的 Knowledge Base Folder 必须一致 |
-| Knowledge create/update/upload/index/stop、Document delete | Folder `write` | 父 Knowledge Base Folder 必须一致 |
-| Knowledge Base delete/迁移 | Folder `admin` | 根资源实际归属一致；迁移还要校验目标 Folder admin |
+| Knowledge list/get/search/passages/download | Folder `read` | Provider 返回的 Knowledge Base Folder 必须一致 |
+| Knowledge create/update/upload/retry、Document delete | Folder `write` | 父 Knowledge Base Folder 必须一致 |
+| 空 Knowledge Base delete | Folder `admin` | 根资源实际归属一致且没有 Document |
 | Playbook list/get、Run get/list/events、Artifact read/download | Folder `read` | Playbook 的 Dagu 原生 Folder 事实一致 |
 | Playbook create/update/validate/start/cancel/retry/Human Task | Folder `write` | Run -> Playbook -> Folder 一致 |
 | Playbook delete、Approval resolve、归属迁移 | Folder `admin` | 重新读取 Run/Playbook 并检查状态与归属 |
@@ -222,7 +222,7 @@ Knowledge 可以最先实施，因为 Provider 已保存 Folder UID，公共 ID 
 
 - `internal/platform/httpserver/knowledge.go`
 - `internal/platform/httpserver/knowledge_test.go`
-- `internal/adapters/ragflow/`、`internal/adapters/raglite/` 的 Folder scope 合同测试
+- `internal/adapters/raglite/` 的 Folder scope 合同测试；RAGFlow 只保留退出窗口所需验证
 - `grafana-plugin/pkg/plugin` RoutePolicy 测试
 
 任务：
@@ -232,7 +232,7 @@ Knowledge 可以最先实施，因为 Provider 已保存 Folder UID，公共 ID 
 - get/update/delete Document 前先恢复父 Knowledge Base，并验证其真实 Folder；不能只信 Document ID。
 - list/search 对 Provider 返回的每个 Collection/Document 做 scope 一致性检查；异常结果 fail-closed。
 - Folder 已删除或无法验证时不调用 Provider；Provider 数据留作 orphan，不可通过公共 ID访问。
-- 保持 RAGFlow/RAGLite 是唯一事实来源，不增加 Collection/Document 权限表。
+- 保持 RAGLite sidecar 是唯一事实来源，不增加 Knowledge Base/Document 权限表。
 
 ### 7.2 前端接入与契约修正
 
@@ -247,9 +247,9 @@ Knowledge 可以最先实施，因为 Provider 已保存 Folder UID，公共 ID 
 
 - 修正真实搜索路径为 `/api/v1/knowledge:search`。
 - 统一 Document update 的 PUT/PATCH 契约；保留兼容方法时写明移除窗口。
-- 覆盖 Knowledge Base 列表/创建/更新/删除，Document 上传/列表/详情/标签更新/删除、索引开始/停止、Chunk、
-  下载和检索。
-- View 用户可浏览和搜索；Edit 可上传、编辑、索引和删除 Document；只有 Admin 显示并可执行 Knowledge Base
+- 覆盖 Knowledge Base 列表/创建/更新/空库删除，Document 上传/列表/详情/metadata 更新/失败重试/删除、Passage、
+  下载和检索；上传自动进入 queued，不提供开始/停止索引。
+- View 用户可浏览和搜索；Edit 可上传、编辑、重试和删除 Document；只有 Admin 显示并可执行 Knowledge Base
   删除。
 - Folder 切换清空选中的 Knowledge Base、Document、检索结果、上传进度和轮询任务。
 - 人类 Runbook 继续作为 Document/标签表达，不把旧 fixture 的 Service/Runbook/Import 状态机迁入真实模式。

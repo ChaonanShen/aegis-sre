@@ -11,7 +11,8 @@
 - Workbench 会话：会话列表、创建/打开/重命名/归档/删除、Agent 回合流式输出、审批和 Canvas。
 - Playbook：原生 Dagu YAML 的列表、校验、创建、编辑、删除、运行、运行事件、人工任务、审批和 Artifact。
 - Agent：通过 Codex App Server 或 OpenCode Server 接入；当前部署默认使用 OpenCode，Codex 是可替换实现。
-- Knowledge 后端：`KnowledgeProvider`、RAGLite 默认适配、RAGFlow 迁移期适配、REST 管理接口和受限 Knowledge MCP 已具备，按可选能力部署。
+- Knowledge 后端：目标态只支持 RAGLite；现有 `KnowledgeProvider`、REST、MCP 和真实页面将按产品契约收敛，
+  RAGFlow 仅在退出窗口内保留只读或回退能力。
 - Grafana MCP：官方只读 MCP Server、独立调用方鉴权网关和 Dagu `mcp.call` 出站调用链已部署。
 
 当前插件主链路是 Workbench 会话和 Playbook；Knowledge 的后端能力已经具备，但不把它描述为与这两条
@@ -48,7 +49,7 @@ flowchart LR
     AgentPort --> Codex["Codex App Server"]
     AgentPort -. "可替换" .-> OpenCode["OpenCode Server"]
     PlaybookPort --> Dagu["Dagu"]
-    KnowledgePort --> RAG["RAGLite / RAGFlow"]
+    KnowledgePort --> RAG["RAGLite sidecar"]
 
     Codex --> GrafanaMCP["Grafana MCP 鉴权网关"]
     OpenCode --> GrafanaMCP
@@ -101,7 +102,7 @@ Control Plane 是无状态业务控制面，负责：
 - 暴露 `/mcp/playbooks`、可选 `/mcp/knowledge` 和 `/mcp/canvas`；
 - 统一错误、分页、事件 envelope、幂等键、If-Match/revision 和 trace 传播。
 
-除 Canvas 外，Control Plane 不保存 Session、Message、Turn、Knowledge 文档/Chunk、Playbook YAML、
+除 Canvas 外，Control Plane 不保存 Session、Message、Turn、Knowledge 文档/Passage、Playbook YAML、
 Run 状态或 Artifact 的副本。
 
 ### 4.4 Ports 与 Adapters
@@ -112,7 +113,7 @@ Run 状态或 Artifact 的副本。
 | --- | --- | --- | --- |
 | `AgentProvider` | `internal/adapters/codex`、`opencode`，外加 `agentscope` | Codex/OpenCode | 会话、回合、消息、审批和事件流 |
 | `PlaybookProvider` | `internal/adapters/dagu` | Dagu | YAML、校验、运行、步骤、审批、日志和 Artifact |
-| `KnowledgeProvider` | `raglite`、`ragflow`，由 `knowledgefactory` 选择 | 当前 Knowledge Provider | Collection、文档、解析/索引、Chunk 和检索 |
+| `KnowledgeProvider` | `internal/adapters/raglite` | RAGLite sidecar | Knowledge Base、Document、自动索引、Passage 和有序引用检索 |
 | `CanvasStore` | `internal/adapters/canvassqlite` | Aegis | Query-backed Chart 与 Canvas 布局投影 |
 
 Provider 的 SDK 类型、HTTP 路径、认证方式和错误映射必须留在对应 adapter。替换 Provider 时，优先
@@ -146,15 +147,16 @@ Playbook UI 管理的 `pbk_` 命名空间和 GitOps DAG 分离，同一个 DAG �
 ### 5.3 Knowledge 管理与检索
 
 1. 插件在 Grafana Folder 上下文中调用 Knowledge REST API；Control Plane 重新验证 Folder 权限和 Actor scope。
-2. `knowledgefactory` 按部署配置选择单一 RAGLite 或 RAGFlow adapter，不在 Collection/Document 层动态混用。
-3. Provider 持有 Collection、文档原文、解析任务、Chunk、Embedding 和索引；Control Plane 只做管理投影和授权收敛。
-4. Agent 使用可选 `/mcp/knowledge` 的 `knowledge.search`、`get_document`、`list_sources`，不能直接调用 Provider 原生 MCP。
-5. Knowledge 未配置时不注册 endpoint，也不阻止基础 Agent + Playbook 栈启动；已配置但不可达时 readiness 明确失败。
+2. Control Plane 只装配 RAGLite adapter，不提供运行时 Provider 选择；RAGLite 私有协议和类型不得进入公共契约。
+3. Provider 持有 Knowledge Base、文档原文、持久化索引任务、Passage、Embedding 和索引；Control Plane 只做管理投影和授权收敛。
+4. 上传成功后 Document 自动进入 `queued`，worker 转为 `indexing`，成功为 `ready`，失败为 `failed`；只有失败状态提供产品化重试。
+5. Agent 使用可选 `/mcp/knowledge` 的 `knowledge.search`、`get_document`、`list_sources`，不能直接调用 RAGLite 原生能力。
+6. Knowledge 未配置时不注册 endpoint，也不阻止基础 Agent + Playbook 栈启动；已配置但不可达时 readiness 明确失败。
 
 Knowledge 公共 ID 由 Actor/Folder 范围和幂等键确定性生成，Provider 内部 ID 不进入前端契约。Folder
-授权和身份边界见 [ADR 0004](adr/0004-knowledge-identity-and-folder-authorization.md)。legacy v1 Collection
-只允许原创建者读取；Folder Admin 通过 Provider 原生 metadata/scope 迁移升级到 v2，不下载或重传文档，
-也不建立迁移映射表。
+授权和身份边界见 [ADR 0004](adr/0004-knowledge-identity-and-folder-authorization.md)，产品能力和单一 Provider
+决策见 [ADR 0011](adr/0011-knowledge-product-contract-and-raglite-only.md)。legacy v1 数据通过受控迁移或归档流程
+处理，scope migration 和跨 Folder 迁移不属于首版公共 API。
 
 ## 6. Canvas 与二进制 Artifact
 
@@ -173,7 +175,7 @@ MCP 图片、音频、大文本和其他二进制内容由 `mcp.call` 按大小�
 | --- | --- | --- |
 | Grafana Folder、Dashboard、告警、权限和查询数据 | Grafana/Prometheus/Loki | 通过官方 API/MCP 查询，按当前 Actor 授权 |
 | Agent Session、Turn、Message、工具调用和审批 | Codex/OpenCode | 直接 list/read/resume/archive/delete 和流式适配，不保存副本 |
-| Knowledge Collection、Document、Chunk、Embedding 和索引 | RAGLite 或 RAGFlow | 通过 `KnowledgeProvider` 管理与检索，不建跨 Provider 映射表 |
+| Knowledge Base、Document、索引任务、Passage、Embedding 和索引 | RAGLite sidecar | 通过产品化 `KnowledgeProvider` 管理与检索，不保存 Control Plane 副本 |
 | Playbook YAML、Run、Step、Human Task、Approval、日志和 Artifact | Dagu | 通过 `PlaybookProvider` 管理与读取，不复制运行状态 |
 | Canvas Query/Chart 定义与布局 | Aegis Canvas SQLite | 只保存明确归 Aegis 所有的最小产品投影 |
 | 请求/trace ID | 请求上下文与可观测性系统 | 传播和记录结构化日志，不作为业务数据持久化 |
@@ -186,15 +188,15 @@ MCP 图片、音频、大文本和其他二进制内容由 `mcp.call` 按大小�
 - Folder、Tenant、Org、User 和 Role 是请求授权上下文，不是由模型或浏览器自由声明的参数。缺少上下文或越界请求 fail-closed。
 - Provider、镜像和 SDK 版本固定；升级必须通过对应契约测试、部署测试和真实端到端验收。
 
-本地 Compose 的典型拓扑包含 Grafana、Plugin、Control Plane、OpenCode/Codex、Dagu、可选 RAGLite/RAGFlow、
+本地 Compose 的典型拓扑包含 Grafana、Plugin、Control Plane、OpenCode/Codex、Dagu、可选 RAGLite、
 Grafana MCP 只读服务、MCP 鉴权网关、Prometheus 和各自持久卷。Control Plane 默认单实例；Agent/Dagu/
 Knowledge 的持久卷由各自组件负责备份恢复，Canvas 卷单独备份。
 
 ## 9. 扩展规则
 
-新增 Provider 时：
+未来提出新增 Knowledge Provider 时：
 
-1. 先在 `internal/ports` 确认是否能用现有稳定接口表达；不能表达时先写 ADR。
+1. 先提交 ADR 说明产品收益、数据迁移和现有产品契约为何不足，不能仅因新 Provider 暴露更多 API 而扩张公共接口。
 2. 在 `internal/adapters/<provider>` 内实现协议、认证、错误和 ID 转换，禁止把 Provider 类型带入 `domain`、OpenAPI 或插件。
 3. 增加 adapter 契约测试和真实部署验收，确认重启、权限、分页、流、幂等和失败行为。
 4. 只有无法由 Grafana 或 Provider 承载的、明确归 Aegis 所有的状态，才允许按最小范围增加持久化，并写明事实来源、生命周期、迁移、备份和删除策略。
@@ -208,6 +210,8 @@ Knowledge 的持久卷由各自组件负责备份恢复，Canvas 卷单独备份
 - [Dagu 写入归属 ADR](adr/0001-dagu-authoring-ownership.md)
 - [Agent 公开标识 ADR](adr/0002-agent-public-identifiers.md)
 - [Knowledge 身份与 Folder 授权 ADR](adr/0004-knowledge-identity-and-folder-authorization.md)
+- [Knowledge 产品契约与单一 RAGLite Provider ADR](adr/0011-knowledge-product-contract-and-raglite-only.md)
+- [Knowledge 产品契约收敛执行计划](knowledge-product-contract-execution-plan.md)
 - [Agent/Playbook MCP 边界 ADR](adr/0005-agent-playbook-mcp-boundary.md)
 - [Canvas SQLite ADR](adr/0007-canvas-sqlite-persistence.md)
 - [Playbook Folder Ownership ADR](adr/0009-playbook-folder-ownership.md)

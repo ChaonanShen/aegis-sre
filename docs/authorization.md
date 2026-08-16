@@ -65,7 +65,7 @@ Folder owner 表示资源是团队共享运维资产。资源跟随 Folder 生�
 
 典型 Folder-owned 资源：
 
-- Knowledge Base、Document、Chunk 和检索结果；
+- Knowledge Base、Document、Passage、索引状态和检索结果；
 - 人类阅读的 Runbook 文档；
 - 共享且可执行的 Playbook；
 - Playbook Run、Step、Approval 和 Artifact；
@@ -300,16 +300,15 @@ Account、只读/写 MCP 分离和网关 allowlist。不能因为用户能查看
 
 ### 7.1 目标归属
 
-Knowledge Base 是 Folder-owned 根资源，Document、Chunk、检索引用继承 Knowledge Base Folder。
+Knowledge Base 是 Folder-owned 根资源，Document、Passage、索引状态和检索引用继承 Knowledge Base Folder。
 人类阅读的故障手册和操作说明作为 Knowledge Document 或标签分类存在，不具备执行语义。
 
 | 操作 | 最小权限 |
 | --- | --- |
-| 列表、详情、检索、Chunk、下载 | `read` |
-| 创建 Knowledge Base、上传文档、更新元数据、开始/停止索引 | `write` |
+| 列表、详情、检索、Passage、下载 | `read` |
+| 创建 Knowledge Base、上传文档、更新元数据、失败索引重试 | `write` |
 | 删除 Document | `write` |
-| 删除整个 Knowledge Base、legacy scope 迁移 | `admin` |
-| 当前 Folder-owned Knowledge Base 跨 Folder 迁移 | `admin`（目标设计） |
+| 删除空 Knowledge Base | `admin` |
 
 ### 7.2 当前代码状态
 
@@ -319,14 +318,13 @@ Knowledge 已形成首版完整参考链路：
 - Plugin Backend 使用 Grafana scoped action 检查 Folder；
 - Control Plane 要求可信 `X-Aegis-Folder-Access`；
 - Knowledge v2 公共 ID 和 Provider metadata 绑定 Tenant/Org/Folder scope，不再绑定创建用户；
-- RAGLite/RAGFlow adapter 在读取和变更时重新校验 scope；
-- Folder Admin 可显式把本人可读的 v1 Knowledge Base 原地迁移到当前 Folder v2 scope；RAGLite 在 SQLite
-  事务中迁移，RAGFlow 先更新文档原生 metadata、最后提交 Dataset metadata，失败后可幂等重试且不重新上传原文；
+- 目标态只使用 RAGLite adapter，并在读取和变更时重新校验 scope；
+- legacy v1 数据通过受控迁移或归档流程处理，scope migration 和跨 Folder 迁移不进入首版公共 API；
 - Knowledge MCP 使用服务端 Token 绑定固定 Actor 和 Folder allowlist。
 
 兼容和验收边界：
 
-- 旧 v1 scope 仍绑定 User，仅允许原创建者在同 Folder 只读；所有写操作要求 Folder Admin 先显式迁移到 v2；
+- 旧 v1 scope 仍绑定 User，仅允许原创建者在同 Folder 只读；目标公共 API 上线前完成受控迁移或归档；
 - Knowledge Base 删除要求 Folder admin，Document 删除要求 write；
 - real 模式 Folder 选择器和 View/Edit/Admin 按钮控制已接入；
 - 真实浏览器到 Provider 的跨 Folder E2E 尚未成为发布门禁。
@@ -415,7 +413,7 @@ Approval 不是独立授权根，它继承被审批操作的目标：
 | Agent Provider 原生工具审批 | Session + 目标 Folder | owner 且 Folder `write/admin` |
 | Playbook Step 审批 | Playbook Folder | `write` 或按风险要求 `admin` |
 | Skill 发布 | 目标 Folder | `admin` |
-| Knowledge 根资源删除/迁移 | Knowledge Folder | `admin` |
+| 空 Knowledge Base 删除 | Knowledge Folder | `admin` |
 
 批准按钮在前端隐藏只是体验控制。服务端必须重新读取审批/Run/Session，解析实际目标，再检查权限。审批 ID
 不能携带完整权限声明，也不能因为创建审批时已校验就跳过处理时的复验。
