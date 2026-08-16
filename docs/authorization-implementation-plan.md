@@ -1,6 +1,6 @@
 # Aegis SRE 统一权限实施计划
 
-- 状态：执行中（核心 REST/前端权限闭环已完成，生产委托与真实环境验收待完成）
+- 状态：首版权限闭环完成；多用户 Agent 委托和三用户生产验收受 Provider 能力门禁约束
 - 日期：2026-08-16
 - 设计基线：[权限与资源归属设计](authorization.md)
 - 基线提交：`f26ee4d`
@@ -28,13 +28,13 @@ Knowledge、Playbook 和 Agent 会话链路已经接入首版权限，但不能�
 | --- | --- | --- |
 | Plugin manifest | 已注册 `folder-resources:read/write/admin` actionSets | 修改 manifest 后仍需在真实 Grafana 重启验收 |
 | Plugin Backend | RoutePolicy 覆盖 Knowledge、Playbook、Turn、SSE 和下载；默认拒绝未知 API | 真实 Grafana authz 故障与权限撤销场景待 E2E |
-| Control Plane | 使用统一可信 FolderAuthorization，按 read/write/admin 二次校验 | `resource_folder_uid` 审计需随生产审计投影继续完善 |
+| Control Plane | 使用统一可信 FolderAuthorization，按 read/write/admin 二次校验；成功读取 Provider owner 后记录 resource scope | Audit 查询投影按延期模块设计后续实现 |
 | Folder 前端 | real 模式组合 `/api/search` 与当前用户 permission map，按精确 Folder scope 映射通用 action；无 action 时不可选择 | 多用户权限变更和深链接待真实浏览器验收 |
-| Knowledge | REST、Provider、MCP 和真实页面已形成 Folder 权限闭环 | v1 user-bound 数据只读兼容窗口需迁移运营方案 |
+| Knowledge | REST、Provider、MCP、真实页面和 Admin 原生 scope 迁移已形成 Folder 权限闭环 | 当前 Folder-owned 资源的跨 Folder 迁移仍需双 Folder 授权流程 |
 | Playbook | Dagu label ownership、父级复核、权限 UI、旧资源只读兼容均已接入 | 真实 Dagu 的跨 Folder/SSE/Artifact 验收待执行 |
 | Agent Session | Session 保持 User-owned；Turn 已发送并校验 Folder context | 仍是单 Actor；approve 因无法恢复可信目标而禁用 |
 | Knowledge/Playbook MCP | 固定 Actor + Folder allowlist；Playbook 写工具默认关闭 | 缺少逐 Turn 用户委托能力，不能开放多用户写工具 |
-| Audit | Plugin Backend 与 Control Plane 已区分 requested/authorized scope | 生产日志投影、脱敏查询和 orphan inventory 待完成 |
+| Audit | Plugin Backend 与 Control Plane 已区分 requested/authorized/resource scope；只读 orphan inventory 已接入三种 Provider | 生产日志查询投影和脱敏 UI 按延期模块设计后续实现 |
 
 已完成的关键修正：
 
@@ -49,13 +49,17 @@ Knowledge、Playbook 和 Agent 会话链路已经接入首版权限，但不能�
    Grafana 管理 Folder。
 8. Folder Gateway 不再依赖搜索结果中不存在的插件 `accessControl`，而是读取当前用户 permission map，并覆盖
    Folder 精确 scope、通配 scope、无权限过滤和无效响应 fail-closed 测试。
+9. Knowledge legacy v1 可由 Folder Admin 原地迁移 Provider 原生 scope；Playbook legacy 可显式复制为带 Dagu
+   ownership labels 的新资源，两者均保留可回退事实来源。
+10. `ownership-inventory` 实时读取 Grafana Folder 并枚举 Dagu/RAGFlow/RAGLite 原生 owner，只报告
+    active/orphan/legacy/invalid，不自动治理。
 
 仍未完成且不得绕过的工作：
 
 1. Codex/OpenCode 运行时尚不能安全注入逐 Turn 短期委托；多用户 Agent Folder 工具保持不可用。
 2. Agent Provider 尚不能持久化并恢复原生审批目标；approve 保持 fail-closed，reject 仍可终止等待。
-3. Grafana Folder 与 Provider 根资源的只读 orphan reconciliation 尚未实现。
-4. 三用户、三 Folder 的真实 Grafana + Dagu + Knowledge Provider 生产验收尚未执行。
+3. 三用户、三 Folder 的真实生产验收尚未执行；当前运行时由 `agentscope` 明确限制单 Actor，不能把新增测试用户
+   伪装成已支持的多用户 Agent 验收。
 
 ## 3. 首版权限矩阵
 
