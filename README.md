@@ -52,7 +52,7 @@ make local-up
 make local-smoke
 ```
 
-`local-secrets` 只在 git 忽略的 `deploy/local/secrets/` 生成开发凭据。运行前需要把 DeepSeek API Key 写入 `deploy/local/secrets/deepseek-api-key`；脚本不会生成或提交 Provider 凭据。启动过程会创建 Grafana Viewer Service Account；Grafana 默认只绑定 `127.0.0.1:3000`，Dagu 只绑定 `127.0.0.1:18081`，Control Plane、OpenCode、只读 Grafana MCP 和其鉴权网关不发布主机端口。可用 `GRAFANA_PORT`、`DAGU_PORT` 覆盖两个开发端口；运行冒烟时需传递相同的 `DAGU_PORT`。
+`local-secrets` 只在 git 忽略的 `deploy/local/secrets/` 生成开发凭据。运行前需要把 DeepSeek API Key 写入 `deploy/local/secrets/deepseek-api-key`；脚本不会生成或提交 Provider 凭据。`make local-up` 每次会重建容器（保留命名卷），创建 Grafana Viewer Service Account，并幂等确保本地测试 Folder `infra`、`payment` 存在；这两个 Folder 只由根 Compose 的开发 bootstrap 创建，生产环境仍由 Grafana 原生 UI/API 管理。Grafana 默认只绑定 `127.0.0.1:3000`，Dagu 只绑定 `127.0.0.1:18081`，Control Plane、OpenCode、只读 Grafana MCP 和其鉴权网关不发布主机端口。可用 `GRAFANA_PORT`、`DAGU_PORT` 覆盖两个开发端口；运行冒烟时需传递相同的 `DAGU_PORT`。
 
 `local-smoke` 同时验证 Dagu 到 Grafana MCP 的底层路径、Grafana Plugin 经 Control Plane 管理和运行原生 Dagu Playbook 的产品路径，以及 OpenCode 到 DeepSeek 的真实文本会话；任一路径不可用都会明确失败。
 

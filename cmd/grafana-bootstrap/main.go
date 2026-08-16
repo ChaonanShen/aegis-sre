@@ -20,17 +20,52 @@ func main() {
 	username := flag.String("username", "admin", "Grafana bootstrap administrator")
 	passwordFile := flag.String("password-file", "", "Grafana administrator password file")
 	outputFile := flag.String("output-file", "", "service-account token output file")
+	var rawFolders stringList
+	flag.Var(&rawFolders, "ensure-folder", "ensure a local Grafana Folder exists (uid:title); repeatable")
 	flag.Parse()
-	if err := bootstrap(*baseURL, *username, *passwordFile, *outputFile, &http.Client{Timeout: 10 * time.Second}); err != nil {
+	folders, err := parseFolders(rawFolders)
+	if err != nil {
+		_, _ = fmt.Fprintln(os.Stderr, "grafana-bootstrap:", err)
+		os.Exit(1)
+	}
+	if err := bootstrap(*baseURL, *username, *passwordFile, *outputFile, folders, &http.Client{Timeout: 10 * time.Second}); err != nil {
 		_, _ = fmt.Fprintln(os.Stderr, "grafana-bootstrap:", err)
 		os.Exit(1)
 	}
 }
 
-func bootstrap(rawURL, username, passwordFile, outputFile string, client *http.Client) error {
+type stringList []string
+
+func (values *stringList) String() string { return strings.Join(*values, ",") }
+func (values *stringList) Set(value string) error {
+	*values = append(*values, value)
+	return nil
+}
+
+type folderSpec struct {
+	uid   string
+	title string
+}
+
+func parseFolders(values []string) ([]folderSpec, error) {
+	folders := make([]folderSpec, 0, len(values))
+	for _, value := range values {
+		uid, title, ok := strings.Cut(strings.TrimSpace(value), ":")
+		uid, title = strings.TrimSpace(uid), strings.TrimSpace(title)
+		if !ok || uid == "" || title == "" || strings.ContainsAny(uid, "/\\?&#\r\n\x00") || strings.ContainsAny(title, "\r\n\x00") {
+			return nil, fmt.Errorf("invalid --ensure-folder %q; expected uid:title", value)
+		}
+		folders = append(folders, folderSpec{uid: uid, title: title})
+	}
+	return folders, nil
+}
+
+func bootstrap(rawURL, username, passwordFile, outputFile string, folders []folderSpec, client *http.Client) error {
 	if token, _ := readSecret(outputFile); token != "" {
 		// 共享卷中的消费者以非 root 身份运行，已有凭据也要修正为可读模式。
-		return os.Chmod(outputFile, 0o644)
+		if len(folders) == 0 {
+			return os.Chmod(outputFile, 0o644)
+		}
 	}
 	base, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil || base.Host == "" || (base.Scheme != "http" && base.Scheme != "https") {
@@ -42,6 +77,14 @@ func bootstrap(rawURL, username, passwordFile, outputFile string, client *http.C
 	}
 	if strings.TrimSpace(username) == "" || outputFile == "" {
 		return errors.New("username and output file are required")
+	}
+	for _, folder := range folders {
+		if err := ensureFolder(client, base, username, password, folder); err != nil {
+			return fmt.Errorf("ensure Grafana Folder %q: %w", folder.uid, err)
+		}
+	}
+	if token, _ := readSecret(outputFile); token != "" {
+		return os.Chmod(outputFile, 0o644)
 	}
 
 	var account struct {
@@ -79,6 +122,54 @@ func bootstrap(rawURL, username, passwordFile, outputFile string, client *http.C
 		return fmt.Errorf("write service account token: %w", err)
 	}
 	return nil
+}
+
+func ensureFolder(client *http.Client, base *url.URL, username, password string, folder folderSpec) error {
+	path := "/api/folders/" + url.PathEscape(folder.uid)
+	for attempt := 0; ; attempt++ {
+		status, err := grafanaStatus(client, base, username, password, http.MethodGet, path, nil)
+		if err == nil && status == http.StatusOK {
+			return nil
+		}
+		if err == nil && status == http.StatusNotFound {
+			status, err = grafanaStatus(client, base, username, password, http.MethodPost, "/api/folders", map[string]string{"uid": folder.uid, "title": folder.title})
+			if err == nil && (status == http.StatusOK || status == http.StatusCreated || status == http.StatusConflict) {
+				return nil
+			}
+		}
+		if attempt >= 29 {
+			if err != nil {
+				return err
+			}
+			return fmt.Errorf("Grafana API returned HTTP %d", status)
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+func grafanaStatus(client *http.Client, base *url.URL, username, password, method, path string, input any) (int, error) {
+	var content io.Reader
+	if input != nil {
+		encoded, err := json.Marshal(input)
+		if err != nil {
+			return 0, err
+		}
+		content = bytes.NewReader(encoded)
+	}
+	endpoint := base.ResolveReference(&url.URL{Path: path})
+	request, err := http.NewRequest(method, endpoint.String(), content)
+	if err != nil {
+		return 0, err
+	}
+	request.SetBasicAuth(username, password)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := client.Do(request)
+	if err != nil {
+		return 0, err
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 1<<20))
+	return response.StatusCode, nil
 }
 
 func grafanaJSON(client *http.Client, base *url.URL, username, password, method, path string, input, output any) error {

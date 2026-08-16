@@ -43,7 +43,7 @@ func TestBootstrapCreatesViewerToken(t *testing.T) {
 	if err := os.WriteFile(passwordFile, []byte("admin-secret"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := bootstrap(server.URL, "admin", passwordFile, outputFile, server.Client()); err != nil {
+	if err := bootstrap(server.URL, "admin", passwordFile, outputFile, nil, server.Client()); err != nil {
 		t.Fatal(err)
 	}
 	content, err := os.ReadFile(outputFile)
@@ -64,7 +64,7 @@ func TestBootstrapMakesExistingTokenReadable(t *testing.T) {
 	if err := os.WriteFile(outputFile, []byte("existing-token"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := bootstrap("invalid", "", "", outputFile, http.DefaultClient); err != nil {
+	if err := bootstrap("invalid", "", "", outputFile, nil, http.DefaultClient); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(outputFile)
@@ -73,5 +73,56 @@ func TestBootstrapMakesExistingTokenReadable(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o644 {
 		t.Fatalf("token mode=%v", info.Mode().Perm())
+	}
+}
+
+func TestBootstrapEnsuresLocalFoldersEvenWhenTokenExists(t *testing.T) {
+	var created []folderSpec
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		username, password, ok := request.BasicAuth()
+		if !ok || username != "admin" || password != "admin-secret" {
+			t.Fatalf("unexpected basic auth")
+		}
+		switch request.URL.Path {
+		case "/api/folders/infra":
+			http.NotFound(w, request)
+		case "/api/folders/payment":
+			w.WriteHeader(http.StatusOK)
+		case "/api/folders":
+			var body struct {
+				UID   string `json:"uid"`
+				Title string `json:"title"`
+			}
+			if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			created = append(created, folderSpec{uid: body.UID, title: body.Title})
+			w.WriteHeader(http.StatusCreated)
+		default:
+			http.NotFound(w, request)
+		}
+	}))
+	defer server.Close()
+	directory := t.TempDir()
+	passwordFile := filepath.Join(directory, "password")
+	outputFile := filepath.Join(directory, "token")
+	if err := os.WriteFile(passwordFile, []byte("admin-secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outputFile, []byte("existing-token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	folders := []folderSpec{{uid: "infra", title: "Infrastructure"}, {uid: "payment", title: "Payments"}}
+	if err := bootstrap(server.URL, "admin", passwordFile, outputFile, folders, server.Client()); err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 1 || created[0] != folders[0] {
+		t.Fatalf("created folders=%#v", created)
+	}
+}
+
+func TestParseFoldersRejectsInvalidValues(t *testing.T) {
+	if _, err := parseFolders([]string{"infra"}); err == nil {
+		t.Fatal("expected invalid Folder argument to fail")
 	}
 }

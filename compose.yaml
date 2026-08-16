@@ -217,6 +217,9 @@ services:
       - --username=admin
       - --password-file=/run/secrets/grafana-admin-password
       - --output-file=/run/aegis/grafana-service-account-token
+      # 仅本地测试栈创建；生产环境不传此参数，Folder 始终由 Grafana 管理。
+      - --ensure-folder=infra:Infrastructure
+      - --ensure-folder=payment:Payments
     volumes:
       - ./deploy/local/secrets/grafana-admin-password:/run/secrets/grafana-admin-password:ro
       - grafana-mcp-secrets:/run/aegis

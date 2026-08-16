@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 
 const port = process.env.GRAFANA_PORT ?? '3000';
 const password = readFileSync(process.env.GRAFANA_ADMIN_PASSWORD_FILE ?? 'deploy/local/secrets/grafana-admin-password', 'utf8').trim();
+const folderUID = process.env.AEGIS_SMOKE_FOLDER_UID ?? 'infra';
 const base = `http://127.0.0.1:${port}/api/plugins/grafana-plugin-app/resources/api/v1`;
 const authorization = `Basic ${Buffer.from(`admin:${password}`).toString('base64')}`;
 const key = (kind) => `${kind}-${randomUUID()}`;
@@ -16,7 +17,7 @@ if (running.split(/\r?\n/).includes('ragflow')) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${base}${path}`, { ...options, headers: { Authorization: authorization, ...options.headers } });
+  const response = await fetch(`${base}${path}`, { ...options, headers: { Authorization: authorization, 'X-Aegis-Folder-UID': folderUID, ...options.headers } });
   const text = await response.text();
   if (!response.ok) throw new Error(`${options.method ?? 'GET'} ${path} returned HTTP ${response.status}: ${text}`);
   return text ? JSON.parse(text) : undefined;
@@ -33,7 +34,7 @@ try {
   try {
     const prompt = `Use the Playbook MCP tools. Start Playbook ${playbook.id} with idempotency_key ${key('agent-run')} in Folder infra, then report the run id. Do not use Knowledge.`;
     const response = await fetch(`${base}/sessions/${encodeURIComponent(session.id)}/turns:stream`, {
-      method: 'POST', signal: controller.signal, headers: { Authorization: authorization, Accept: 'text/event-stream', 'Content-Type': 'application/json', 'Idempotency-Key': key('agent-turn') },
+      method: 'POST', signal: controller.signal, headers: { Authorization: authorization, Accept: 'text/event-stream', 'Content-Type': 'application/json', 'Idempotency-Key': key('agent-turn'), 'X-Aegis-Folder-UID': folderUID },
       body: JSON.stringify({ message: prompt, mentions: [] }),
     });
     const text = await response.text();

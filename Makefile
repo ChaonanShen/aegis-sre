@@ -91,7 +91,8 @@ local-config-check:
 	docker compose config --quiet
 
 local-up: local-secrets plugin-backend-build plugin-build
-	docker compose up --build --wait
+	# 每次本地启动都重跑 grafana-bootstrap，幂等确保测试 Folder 与凭据存在；命名卷会保留。
+	docker compose up --build --wait --force-recreate
 
 local-smoke:
 	./scripts/smoke-local-playbook.sh

@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs';
 const port = process.env.GRAFANA_PORT ?? '3000';
 const passwordFile = process.env.GRAFANA_ADMIN_PASSWORD_FILE ?? 'deploy/local/secrets/grafana-admin-password';
 const password = readFileSync(passwordFile, 'utf8').trim();
+const folderUID = process.env.AEGIS_SMOKE_FOLDER_UID ?? 'infra';
 const base = `http://127.0.0.1:${port}/api/plugins/grafana-plugin-app/resources/api/v1`;
 const authorization = `Basic ${Buffer.from(`admin:${password}`).toString('base64')}`;
 const operationID = (kind) => `${kind}-${randomUUID()}`;
@@ -28,7 +29,8 @@ steps:
 async function request(path, options = {}) {
   const response = await fetch(`${base}${path}`, {
     ...options,
-    headers: { Authorization: authorization, ...options.headers },
+    // Playbook 是 Folder-owned；本地烟测必须通过同一条授权链传入目标 Folder。
+    headers: { Authorization: authorization, 'X-Aegis-Folder-UID': folderUID, ...options.headers },
   });
   const text = await response.text();
   if (!response.ok) {

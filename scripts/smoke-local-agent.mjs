@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 const port = process.env.GRAFANA_PORT ?? '3000';
 const passwordFile = process.env.GRAFANA_ADMIN_PASSWORD_FILE ?? 'deploy/local/secrets/grafana-admin-password';
 const password = readFileSync(passwordFile, 'utf8').trim();
+const folderUID = process.env.AEGIS_SMOKE_FOLDER_UID ?? 'infra';
 const grafanaBase = `http://127.0.0.1:${port}`;
 const base = `http://127.0.0.1:${port}/api/plugins/grafana-plugin-app/resources/api/v1`;
 const commonHeaders = {
@@ -68,6 +69,7 @@ try {
         ...commonHeaders,
         Accept: 'text/event-stream',
         'Idempotency-Key': operationID('agent-turn'),
+        'X-Aegis-Folder-UID': folderUID,
       },
       body: JSON.stringify({ message: '只回复 AEGIS_OK', mentions: [] }),
       signal: controller.signal,
