@@ -65,6 +65,8 @@ class Repository:
                         status IN ('pending', 'queued', 'indexing', 'ready', 'failed', 'disabled')
                     ),
                     failure_reason TEXT NOT NULL,
+                    metadata_generation INTEGER NOT NULL DEFAULT 1 CHECK (metadata_generation > 0),
+                    indexed_generation INTEGER NOT NULL DEFAULT 0 CHECK (indexed_generation >= 0),
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(collection_id, id)
@@ -90,6 +92,7 @@ class Repository:
             )
             connection.commit()
             self._migrate_legacy_document_status(connection)
+            self._ensure_generation_columns(connection)
 
     @staticmethod
     def _migrate_legacy_document_status(connection: sqlite3.Connection) -> None:
@@ -119,6 +122,8 @@ class Repository:
                         status IN ('queued', 'indexing', 'ready', 'failed')
                     ),
                     failure_reason TEXT NOT NULL,
+                    metadata_generation INTEGER NOT NULL DEFAULT 1 CHECK (metadata_generation > 0),
+                    indexed_generation INTEGER NOT NULL DEFAULT 0 CHECK (indexed_generation >= 0),
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
                     UNIQUE(collection_id, id)
@@ -129,14 +134,15 @@ class Repository:
                 """
                 INSERT INTO documents_v2
                     (id, collection_id, name, media_type, size, sha256, original_path,
-                     service, tags, status, failure_reason, created_at, updated_at)
+                     service, tags, status, failure_reason, metadata_generation,
+                     indexed_generation, created_at, updated_at)
                 SELECT id, collection_id, name, media_type, size, sha256, original_path,
                        service, tags,
                        CASE
                            WHEN status IN ('pending', 'disabled') THEN 'queued'
                            ELSE status
                        END,
-                       failure_reason, created_at, updated_at
+                       failure_reason, 1, 0, created_at, updated_at
                 FROM documents
                 """
             )
@@ -154,6 +160,20 @@ class Repository:
 
         if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
             raise RuntimeError("provider manifest migration broke foreign keys")
+
+    @staticmethod
+    def _ensure_generation_columns(connection: sqlite3.Connection) -> None:
+        columns = {
+            row["name"] for row in connection.execute("PRAGMA table_info(documents)").fetchall()
+        }
+        if "metadata_generation" not in columns:
+            connection.execute(
+                "ALTER TABLE documents ADD COLUMN metadata_generation INTEGER NOT NULL DEFAULT 1"
+            )
+        if "indexed_generation" not in columns:
+            connection.execute(
+                "ALTER TABLE documents ADD COLUMN indexed_generation INTEGER NOT NULL DEFAULT 0"
+            )
 
     def create_collection(self, collection: Collection) -> Collection:
         with self._lock, self._connect() as connection:
@@ -333,7 +353,7 @@ class Repository:
             raise NotFoundError("document not found")
         return self._document(row)
 
-    def get_document_context(self, document_id: str) -> tuple[Document, Collection]:
+    def get_indexing_context(self, document_id: str) -> tuple[Document, Collection, int]:
         with self._connect() as connection:
             row = connection.execute(
                 """SELECT d.*, c.id AS c_id, c.name AS c_name,
@@ -355,21 +375,96 @@ class Repository:
             created_at=row["c_created_at"],
             updated_at=row["c_updated_at"],
         )
-        return self._document(row), collection
+        return self._document(row), collection, int(row["metadata_generation"])
 
     def update_document_metadata(
         self, document_id: str, scope: str, *, service: str, tags: tuple[str, ...]
     ) -> Document:
-        self.get_document(document_id, scope)
         with self._lock, self._connect() as connection:
+            row = connection.execute(
+                """SELECT d.id FROM documents d JOIN collections c ON c.id = d.collection_id
+                   WHERE d.id = ? AND c.scope = ?""",
+                (document_id, scope),
+            ).fetchone()
+            if row is None:
+                raise NotFoundError("document not found")
             connection.execute(
                 """UPDATE documents
                    SET service = ?, tags = ?, status = 'queued', failure_reason = '',
-                       updated_at = ?
+                       metadata_generation = metadata_generation + 1, updated_at = ?
                    WHERE id = ?""",
                 (service, json.dumps(tags), now_iso(), document_id),
             )
+            active = connection.execute(
+                """SELECT id FROM jobs WHERE document_id = ?
+                   AND status IN ('queued', 'running') LIMIT 1""",
+                (document_id,),
+            ).fetchone()
+            if active is None:
+                self._insert_job(
+                    connection,
+                    Job(
+                        id=f"job_{uuid.uuid4().hex}",
+                        document_id=document_id,
+                        operation="reindex",
+                        status="queued",
+                    ),
+                )
         return self.get_document(document_id, scope)
+
+    def finish_indexing(
+        self,
+        job_id: str,
+        document_id: str,
+        indexed_generation: int,
+        error: str | None = None,
+    ) -> bool:
+        """Finish a claimed job and atomically reconcile metadata changed during indexing."""
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            job_status = "failed" if error else "completed"
+            cursor = connection.execute(
+                """UPDATE jobs SET status = ?, error = ?, finished_at = ?
+                   WHERE id = ? AND document_id = ? AND status = 'running'""",
+                (job_status, (error or "")[:2000], now_iso(), job_id, document_id),
+            )
+            if cursor.rowcount != 1:
+                raise ConflictError("job is not running")
+            row = connection.execute(
+                "SELECT metadata_generation FROM documents WHERE id = ?", (document_id,)
+            ).fetchone()
+            if row is None:
+                raise NotFoundError("document not found")
+            current_generation = int(row["metadata_generation"])
+            if current_generation != indexed_generation:
+                self._insert_job(
+                    connection,
+                    Job(
+                        id=f"job_{uuid.uuid4().hex}",
+                        document_id=document_id,
+                        operation="reindex",
+                        status="queued",
+                    ),
+                )
+                connection.execute(
+                    """UPDATE documents SET status = 'queued', failure_reason = '',
+                       updated_at = ? WHERE id = ?""",
+                    (now_iso(), document_id),
+                )
+                return False
+            if error:
+                connection.execute(
+                    """UPDATE documents SET status = 'failed', failure_reason = ?,
+                       updated_at = ? WHERE id = ?""",
+                    (error[:1000], now_iso(), document_id),
+                )
+                return False
+            connection.execute(
+                """UPDATE documents SET status = 'ready', failure_reason = '',
+                   indexed_generation = ?, updated_at = ? WHERE id = ?""",
+                (indexed_generation, now_iso(), document_id),
+            )
+            return True
 
     def set_document_status(
         self, document_id: str, status: str, failure_reason: str = ""
@@ -492,10 +587,16 @@ class Repository:
     def recover_running_jobs(self) -> int:
         # 进程可能在 DuckDB 提交中退出，恢复时重新排队并由 worker 对账后重建。
         with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
             cursor = connection.execute(
                 """UPDATE jobs SET status = 'queued', error = 'recovered after restart',
                    operation = CASE WHEN operation = 'index' THEN 'reindex' ELSE operation END,
                    started_at = NULL WHERE status = 'running'"""
+            )
+            connection.execute(
+                """UPDATE documents SET status = 'queued', updated_at = ?
+                   WHERE id IN (SELECT document_id FROM jobs WHERE status = 'queued')""",
+                (now_iso(),),
             )
         return cursor.rowcount
 

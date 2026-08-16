@@ -202,6 +202,30 @@ def test_failed_document_can_retry_index_idempotently(tmp_path: Path) -> None:
     assert service.repository.get_active_job("doc_abcdefgh") is not None
 
 
+def test_metadata_changed_during_indexing_queues_latest_generation(tmp_path: Path) -> None:
+    service, backend = new_service(tmp_path)
+    first_job = service.repository.get_active_job("doc_abcdefgh")
+
+    backend.on_index = lambda: service.update_document(
+        "doc_abcdefgh", "scope-a", service="payments", tags=("approved",)
+    )
+    service.run_once()
+
+    document = service.get_document("doc_abcdefgh", "scope-a")
+    next_job = service.repository.get_active_job(document.id)
+    assert first_job is not None
+    assert service.repository.get_job(first_job.id).status == "completed"
+    assert document.status == "queued"
+    assert document.service == "payments"
+    assert next_job is not None
+    assert next_job.id != first_job.id
+
+    backend.on_index = None
+    service.run_once()
+    assert service.get_document("doc_abcdefgh", "scope-a").status == "ready"
+    assert backend.indexed[-1][1].service == "payments"
+
+
 def test_scope_migration_requires_distinct_provider_scopes(tmp_path: Path) -> None:
     service, _ = new_service(tmp_path)
     with pytest.raises(ValidationError, match="distinct valid source and target scopes"):

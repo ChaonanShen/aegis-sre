@@ -154,16 +154,12 @@ class KnowledgeService:
         service: str,
         tags: tuple[str, ...],
     ) -> Document:
-        previous = self.repository.get_document(document_id, scope)
-        document = self.repository.update_document_metadata(
+        return self.repository.update_document_metadata(
             document_id,
             scope,
             service=service.strip(),
             tags=self._normalize_tags(tags),
         )
-        if previous.status in {"ready", "failed"}:
-            self.repository.create_job(document_id, "reindex")
-        return document
 
     def start_indexing(self, document_id: str, scope: str) -> Job:
         document = self.repository.get_document(document_id, scope)
@@ -251,18 +247,20 @@ class KnowledgeService:
         if job is None:
             return False
         try:
-            document, collection = self.repository.get_document_context(job.document_id)
+            document, collection, generation = self.repository.get_indexing_context(
+                job.document_id
+            )
             self.repository.set_document_status(document.id, "indexing")
             if job.operation == "reindex":
                 self.backend.delete(document.id)
             self.backend.index(self.originals.resolve(document.original_path), document, collection)
             if not self.backend.list_chunks(document.id):
                 raise RuntimeError("RAGLite returned no chunks after indexing")
-            self.repository.set_document_status(document.id, "ready")
-            self.repository.complete_job(job.id)
+            self.repository.finish_indexing(job.id, document.id, generation)
         except Exception as error:
-            self.repository.set_document_status(job.document_id, "failed", str(error)[:1000])
-            self.repository.fail_job(job.id, str(error))
+            self.repository.finish_indexing(
+                job.id, job.document_id, locals().get("generation", 0), str(error)
+            )
         return True
 
     def _run(self) -> None:

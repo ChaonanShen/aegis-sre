@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from aegis_raglite_sidecar.backend import Chunk, SearchHit
@@ -14,6 +15,7 @@ class FakeBackend:
         self.fail_index = False
         self.fail_delete = False
         self.chunks: dict[str, list[Chunk]] = {}
+        self.on_index: Callable[[], None] | None = None
 
     def check(self) -> None:
         return None
@@ -21,6 +23,8 @@ class FakeBackend:
     def index(self, path: Path, document: Document, collection: Collection) -> None:
         if self.fail_index:
             raise RuntimeError("embedding failed")
+        if self.on_index is not None:
+            self.on_index()
         self.indexed.append((path, document, collection))
         self.chunks[document.id] = [
             Chunk(

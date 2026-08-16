@@ -144,6 +144,7 @@ def test_job_claim_cancel_and_restart_recovery(tmp_path: Path) -> None:
     assert not repository.cancel_queued_job("doc_abcdefgh")
 
     assert repository.recover_running_jobs() == 1
+    assert repository.get_document("doc_abcdefgh", "scope-a").status == "queued"
     recovered = repository.claim_next_job()
     assert recovered is not None
     assert recovered.id == second.id
@@ -191,3 +192,6 @@ def test_repository_migrates_legacy_pending_document_to_queued(tmp_path: Path) -
     repository = Repository(path)
 
     assert repository.get_document("doc_abcdefgh", "scope-a").status == "queued"
+    with sqlite3.connect(path) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(documents)")}
+    assert {"metadata_generation", "indexed_generation"} <= columns
