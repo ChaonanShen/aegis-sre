@@ -59,7 +59,7 @@ func apiHandler(cfg config.Config, deps dependencies) http.Handler {
 	mux.HandleFunc("/api/v1/", func(w http.ResponseWriter, request *http.Request) {
 		writeAPIProblem(w, request, http.StatusServiceUnavailable, "capability_unavailable", "capability is not configured", false)
 	})
-	return requireTrustedProxy(cfg.PluginToken, requireActor(mux))
+	return requireTrustedProxy(cfg.PluginToken, requireRequestAuthorization(mux))
 }
 
 func requireTrustedProxy(token string, next http.Handler) http.Handler {
@@ -68,18 +68,6 @@ func requireTrustedProxy(token string, next http.Handler) http.Handler {
 			provided := strings.TrimPrefix(request.Header.Get("Authorization"), "Bearer ")
 			if len(provided) != len(token) || subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
 				writeAPIProblem(w, request, http.StatusUnauthorized, "unauthenticated", "untrusted proxy", false)
-				return
-			}
-		}
-		next.ServeHTTP(w, request)
-	})
-}
-
-func requireActor(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		for _, name := range []string{headerTenantID, headerOrgID, headerUserID} {
-			if safeID(request.Header.Get(name)) == "" {
-				writeAPIProblem(w, request, http.StatusUnauthorized, "unauthenticated", "actor context is incomplete", false)
 				return
 			}
 		}

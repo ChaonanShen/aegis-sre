@@ -321,25 +321,11 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 }
 
 func requireKnowledgeActor(w http.ResponseWriter, request *http.Request, write bool) (domain.ActorContext, bool) {
-	actor := actorFromRequest(request)
-	if err := actor.Validate(); err != nil {
-		writeAPIProblem(w, request, http.StatusUnauthorized, "unauthenticated", "Grafana identity is required", false)
-		return domain.ActorContext{}, false
+	required := folderAccessRead
+	if write {
+		required = folderAccessWrite
 	}
-	if safeID(actor.FolderUID) == "" {
-		writeAPIProblem(w, request, http.StatusForbidden, "forbidden", "trusted Folder context is required", false)
-		return domain.ActorContext{}, false
-	}
-	access := request.Header.Get("X-Aegis-Folder-Access")
-	if access != "read" && access != "write" {
-		writeAPIProblem(w, request, http.StatusForbidden, "forbidden", "trusted Folder permission is required", false)
-		return domain.ActorContext{}, false
-	}
-	if write && access != "write" {
-		writeAPIProblem(w, request, http.StatusForbidden, "forbidden", "Folder write permission is required", false)
-		return domain.ActorContext{}, false
-	}
-	return actor, true
+	return requireFolderAccess(w, request, required)
 }
 
 func knowledgeCollectionRequest(w http.ResponseWriter, request *http.Request, write bool) (domain.ActorContext, ports.KnowledgeCollectionRef, bool) {

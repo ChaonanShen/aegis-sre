@@ -156,6 +156,10 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, can
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/turns:stream", func(w http.ResponseWriter, request *http.Request) {
+		actor, authorized := requireFolderAccess(w, request, folderAccessRead)
+		if !authorized {
+			return
+		}
 		ref, ok := agentSessionRef(w, request)
 		if !ok {
 			return
@@ -179,7 +183,6 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, can
 			writeAPIProblem(w, request, http.StatusBadRequest, "invalid_argument", "mentions must not contain more than 50 items", false)
 			return
 		}
-		actor := actorFromRequest(request)
 		turn, stream, err := provider.StartTurn(request.Context(), actor, ref, ports.StartTurnInput{
 			Message: body.Message, Mentions: body.Mentions, OperationID: key, FolderUID: actor.FolderUID, CanvasContext: canvasTurnContext(canvas, ref.ID),
 		})

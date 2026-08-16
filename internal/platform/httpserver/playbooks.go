@@ -336,11 +336,6 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 	})
 }
 
-func actorFromRequest(request *http.Request) domain.ActorContext {
-	roles := strings.FieldsFunc(request.Header.Get("X-Aegis-Roles"), func(r rune) bool { return r == ',' || r == ';' })
-	return domain.ActorContext{TenantID: request.Header.Get(headerTenantID), OrgID: request.Header.Get(headerOrgID), UserID: request.Header.Get(headerUserID), FolderUID: request.Header.Get("X-Aegis-Folder-UID"), Roles: roles}
-}
-
 func requirePlaybookActor(w http.ResponseWriter, request *http.Request, write bool) (domain.ActorContext, bool) {
 	actor := actorFromRequest(request)
 	if err := actor.Validate(); err != nil {

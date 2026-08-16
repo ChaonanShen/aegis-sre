@@ -179,6 +179,7 @@ func TestAgentSessionListAndCreateUseStablePublicContract(t *testing.T) {
 	createRequest := actorRequest(http.MethodPost, "/api/v1/sessions", `{"title":"Investigate latency","folder_uid":"folder-a"}`)
 	createRequest.Header.Set("Idempotency-Key", "create-session-1")
 	createRequest.Header.Set("X-Aegis-Folder-UID", "folder-a")
+	createRequest.Header.Set("X-Aegis-Folder-Access", "read")
 	created := httptest.NewRecorder()
 	handler.ServeHTTP(created, createRequest)
 	if created.Code != http.StatusCreated || fake.createInput.Title != "Investigate latency" || fake.createInput.OperationID != "create-session-1" {
@@ -238,6 +239,7 @@ func TestStartTurnStreamsLifecycleAndForwardsTrustedContext(t *testing.T) {
 	request := actorRequest(http.MethodPost, "/api/v1/sessions/ses_abcdefgh/turns:stream", `{"message":"check latency","mentions":["service:api"]}`)
 	request.Header.Set("Idempotency-Key", "start-turn-1")
 	request.Header.Set("X-Aegis-Folder-UID", "folder-a")
+	request.Header.Set("X-Aegis-Folder-Access", "read")
 	response := httptest.NewRecorder()
 	agentHandler(fake).ServeHTTP(response, request)
 	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "text/event-stream" {
@@ -249,6 +251,18 @@ func TestStartTurnStreamsLifecycleAndForwardsTrustedContext(t *testing.T) {
 	}
 	if fake.startInput.OperationID != "start-turn-1" || fake.startInput.FolderUID != "folder-a" || fake.startInput.Message != "check latency" || len(fake.startInput.Mentions) != 1 {
 		t.Fatalf("start input = %#v", fake.startInput)
+	}
+}
+
+func TestStartTurnRequiresTrustedFolderReadAccess(t *testing.T) {
+	t.Parallel()
+	fake := &agentHTTPFake{AgentProvider: contracttest.AgentProvider{Turn: ports.AgentTurnRef{ID: "turn_abcdefgh"}}}
+	request := actorRequest(http.MethodPost, "/api/v1/sessions/ses_abcdefgh/turns:stream", `{"message":"check latency"}`)
+	request.Header.Set("Idempotency-Key", "start-turn-1")
+	response := httptest.NewRecorder()
+	agentHandler(fake).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || fake.startInput.OperationID != "" {
+		t.Fatalf("status = %d, input = %+v, body = %s", response.Code, fake.startInput, response.Body.String())
 	}
 }
 
@@ -297,6 +311,10 @@ func TestAgentHandlersRejectAmbiguousOrUntrustedInputBeforeProvider(t *testing.T
 		if test.key != "" {
 			request.Header.Set("Idempotency-Key", test.key)
 		}
+		if test.path == "/api/v1/sessions/ses_abcdefgh/turns:stream" {
+			request.Header.Set("X-Aegis-Folder-UID", "folder-a")
+			request.Header.Set("X-Aegis-Folder-Access", "read")
+		}
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusBadRequest {
@@ -310,6 +328,7 @@ func TestAgentHandlersRejectAmbiguousOrUntrustedInputBeforeProvider(t *testing.T
 	untrusted := actorRequest(http.MethodPost, "/api/v1/sessions", `{"title":"x","folder_uid":"body-folder"}`)
 	untrusted.Header.Set("Idempotency-Key", "create-session-1")
 	untrusted.Header.Set("X-Aegis-Folder-UID", "trusted-folder")
+	untrusted.Header.Set("X-Aegis-Folder-Access", "read")
 	untrustedResponse := httptest.NewRecorder()
 	handler.ServeHTTP(untrustedResponse, untrusted)
 	if untrustedResponse.Code != http.StatusForbidden || fake.createInput.OperationID != "" {
