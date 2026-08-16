@@ -105,7 +105,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		writeJSON(w, http.StatusOK, playbookJSON(resource))
 	})
 	mux.HandleFunc("DELETE /api/v1/playbooks/{playbook_id}", func(w http.ResponseWriter, request *http.Request) {
-		actor, allowed := requirePlaybookActor(w, request, true)
+		actor, allowed := requireFolderAccess(w, request, folderAccessAdmin)
 		if !allowed {
 			return
 		}
@@ -278,7 +278,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 			return
 		}
 		request.SetPathValue("step_id", stepID)
-		actor, state, ok := scopedRunState(w, request, provider, true)
+		actor, state, ok := scopedRunStateWithAccess(w, request, provider, folderAccessAdmin)
 		if !ok || !requireStepID(w, request) || !requireIdempotencyHeader(w, request) {
 			return
 		}
@@ -337,25 +337,11 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 }
 
 func requirePlaybookActor(w http.ResponseWriter, request *http.Request, write bool) (domain.ActorContext, bool) {
-	actor := actorFromRequest(request)
-	if err := actor.Validate(); err != nil {
-		writeAPIProblem(w, request, http.StatusUnauthorized, "unauthenticated", "Grafana identity is required", false)
-		return domain.ActorContext{}, false
+	required := folderAccessRead
+	if write {
+		required = folderAccessWrite
 	}
-	if write && !hasPlaybookWriteRole(actor.Roles) {
-		writeAPIProblem(w, request, http.StatusForbidden, "forbidden", "Grafana Editor or Admin role is required", false)
-		return domain.ActorContext{}, false
-	}
-	return actor, true
-}
-
-func hasPlaybookWriteRole(roles []string) bool {
-	for _, role := range roles {
-		if strings.EqualFold(strings.TrimSpace(role), "Editor") || strings.EqualFold(strings.TrimSpace(role), "Admin") {
-			return true
-		}
-	}
-	return false
+	return requireFolderAccess(w, request, required)
 }
 
 func scopedPlaybookRef(w http.ResponseWriter, request *http.Request, actor domain.ActorContext) (ports.PlaybookRef, bool) {
@@ -390,7 +376,15 @@ func runRef(w http.ResponseWriter, request *http.Request) (ports.PlaybookRunRef,
 
 // Run URL 只有公共 run ID，必须先向 Provider 解析所属 playbook，再校验 Grafana 组织范围。
 func scopedRunState(w http.ResponseWriter, request *http.Request, provider ports.PlaybookProvider, write bool) (domain.ActorContext, ports.PlaybookRunState, bool) {
-	actor, allowed := requirePlaybookActor(w, request, write)
+	required := folderAccessRead
+	if write {
+		required = folderAccessWrite
+	}
+	return scopedRunStateWithAccess(w, request, provider, required)
+}
+
+func scopedRunStateWithAccess(w http.ResponseWriter, request *http.Request, provider ports.PlaybookProvider, required folderAccess) (domain.ActorContext, ports.PlaybookRunState, bool) {
+	actor, allowed := requireFolderAccess(w, request, required)
 	if !allowed {
 		return domain.ActorContext{}, ports.PlaybookRunState{}, false
 	}

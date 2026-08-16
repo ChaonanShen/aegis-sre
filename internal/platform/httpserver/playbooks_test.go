@@ -29,6 +29,7 @@ type playbookHTTPFake struct {
 	cancelCalls    int
 	humanTaskCalls int
 	approvalCalls  int
+	deleteCalls    int
 	checkErr       error
 }
 
@@ -53,6 +54,11 @@ func (fake *playbookHTTPFake) Get(_ context.Context, _ domain.ActorContext, ref 
 
 func (fake *playbookHTTPFake) Validate(_ context.Context, _ domain.ActorContext, _ []byte) ([]ports.ValidationIssue, error) {
 	return []ports.ValidationIssue{{Path: "steps[0]", Message: "action is required"}}, fake.err
+}
+
+func (fake *playbookHTTPFake) Delete(_ context.Context, _ domain.ActorContext, _ ports.PlaybookRef) error {
+	fake.deleteCalls++
+	return fake.err
 }
 
 func (fake *playbookHTTPFake) StartRun(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRef, input ports.RunPlaybookInput) (ports.PlaybookRunRef, error) {
@@ -110,7 +116,7 @@ func TestCreatePlaybookUsesStablePublicIDAndNativeYAML(t *testing.T) {
 	t.Parallel()
 	fake := &playbookHTTPFake{}
 	handler := New(config.Config{Endpoints: map[config.Capability]string{config.CapabilityPlaybook: "http://dagu"}}, nil, WithPlaybookProvider(fake)).Handler
-	request := actorRequest(http.MethodPost, "/api/v1/playbooks", "name: diagnose\nsteps: []\n")
+	request := playbookActorRequest(http.MethodPost, "/api/v1/playbooks", "name: diagnose\nsteps: []\n")
 	request.Header.Set("Content-Type", "application/yaml")
 	request.Header.Set("Idempotency-Key", "create-diagnose")
 	response := httptest.NewRecorder()
@@ -128,7 +134,7 @@ func TestCreatePlaybookUsesStablePublicIDAndNativeYAML(t *testing.T) {
 		t.Fatalf("missing native detail fields: %s", response.Body.String())
 	}
 
-	repeat := actorRequest(http.MethodPost, "/api/v1/playbooks", "name: diagnose\nsteps: []\n")
+	repeat := playbookActorRequest(http.MethodPost, "/api/v1/playbooks", "name: diagnose\nsteps: []\n")
 	repeat.Header.Set("Idempotency-Key", "create-diagnose")
 	repeatResponse := httptest.NewRecorder()
 	handler.ServeHTTP(repeatResponse, repeat)
@@ -145,8 +151,9 @@ func TestPlaybookCRUDEnforcesGrafanaOrgScopeAndWriteRole(t *testing.T) {
 	fake := &playbookHTTPFake{}
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 
-	viewer := actorRequest(http.MethodPost, "/api/v1/playbooks", "name: denied\nsteps: []\n")
+	viewer := playbookActorRequest(http.MethodPost, "/api/v1/playbooks", "name: denied\nsteps: []\n")
 	viewer.Header.Set("X-Aegis-Roles", "Viewer")
+	viewer.Header.Set("X-Aegis-Folder-Access", "read")
 	viewer.Header.Set("Idempotency-Key", "viewer-create")
 	viewerResponse := httptest.NewRecorder()
 	handler.ServeHTTP(viewerResponse, viewer)
@@ -156,7 +163,7 @@ func TestPlaybookCRUDEnforcesGrafanaOrgScopeAndWriteRole(t *testing.T) {
 
 	owner := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}
 	id := scopedPlaybookID(owner, "org-resource")
-	foreign := actorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id), "")
+	foreign := playbookActorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id), "")
 	foreign.Header.Set(headerOrgID, "another-org")
 	foreignResponse := httptest.NewRecorder()
 	handler.ServeHTTP(foreignResponse, foreign)
@@ -169,7 +176,7 @@ func TestValidateNewPlaybookUsesPublicLowercaseIssues(t *testing.T) {
 	t.Parallel()
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(&playbookHTTPFake{})).Handler
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, actorRequest(http.MethodPost, "/api/v1/playbooks/validate", "steps:\n  - id: inspect\n"))
+	handler.ServeHTTP(response, playbookActorRequest(http.MethodPost, "/api/v1/playbooks/validate", "steps:\n  - id: inspect\n"))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"path":"steps[0]"`) || strings.Contains(response.Body.String(), `"Path"`) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
@@ -180,7 +187,7 @@ func TestGetRunResolvesOnlyPublicRunID(t *testing.T) {
 	fake := &playbookHTTPFake{}
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh", ""))
+	handler.ServeHTTP(response, playbookActorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh", ""))
 	if response.Code != http.StatusOK || fake.runRef.ID != "run_abcdefgh" || fake.runRef.PlaybookID != "" {
 		t.Fatalf("status = %d, ref = %#v, body = %s", response.Code, fake.runRef, response.Body.String())
 	}
@@ -191,7 +198,7 @@ func TestRunEventStreamResumesAfterSequence(t *testing.T) {
 	fake := &playbookHTTPFake{}
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh/events?after_sequence=7", ""))
+	handler.ServeHTTP(response, playbookActorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh/events?after_sequence=7", ""))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "id: 8") || !strings.Contains(response.Body.String(), `"run_id":"run_abcdefgh"`) || !strings.Contains(response.Body.String(), `"playbook_id":"pbk_diagnose"`) || !strings.Contains(response.Body.String(), `"steps":[{"id":"inspect"`) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
@@ -203,13 +210,13 @@ func TestPlaybookArtifactsUsePublicContractFields(t *testing.T) {
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 
 	listResponse := httptest.NewRecorder()
-	handler.ServeHTTP(listResponse, actorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh/artifacts", ""))
+	handler.ServeHTTP(listResponse, playbookActorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh/artifacts", ""))
 	if listResponse.Code != http.StatusOK || !strings.Contains(listResponse.Body.String(), `"path":"reports/result.txt"`) || strings.Contains(listResponse.Body.String(), `"Path"`) {
 		t.Fatalf("list status = %d, body = %s", listResponse.Code, listResponse.Body.String())
 	}
 
 	previewResponse := httptest.NewRecorder()
-	handler.ServeHTTP(previewResponse, actorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh/artifacts/preview?path=reports%2Fresult.txt", ""))
+	handler.ServeHTTP(previewResponse, playbookActorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh/artifacts/preview?path=reports%2Fresult.txt", ""))
 	if previewResponse.Code != http.StatusOK || !strings.Contains(previewResponse.Body.String(), `"text":"result text"`) || strings.Contains(previewResponse.Body.String(), `"Text"`) {
 		t.Fatalf("preview status = %d, body = %s", previewResponse.Code, previewResponse.Body.String())
 	}
@@ -221,7 +228,7 @@ func TestListPlaybookRunsReturnsProviderHistory(t *testing.T) {
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 	response := httptest.NewRecorder()
 	id := scopedPlaybookID(domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}, "run-history")
-	handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id)+"/runs", ""))
+	handler.ServeHTTP(response, playbookActorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id)+"/runs", ""))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"run_abcdefgh"`) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
@@ -235,8 +242,9 @@ func TestPlaybookRunStartEnforcesScopeRoleAndResourceScopedIdempotency(t *testin
 	fake := &playbookHTTPFake{}
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 
-	viewer := actorRequest(http.MethodPost, "/api/v1/playbooks/"+string(firstID)+"/runs", `{}`)
+	viewer := playbookActorRequest(http.MethodPost, "/api/v1/playbooks/"+string(firstID)+"/runs", `{}`)
 	viewer.Header.Set("X-Aegis-Roles", "Viewer")
+	viewer.Header.Set("X-Aegis-Folder-Access", "read")
 	viewer.Header.Set("Idempotency-Key", "same-request-key")
 	viewerResponse := httptest.NewRecorder()
 	handler.ServeHTTP(viewerResponse, viewer)
@@ -244,7 +252,7 @@ func TestPlaybookRunStartEnforcesScopeRoleAndResourceScopedIdempotency(t *testin
 		t.Fatalf("viewer status = %d, start calls = %d", viewerResponse.Code, fake.startCalls)
 	}
 
-	foreign := actorRequest(http.MethodPost, "/api/v1/playbooks/"+string(firstID)+"/runs", `{}`)
+	foreign := playbookActorRequest(http.MethodPost, "/api/v1/playbooks/"+string(firstID)+"/runs", `{}`)
 	foreign.Header.Set(headerOrgID, "another-org")
 	foreign.Header.Set("Idempotency-Key", "same-request-key")
 	foreignResponse := httptest.NewRecorder()
@@ -255,7 +263,7 @@ func TestPlaybookRunStartEnforcesScopeRoleAndResourceScopedIdempotency(t *testin
 
 	var runIDs []string
 	for _, id := range []domain.ID{firstID, secondID} {
-		request := actorRequest(http.MethodPost, "/api/v1/playbooks/"+string(id)+"/runs", `{}`)
+		request := playbookActorRequest(http.MethodPost, "/api/v1/playbooks/"+string(id)+"/runs", `{}`)
 		request.Header.Set("Idempotency-Key", "same-request-key")
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
@@ -277,7 +285,7 @@ func TestPlaybookRunRoutesRejectForeignOrgAndViewerMutations(t *testing.T) {
 	fake := &playbookHTTPFake{runPlaybookID: scopedPlaybookID(owner, "owned-run")}
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 
-	foreign := actorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh", "")
+	foreign := playbookActorRequest(http.MethodGet, "/api/v1/runs/run_abcdefgh", "")
 	foreign.Header.Set(headerOrgID, "another-org")
 	foreignResponse := httptest.NewRecorder()
 	handler.ServeHTTP(foreignResponse, foreign)
@@ -294,8 +302,9 @@ func TestPlaybookRunRoutesRejectForeignOrgAndViewerMutations(t *testing.T) {
 		{target: "/api/v1/runs/run_abcdefgh/approvals/review:resolve", body: `{"decision":"approve"}`},
 	}
 	for _, mutation := range mutations {
-		request := actorRequest(http.MethodPost, mutation.target, mutation.body)
+		request := playbookActorRequest(http.MethodPost, mutation.target, mutation.body)
 		request.Header.Set("X-Aegis-Roles", "Viewer")
+		request.Header.Set("X-Aegis-Folder-Access", "read")
 		request.Header.Set("Idempotency-Key", "viewer-action")
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
@@ -308,12 +317,42 @@ func TestPlaybookRunRoutesRejectForeignOrgAndViewerMutations(t *testing.T) {
 	}
 }
 
+func TestPlaybookRootDeleteAndApprovalRequireFolderAdmin(t *testing.T) {
+	t.Parallel()
+	actor := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user", FolderUID: "folder-a"}
+	fake := &playbookHTTPFake{runPlaybookID: scopedPlaybookID(actor, "owned-run")}
+	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
+
+	deleteRequest := playbookActorRequest(http.MethodDelete, "/api/v1/playbooks/"+string(scopedPlaybookID(actor, "delete")), "")
+	deleteResponse := httptest.NewRecorder()
+	handler.ServeHTTP(deleteResponse, deleteRequest)
+	if deleteResponse.Code != http.StatusForbidden || fake.deleteCalls != 0 {
+		t.Fatalf("write delete status=%d calls=%d", deleteResponse.Code, fake.deleteCalls)
+	}
+
+	approvalRequest := playbookActorRequest(http.MethodPost, "/api/v1/runs/run_abcdefgh/approvals/review:resolve", `{"decision":"approve"}`)
+	approvalRequest.Header.Set("Idempotency-Key", "approve-run")
+	approvalResponse := httptest.NewRecorder()
+	handler.ServeHTTP(approvalResponse, approvalRequest)
+	if approvalResponse.Code != http.StatusForbidden || fake.approvalCalls != 0 {
+		t.Fatalf("write approval status=%d calls=%d", approvalResponse.Code, fake.approvalCalls)
+	}
+
+	deleteRequest = playbookActorRequest(http.MethodDelete, "/api/v1/playbooks/"+string(scopedPlaybookID(actor, "delete")), "")
+	deleteRequest.Header.Set("X-Aegis-Folder-Access", "admin")
+	deleteResponse = httptest.NewRecorder()
+	handler.ServeHTTP(deleteResponse, deleteRequest)
+	if deleteResponse.Code != http.StatusNoContent || fake.deleteCalls != 1 {
+		t.Fatalf("admin delete status=%d calls=%d body=%s", deleteResponse.Code, fake.deleteCalls, deleteResponse.Body.String())
+	}
+}
+
 func TestPlaybookAPIRejectsInvalidInputAndSanitizesProviderErrors(t *testing.T) {
 	t.Parallel()
 	t.Run("invalid id", func(t *testing.T) {
 		handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(&playbookHTTPFake{})).Handler
 		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/playbooks/dagu-internal", ""))
+		handler.ServeHTTP(response, playbookActorRequest(http.MethodGet, "/api/v1/playbooks/dagu-internal", ""))
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("status = %d", response.Code)
 		}
@@ -323,14 +362,14 @@ func TestPlaybookAPIRejectsInvalidInputAndSanitizesProviderErrors(t *testing.T) 
 		handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 		response := httptest.NewRecorder()
 		id := scopedPlaybookID(domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}, "provider-detail")
-		handler.ServeHTTP(response, actorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id), ""))
+		handler.ServeHTTP(response, playbookActorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id), ""))
 		if response.Code != http.StatusBadGateway || strings.Contains(response.Body.String(), "secret") || strings.Contains(response.Body.String(), "Dagu") {
 			t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 		}
 	})
 }
 
-func actorRequest(method, target, body string) *http.Request {
+func playbookActorRequest(method, target, body string) *http.Request {
 	var reader io.Reader
 	if body != "" {
 		reader = strings.NewReader(body)
@@ -339,6 +378,8 @@ func actorRequest(method, target, body string) *http.Request {
 	request.Header.Set(headerTenantID, "tenant")
 	request.Header.Set(headerOrgID, "org")
 	request.Header.Set(headerUserID, "user")
+	request.Header.Set("X-Aegis-Folder-UID", "folder-a")
+	request.Header.Set("X-Aegis-Folder-Access", "write")
 	request.Header.Set("X-Aegis-Roles", "Editor")
 	return request
 }
