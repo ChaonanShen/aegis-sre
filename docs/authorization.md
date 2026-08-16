@@ -708,6 +708,7 @@ Skills 各自解析 Header。Header 名称是平台传输细节，不应散落�
 
 - [Aegis SRE 基本架构](architecture.md)
 - [整体实施计划](implementation-plan.md)
+- [统一权限实施计划](authorization-implementation-plan.md)
 - [Agent 公开标识 ADR](adr/0002-agent-public-identifiers.md)
 - [Agent Provider Runtime 与 Scope ADR](adr/0003-agent-provider-runtime-and-scope.md)
 - [Knowledge 身份与 Folder 授权 ADR](adr/0004-knowledge-identity-and-folder-authorization.md)

@@ -21,6 +21,10 @@ Knowledge 的公共接口仍先行冻结；完成真实检索与授权验收后�
 Knowledge Provider 的抽象、RAGLite sidecar、迁移、回退和删除门槛详见
 [Knowledge Provider 抽象与 RAGLite 迁移执行计划](raglite-knowledge-provider-migration-plan.md)。
 
+Grafana Folder RBAC、Knowledge/Playbook/Agent 的资源归属、MCP 用户委托、审批和迁移顺序详见
+[统一权限实施计划](authorization-implementation-plan.md)。该计划是跨模块权限改动的执行门禁；与本文阶段顺序
+冲突时，先满足其中的 ADR、fail-closed 和真实权限验收要求。
+
 ## 2. 全局完成标准
 
 最终版本至少完成一条真实闭环：
