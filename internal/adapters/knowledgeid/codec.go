@@ -46,7 +46,7 @@ func (codec *Codec) CollectionID(actor domain.ActorContext, idempotencyKey strin
 	if strings.TrimSpace(idempotencyKey) == "" {
 		return "", errors.New("idempotency key is required")
 	}
-	return codec.derive("kbs_", "aegis-knowledge-collection-v1", actor.TenantID, actor.OrgID, actor.UserID, actor.FolderUID, idempotencyKey)
+	return codec.derive("kbs_", "aegis-knowledge-collection-v2", actor.TenantID, actor.OrgID, actor.FolderUID, idempotencyKey)
 }
 
 func (codec *Codec) DocumentID(collectionID domain.ID, idempotencyKey string) (domain.ID, error) {
@@ -70,8 +70,20 @@ func (codec *Codec) ChunkID(documentID domain.ID, providerChunkID string) (strin
 	return string(id), err
 }
 
-// ScopeFingerprint 可写入 Provider metadata 用于逐请求授权复核，且不泄漏 Actor 原始值。
+// ScopeFingerprint 只绑定 Folder 归属，不包含创建者 User ID，确保同一 Folder 的合法成员共享团队资产。
 func (codec *Codec) ScopeFingerprint(actor domain.ActorContext) (string, error) {
+	if err := actor.Validate(); err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(actor.FolderUID) == "" {
+		return "", errors.New("folder UID is required")
+	}
+	value, err := codec.derive("scp_", "aegis-knowledge-scope-v2", actor.TenantID, actor.OrgID, actor.FolderUID)
+	return string(value), err
+}
+
+// LegacyScopeFingerprint 仅用于识别早期错误绑定创建者的 v1 数据，并限制在只读兼容路径。
+func (codec *Codec) LegacyScopeFingerprint(actor domain.ActorContext) (string, error) {
 	if err := actor.Validate(); err != nil {
 		return "", err
 	}

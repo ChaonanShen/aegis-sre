@@ -29,6 +29,12 @@ func TestCollectionIDIsStableAndBoundToTrustedScope(t *testing.T) {
 	if first == otherID {
 		t.Fatal("different folders must not derive the same public ID")
 	}
+	otherUser := actor
+	otherUser.UserID = "user-b"
+	otherUserID, _ := codec.CollectionID(otherUser, "request-1")
+	if first != otherUserID {
+		t.Fatal("Folder-owned collection IDs must not depend on the creating user")
+	}
 	if strings.Contains(string(first), actor.UserID) || strings.Contains(string(first), actor.FolderUID) {
 		t.Fatal("public ID leaks actor scope")
 	}
@@ -82,6 +88,14 @@ func TestScopeFingerprintDoesNotExposeActorValues(t *testing.T) {
 		if strings.Contains(fingerprint, secret) {
 			t.Fatalf("fingerprint exposes %q", secret)
 		}
+	}
+	otherUser := actor
+	otherUser.UserID = "other-user"
+	shared, _ := codec.ScopeFingerprint(otherUser)
+	legacy, _ := codec.LegacyScopeFingerprint(actor)
+	legacyOther, _ := codec.LegacyScopeFingerprint(otherUser)
+	if shared != fingerprint || legacy == legacyOther {
+		t.Fatal("v2 scope must be Folder-shared while v1 compatibility remains creator-bound")
 	}
 }
 
