@@ -42,6 +42,17 @@ type App struct {
 	serviceToken string
 	authzClient  authz.EnforcementClient
 	folderAccess func(*http.Request, string, string) (bool, error)
+	auditFolder  func(folderAuthorizationAudit)
+}
+
+type folderAuthorizationAudit struct {
+	RequestedFolderUID  string
+	AuthorizedFolderUID string
+	RequiredAccess      folderAccess
+	Action              string
+	Decision            string
+	RequestID           string
+	TraceID             string
 }
 
 func NewApp(_ context.Context, _ backend.AppInstanceSettings) (instancemgmt.Instance, error) {
@@ -104,6 +115,17 @@ func newProxyApp(config pluginconfig.ControlPlane) *App {
 	}
 	app := &App{proxy: proxy}
 	app.folderAccess = app.hasFolderAccess
+	app.auditFolder = func(event folderAuthorizationAudit) {
+		backend.Logger.Info("Folder authorization decision",
+			"requested_folder_uid", event.RequestedFolderUID,
+			"authorized_folder_uid", event.AuthorizedFolderUID,
+			"required_access", string(event.RequiredAccess),
+			"action", event.Action,
+			"decision", event.Decision,
+			"request_id", event.RequestID,
+			"trace_id", event.TraceID,
+		)
+	}
 	return app
 }
 
@@ -144,13 +166,28 @@ func (app *App) requireFolderAuthorization(next http.Handler) http.Handler {
 			next.ServeHTTP(w, request)
 			return
 		}
+		audit := func(requested, authorized, decision string) {
+			if app.auditFolder != nil {
+				app.auditFolder(folderAuthorizationAudit{
+					RequestedFolderUID: requested, AuthorizedFolderUID: authorized,
+					RequiredAccess: policy.access, Action: policy.action(), Decision: decision,
+					RequestID: safeHeaderValue(request.Header.Get("X-Request-ID")), TraceID: safeHeaderValue(request.Header.Get("X-Trace-ID")),
+				})
+			}
+		}
 		folderUID := safeFolderUID(request.Header.Get(headerFolderUID))
 		queryFolderUID := safeFolderUID(request.URL.Query().Get("folder_uid"))
+		requestedFolderUID := folderUID
+		if requestedFolderUID == "" {
+			requestedFolderUID = queryFolderUID
+		}
 		if folderUID != "" && queryFolderUID != "" && folderUID != queryFolderUID {
+			audit(folderUID, "", "denied")
 			writeProblem(w, http.StatusForbidden, "forbidden", "Folder context is ambiguous")
 			return
 		}
 		if folderUID == "" {
+			audit(requestedFolderUID, "", "denied")
 			folderUID = queryFolderUID
 		}
 		if folderUID == "" {
@@ -158,20 +195,24 @@ func (app *App) requireFolderAuthorization(next http.Handler) http.Handler {
 			return
 		}
 		if safeHeaderValue(request.Header.Get(headerGrafanaID)) == "" {
+			audit(requestedFolderUID, "", "unauthenticated")
 			writeProblem(w, http.StatusUnauthorized, "unauthenticated", "Grafana identity token is required")
 			return
 		}
 		allowed, err := app.folderAccess(request, policy.action(), folderUID)
 		if err != nil {
+			audit(requestedFolderUID, "", "error")
 			backend.Logger.Error("Grafana Folder authorization failed", "classification", "authorization_error", "error", err)
 			writeProblem(w, http.StatusServiceUnavailable, "provider_unavailable", "Folder authorization unavailable")
 			return
 		}
 		if !allowed {
+			audit(requestedFolderUID, "", "denied")
 			writeProblem(w, http.StatusForbidden, "forbidden", "Folder permission denied")
 			return
 		}
 		ctx := context.WithValue(request.Context(), trustedFolderContextKey{}, folderAuthorization{uid: folderUID, access: policy.access})
+		audit(requestedFolderUID, folderUID, "allowed")
 		next.ServeHTTP(w, request.WithContext(ctx))
 	})
 }

@@ -151,6 +151,8 @@ func TestFolderAuthorizationInjectsOnlyVerifiedFolder(t *testing.T) {
 	}))
 	defer upstream.Close()
 	app := testProxyApp(t, upstream.URL, "")
+	var audit folderAuthorizationAudit
+	app.auditFolder = func(event folderAuthorizationAudit) { audit = event }
 	var checkedAction, checkedFolder string
 	app.folderAccess = func(_ *http.Request, action, folder string) (bool, error) {
 		checkedAction, checkedFolder = action, folder
@@ -168,6 +170,25 @@ func TestFolderAuthorizationInjectsOnlyVerifiedFolder(t *testing.T) {
 	}
 	if received.Get(headerFolderUID) != "folder-a" || received.Get(headerFolderAccess) != "read" || received.Get(headerGrafanaID) != "" {
 		t.Fatalf("upstream headers = %v", received)
+	}
+	if audit.RequestedFolderUID != "folder-a" || audit.AuthorizedFolderUID != "folder-a" || audit.RequiredAccess != folderAccessRead || audit.Decision != "allowed" {
+		t.Fatalf("authorization audit = %#v", audit)
+	}
+}
+
+func TestFolderAuthorizationAuditDoesNotPromoteDeniedRequestedScope(t *testing.T) {
+	app := testProxyApp(t, "http://control-plane.invalid", "")
+	app.folderAccess = func(*http.Request, string, string) (bool, error) { return false, nil }
+	var audit folderAuthorizationAudit
+	app.auditFolder = func(event folderAuthorizationAudit) { audit = event }
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/knowledge-bases/kbs_abcdefgh", nil)
+	request.Header.Set(headerFolderUID, "requested-only")
+	request.Header.Set(headerGrafanaID, "signed-token")
+	response := httptest.NewRecorder()
+	app.requireFolderAuthorization(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("denied request reached upstream") })).ServeHTTP(response, request)
+
+	if response.Code != http.StatusForbidden || audit.RequestedFolderUID != "requested-only" || audit.AuthorizedFolderUID != "" || audit.RequiredAccess != folderAccessAdmin || audit.Decision != "denied" {
+		t.Fatalf("status = %d, audit = %#v", response.Code, audit)
 	}
 }
 
