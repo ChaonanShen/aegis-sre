@@ -17,11 +17,12 @@ import (
 )
 
 type Config struct {
-	TokenFile  string
-	TenantID   string
-	OrgID      string
-	UserID     string
-	FolderUIDs []string
+	TokenFile    string
+	TenantID     string
+	OrgID        string
+	UserID       string
+	FolderUIDs   []string
+	WriteEnabled bool
 }
 
 type service struct {
@@ -46,7 +47,9 @@ func NewHandler(provider ports.PlaybookProvider, config Config) (http.Handler, e
 	server := mcp.NewServer(&mcp.Implementation{Name: "aegis-playbooks", Version: "1.0.0"}, nil)
 	mcp.AddTool(server, &mcp.Tool{Name: "playbook.list", Description: "List authorized Playbooks."}, svc.list)
 	mcp.AddTool(server, &mcp.Tool{Name: "playbook.validate", Description: "Validate a native Dagu YAML Playbook."}, svc.validate)
-	mcp.AddTool(server, &mcp.Tool{Name: "playbook.start", Description: "Start an authorized Playbook with parameters."}, svc.start)
+	if config.WriteEnabled {
+		mcp.AddTool(server, &mcp.Tool{Name: "playbook.start", Description: "Start an authorized Playbook with parameters."}, svc.start)
+	}
 	mcp.AddTool(server, &mcp.Tool{Name: "playbook.get_run", Description: "Read the current state of an authorized Playbook Run."}, svc.getRun)
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	return bearerFile(config.TokenFile, streamable), nil
@@ -129,6 +132,9 @@ type startOutput struct {
 }
 
 func (svc *service) start(ctx context.Context, _ *mcp.CallToolRequest, input startInput) (*mcp.CallToolResult, startOutput, error) {
+	if !svc.config.WriteEnabled {
+		return nil, startOutput{}, toolError("capability_unavailable")
+	}
 	actor, err := svc.actor(input.FolderUID)
 	if err != nil {
 		return nil, startOutput{}, err

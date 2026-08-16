@@ -48,7 +48,7 @@ func TestPlaybookMCPToolsUseAuthorizedFolderAndStableRunID(t *testing.T) {
 	actor := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user", FolderUID: "ops"}
 	playbookID := domain.ID("pbk_" + domain.PlaybookScopeKey(actor) + "_abcdefgh")
 	fake := &fakeProvider{listed: []ports.PlaybookResource{{Ref: ports.PlaybookRef{ID: playbookID}, Name: "diagnose", Enabled: true}}}
-	svc := &service{provider: fake, config: Config{TenantID: "tenant", OrgID: "org", UserID: "user"}, folders: map[string]struct{}{"ops": {}}}
+	svc := &service{provider: fake, config: Config{TenantID: "tenant", OrgID: "org", UserID: "user", WriteEnabled: true}, folders: map[string]struct{}{"ops": {}}}
 
 	listResult, listOutput, err := svc.list(context.Background(), nil, listInput{FolderUID: "ops"})
 	if err != nil || listResult != nil || len(listOutput.Items) != 1 || listOutput.Items[0].ID != string(playbookID) {
@@ -64,6 +64,14 @@ func TestPlaybookMCPToolsUseAuthorizedFolderAndStableRunID(t *testing.T) {
 	}
 	if _, _, err := svc.list(context.Background(), nil, listInput{FolderUID: "payments"}); err == nil {
 		t.Fatal("unauthorized Folder must be rejected")
+	}
+}
+
+func TestPlaybookMCPStartIsDisabledWithoutExplicitSingleActorWriteOptIn(t *testing.T) {
+	svc := &service{provider: &fakeProvider{}, config: Config{TenantID: "tenant", OrgID: "org", UserID: "user"}, folders: map[string]struct{}{"ops": {}}}
+	_, _, err := svc.start(context.Background(), nil, startInput{FolderUID: "ops", PlaybookID: "pbk_abcdefgh", IdempotencyKey: "incident-123"})
+	if err == nil || svc.provider.(*fakeProvider).started.ID != "" {
+		t.Fatalf("disabled write tool error = %v", err)
 	}
 }
 

@@ -147,7 +147,7 @@ func run(logger *slog.Logger) error {
 	if playbookProvider != nil && cfg.PlaybookMCPTokenFile != "" {
 		handler, err := playbookmcp.NewHandler(playbookProvider, playbookmcp.Config{
 			TokenFile: cfg.PlaybookMCPTokenFile, TenantID: cfg.AgentTenantID, OrgID: cfg.AgentOrgID,
-			UserID: cfg.AgentUserID, FolderUIDs: cfg.PlaybookMCPFolders,
+			UserID: cfg.AgentUserID, FolderUIDs: cfg.PlaybookMCPFolders, WriteEnabled: cfg.PlaybookMCPWrite,
 		})
 		if err != nil {
 			return err

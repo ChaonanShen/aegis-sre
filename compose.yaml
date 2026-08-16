@@ -95,6 +95,8 @@ services:
       AEGIS_OPENCODE_USERNAME: opencode
       AEGIS_PLAYBOOK_MCP_FOLDER_UIDS: "infra,payment"
       AEGIS_PLAYBOOK_MCP_TOKEN_FILE: /run/secrets/playbook-mcp-token
+      # 本地环境是固定单 Actor；生产多用户在逐 Turn 委托落地前不得开启写工具。
+      AEGIS_PLAYBOOK_MCP_WRITE_ENABLED: "true"
       AEGIS_PLUGIN_TOKEN_FILE: /run/secrets/aegis-plugin-token
     volumes:
       - ./deploy/local/secrets/agent-id-key:/run/secrets/agent-id-key:ro

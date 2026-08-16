@@ -47,6 +47,7 @@ const (
 	EnvKnowledgeMCPFolders  = "AEGIS_KNOWLEDGE_MCP_FOLDER_UIDS"
 	EnvPlaybookMCPToken     = "AEGIS_PLAYBOOK_MCP_TOKEN_FILE"
 	EnvPlaybookMCPFolders   = "AEGIS_PLAYBOOK_MCP_FOLDER_UIDS"
+	EnvPlaybookMCPWrite     = "AEGIS_PLAYBOOK_MCP_WRITE_ENABLED"
 	EnvGrafanaMCPURL        = "AEGIS_GRAFANA_MCP_URL"
 	EnvPluginTokenFile      = "AEGIS_PLUGIN_TOKEN_FILE"
 	EnvCanvasEnabled        = "AEGIS_CANVAS_ENABLED"
@@ -100,6 +101,7 @@ type Config struct {
 	KnowledgeMCPFolders   []string
 	PlaybookMCPTokenFile  string
 	PlaybookMCPFolders    []string
+	PlaybookMCPWrite      bool
 	CanvasEnabled         bool
 	CanvasDBPath          string
 	CanvasMCPTokenFile    string
@@ -353,7 +355,14 @@ func Load(getenv func(string) string) (Config, error) {
 
 	playbookMCPTokenFile := strings.TrimSpace(getenv(EnvPlaybookMCPToken))
 	playbookMCPFolders, playbookFolderErr := parseKnowledgeMCPFolders(getenv(EnvPlaybookMCPFolders))
+	playbookMCPWrite, err := parseBool(getenv(EnvPlaybookMCPWrite), false)
+	if err != nil {
+		return Config{}, fmt.Errorf("%w: %s must be true or false", ErrInvalid, EnvPlaybookMCPWrite)
+	}
 	playbookMCPConfigured := playbookMCPTokenFile != "" || len(playbookMCPFolders) > 0
+	if playbookMCPWrite && !playbookMCPConfigured {
+		return Config{}, fmt.Errorf("%w: %s requires Playbook MCP", ErrInvalid, EnvPlaybookMCPWrite)
+	}
 	if playbookMCPConfigured {
 		if endpoints[CapabilityPlaybook] == "" || agentTenantID == "" || agentOrgID == "" || agentUserID == "" {
 			return Config{}, fmt.Errorf("%w: Playbook MCP requires Dagu endpoint and Agent actor", ErrInvalid)
@@ -389,7 +398,7 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("%w: %s must be enabled before Canvas is configured", ErrInvalid, EnvCanvasEnabled)
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, PlaybookLegacyFolder: playbookLegacyFolder, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, KnowledgeProvider: knowledgeProvider, KnowledgeTokenFile: knowledgeTokenFile, RAGFlowAPIKeyFile: knowledgeTokenFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, KnowledgeTimeout: knowledgeTimeout, RAGFlowTimeout: knowledgeTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders, PlaybookMCPTokenFile: playbookMCPTokenFile, PlaybookMCPFolders: playbookMCPFolders, CanvasEnabled: canvasEnabled, CanvasDBPath: canvasDBPath, CanvasMCPTokenFile: canvasMCPTokenFile}, nil
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, PlaybookLegacyFolder: playbookLegacyFolder, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, KnowledgeProvider: knowledgeProvider, KnowledgeTokenFile: knowledgeTokenFile, RAGFlowAPIKeyFile: knowledgeTokenFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, KnowledgeTimeout: knowledgeTimeout, RAGFlowTimeout: knowledgeTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders, PlaybookMCPTokenFile: playbookMCPTokenFile, PlaybookMCPFolders: playbookMCPFolders, PlaybookMCPWrite: playbookMCPWrite, CanvasEnabled: canvasEnabled, CanvasDBPath: canvasDBPath, CanvasMCPTokenFile: canvasMCPTokenFile}, nil
 }
 
 func parseBool(raw string, defaultValue bool) (bool, error) {

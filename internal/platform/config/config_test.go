@@ -225,14 +225,21 @@ func TestLoadAcceptsPlaybookMCPBindingForAgentActor(t *testing.T) {
 	values := map[string]string{
 		EnvAgentProvider: "opencode", EnvAgentURL: "http://opencode.internal", EnvAgentTenantID: "tenant", EnvAgentOrgID: "org", EnvAgentUserID: "user", EnvAgentIDKeyFile: keyFile,
 		EnvOpenCodePasswordFile: keyFile, EnvDaguURL: "http://dagu.internal", EnvDaguBasicUser: "dagu", EnvDaguBasicPass: keyFile,
-		EnvPlaybookMCPToken: tokenFile, EnvPlaybookMCPFolders: "ops,payments",
+		EnvPlaybookMCPToken: tokenFile, EnvPlaybookMCPFolders: "ops,payments", EnvPlaybookMCPWrite: "true",
 	}
 	cfg, err := Load(func(key string) string { return values[key] })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.PlaybookMCPTokenFile != tokenFile || len(cfg.PlaybookMCPFolders) != 2 {
+	if cfg.PlaybookMCPTokenFile != tokenFile || len(cfg.PlaybookMCPFolders) != 2 || !cfg.PlaybookMCPWrite {
 		t.Fatalf("config = %+v", cfg)
+	}
+}
+
+func TestLoadRejectsPlaybookMCPWriteWithoutMCPBinding(t *testing.T) {
+	values := map[string]string{EnvPlaybookMCPWrite: "true"}
+	if _, err := Load(func(key string) string { return values[key] }); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error = %v, want ErrInvalid", err)
 	}
 }
 
