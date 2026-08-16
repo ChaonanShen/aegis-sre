@@ -15,6 +15,11 @@
 本文仍用于解释 RAGLite sidecar、数据目录、备份集合和 RAGFlow 退出前的历史迁移背景；与 ADR 0011 冲突时以
 ADR 0011 为准。
 
+截至 2026-08-17，当前实现已经移除 `AEGIS_KNOWLEDGE_PROVIDER` 和双 Provider factory，Control Plane 直接
+装配 `internal/adapters/raglite`。Python sidecar 已从历史设想的顶层 `providers/raglite` 移到
+`internal/adapters/raglite/sidecar`。下文出现的 Provider 选择、公共 Chunk/threshold/start/stop、双 Provider
+contract suite 和顶层目录均为历史方案，不是当前操作说明；实际状态与剩余门禁见新的执行计划。
+
 基础调研见 [RAGLite 接入详细调研](research/raglite-integration-research.md) 和
 [轻量 RAG 替代方案调研](research/lightweight-rag-replacement-research.md)。
 

@@ -2,7 +2,7 @@
 
 Aegis SRE 是一个以 Grafana App Plugin 为入口的开源 SRE 工作台。项目本身只维护产品控制面与必要的集成层，Agent、知识检索、Playbook 编排和 Grafana 工具能力分别交给成熟组件。
 
-当前已完成仓库基线、无状态 Control Plane、v1 公共契约、Plugin Backend 受信代理，以及 Dagu Playbook 到只读 Grafana MCP 的基本执行链。阶段 6 的 Agent 核心链路已经接入 Codex App Server 与 OpenCode Server。Knowledge 已有 RAGLite sidecar、adapter、管理页面和受限 MCP 基线，正在按 ADR 0011 收敛为 Knowledge Base、Document、自动索引四态、Passage 和有序引用 Search；RAGFlow 进入只读/回退退出窗口。真实数据质量、迁移和重启恢复仍待验收。
+当前已完成仓库基线、无状态 Control Plane、v1 公共契约、Plugin Backend 受信代理，以及 Dagu Playbook 到只读 Grafana MCP 的基本执行链。阶段 6 的 Agent 核心链路已经接入 Codex App Server 与 OpenCode Server。Knowledge 的 RAGLite sidecar、产品 Port、管理页面、自动索引四态、Passage、有序引用 Search 和受限 MCP 已完成仓库内闭环；RAGFlow 进入历史数据迁移/发布回退退出窗口。真实数据质量、权限 E2E、灾备和发布观察仍待验收。
 
 ## 目标组件
 
@@ -68,7 +68,7 @@ make local-smoke
 5. 页面仍显示“无可用 Folder”时，先用 `docker compose logs grafana-bootstrap` 确认 bootstrap 成功，再检查当前
    Grafana 用户是否拥有目标 Folder 的 Aegis read action，并强制刷新浏览器以清除旧插件脚本缓存。
 
-Knowledge 是可选部署，不影响基础栈独立运行。RAGLite 启动与恢复流程见 [RAGLite 本地部署](deploy/raglite/README.md)。RAGFlow 只在退出窗口内用于受控数据迁移和显式回退，不再作为目标运行模式。
+Knowledge 是可选部署，不影响基础栈独立运行。RAGLite 启动与恢复流程见 [RAGLite 本地部署](deploy/raglite/README.md)。当前 Control Plane 不再支持运行时选择 RAGFlow；旧 adapter/部署仅在退出窗口内用于数据识别、归档和匹配旧发布版本的受控回退。
 
 Plugin Backend 通过以下环境变量连接 Control Plane：
 

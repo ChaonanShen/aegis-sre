@@ -11,13 +11,14 @@
 - Workbench 会话：会话列表、创建/打开/重命名/归档/删除、Agent 回合流式输出、审批和 Canvas。
 - Playbook：原生 Dagu YAML 的列表、校验、创建、编辑、删除、运行、运行事件、人工任务、审批和 Artifact。
 - Agent：通过 Codex App Server 或 OpenCode Server 接入；当前部署默认使用 OpenCode，Codex 是可替换实现。
-- Knowledge 后端：目标态只支持 RAGLite；现有 `KnowledgeProvider`、REST、MCP 和真实页面将按产品契约收敛，
-  RAGFlow 仅在退出窗口内保留只读或回退能力。
+- Knowledge：产品化 `KnowledgeProvider`、REST、MCP 和真实页面已经收敛到 RAGLite；上传自动进入
+  queued/indexing/ready/failed 四态，支持失败重试、Passage 和有序引用 Search。RAGFlow 不参与运行时装配，
+  仅在退出窗口内保留历史 adapter/部署资产用于受控迁移或版本回退。
 - Grafana MCP：官方只读 MCP Server、独立调用方鉴权网关和 Dagu `mcp.call` 出站调用链已部署。
 
-当前插件主链路是 Workbench 会话和 Playbook；Knowledge 的后端能力已经具备，但不把它描述为与这两条
-页面同等完成的前端产品闭环。插件中还保留部分 fixture/未接通页面。真实运行模式对未配置的能力返回
-明确的不可用错误，不静默回退到 fixture 或 mock 数据。
+当前插件主链路包括 Workbench、Playbook 和 Knowledge 的仓库内产品闭环。Knowledge 的生产启用仍取决于
+真实权限 E2E、数据迁移、灾备和质量门禁。插件中还保留部分其他模块的 fixture/未接通页面；真实运行模式
+对未配置的能力返回明确的不可用错误，不静默回退到 fixture 或 mock 数据。
 
 Skill、Alerts 和 Audit 尚未接通真实 Provider；接入时的归属、授权矩阵和门禁见
 [Skill、Alerts 与 Audit 权限接入设计](deferred-module-authorization.md)，不得以现有 fixture 固化生产事实来源。
@@ -72,8 +73,8 @@ flowchart LR
 
 插件负责路由、页面、交互状态和 Provider-neutral 视图模型。Workbench 通过
 `resourceWorkbenchGateway` 调用会话/Canvas API 并消费 SSE；Playbook 页面通过
-`resourcePlaybookCrudGateway` 调用 YAML、Run、事件和 Artifact API。Knowledge 相关前端代码如启用，
-也必须通过独立的 management gateway 和 Folder UID 请求头访问后端，但它不改变当前两条主链路的完成范围。
+`resourcePlaybookCrudGateway` 调用 YAML、Run、事件和 Artifact API。Knowledge real 页面通过独立的
+management gateway 和可信 Folder UID 链路访问后端，并在 capability unavailable/degraded 时明确降级。
 
 插件不直接连接 Agent、Dagu、RAG Provider 或 MCP，也不保存这些组件的凭据。`AppServicesProvider`
 统一选择 real/fixture 模式；只有显式 fixture 模式才能使用内存 fixture。
@@ -118,6 +119,10 @@ Run 状态或 Artifact 的副本。
 
 Provider 的 SDK 类型、HTTP 路径、认证方式和错误映射必须留在对应 adapter。替换 Provider 时，优先
 替换 adapter 和契约测试，不改动前端公共模型。
+
+RAGLite 的 Python sidecar 是该 adapter 的进程内聚实现，源码位于
+`internal/adapters/raglite/sidecar/`，不在仓库顶层建立第二套 Provider 模块。Go adapter 只访问其固定内部
+HTTP 契约，不导入 Python 类型，也不直接读 `provider.sqlite`、`raglite.db` 或 `originals/`。
 
 ## 5. 三条主要调用链
 

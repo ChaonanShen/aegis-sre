@@ -10,9 +10,9 @@ AEGIS_INIT_KNOWLEDGE_SECRETS=1 ./scripts/init-local-secrets.sh
 docker compose -f compose.yaml -f deploy/raglite/compose.yaml up -d --build --wait
 ```
 
-`AEGIS_KNOWLEDGE_PROVIDER` 未设置时，Knowledge 密钥初始化默认选择 `raglite`，会生成
-`knowledge-provider-token`，不需要 RAGFlow API Key。部署前可运行
-`make raglite-deploy-test` 校验 Compose 隔离约束和两种 Provider 的密钥初始化行为。
+Knowledge 运行时固定使用 RAGLite，不存在 Provider 选择环境变量。启用
+`AEGIS_INIT_KNOWLEDGE_SECRETS=1` 会生成 `knowledge-provider-token`，不需要 RAGFlow API Key。部署前可运行
+`make raglite-deploy-test` 校验 Compose 隔离约束和 RAGLite 密钥初始化行为。
 发布镜像前运行 `make raglite-image-smoke`，验证固定依赖可构建且 RAGLite、ONNX Runtime 和
 llama.cpp 的运行时动态库完整。
 
@@ -50,6 +50,6 @@ make raglite-image-smoke
 后，先验证 `/healthz`、已知原文件下载和已知检索，再开放写入。不得对需要保留的数据执行
 `docker compose down -v`。
 
-RAGFlow 回退部署继续使用根目录 `compose.knowledge.yaml`，两套 Knowledge 叠加文件不能同时启用。
-回退初始化必须显式执行
-`AEGIS_INIT_KNOWLEDGE_SECRETS=1 AEGIS_KNOWLEDGE_PROVIDER=ragflow ./scripts/init-local-secrets.sh`。
+根目录 `compose.knowledge.yaml` 和 `deploy/ragflow/` 是退出窗口内冻结的历史资产，不兼容当前固定 RAGLite 的
+Control Plane，不能与本叠加文件组合或作为当前版本的运行时切换。需要回退时必须使用发布记录中匹配的旧版本
+Control Plane、Compose、密钥和数据快照；禁止让新旧栈同时写入。

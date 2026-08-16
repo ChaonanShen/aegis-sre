@@ -1,7 +1,7 @@
 # Knowledge 产品契约收敛与 RAGLite 单 Provider 执行计划
 
-- 状态：待实施
-- 日期：2026-08-16
+- 状态：仓库实现完成，等待迁移与发布验收
+- 日期：2026-08-17
 - 决策基线：[ADR 0011](adr/0011-knowledge-product-contract-and-raglite-only.md)
 - 架构基线：[Aegis SRE 基本架构](architecture.md)
 
@@ -28,23 +28,25 @@ Knowledge Base、service 和 tags 检索有序引用。
 
 ## 2. 当前基线和主要差距
 
-当前已经具备：
+截至 2026-08-17，仓库已经具备：
 
-- `ports.KnowledgeProvider`、Knowledge REST、Knowledge MCP 和真实前端 Gateway；
+- 产品化 `ports.KnowledgeProvider`、Knowledge REST、Knowledge MCP 和真实前端 Gateway；
 - Plugin Backend 与 Control Plane 的 Folder read/write/admin 授权；
 - RAGLite sidecar、SQLite manifest、DuckDB、原文件目录和单 writer；
-- RAGFlow adapter 与显式回退部署；
+- 自动索引四态、generation 收敛、重启恢复、幂等上传、Passage 和 ready-only Search；
+- RAGFlow adapter 与部署仅作为有期限的历史回退资产，不再参与运行时装配；
 - 公共 ID、scope fingerprint、错误净化和基础单元测试。
 
-需要替换的现状：
+已经消除的原有差距：
 
-- 公共 Port 使用 Collection、Chunk、Retrieve 等 Provider 导向命名；
-- 上传后为 pending，用户还需手工 start indexing；
-- start/stop、threshold、score、Provider Chunk ID 和精确页码进入公共契约；
-- RAGLite 与 RAGFlow 对 disabled、threshold、幂等重试和取消的行为不同；
-- metadata 更新期间缺少 generation 收敛，存在旧索引覆盖新 metadata 的风险；
-- 前端对 pending 无限轮询，默认发送 RAGLite 不支持的非零 threshold；
-- 真实浏览器到 RAGLite 的文件、权限、恢复和质量 E2E 尚未成为发布门禁。
+- 公共 Port、OpenAPI 和 real UI 已使用 Knowledge Base、Document、Passage、Search 产品语义；
+- 上传直接 queued，worker 自动索引，公共面不再提供 start/stop、threshold、score 或 Provider ID；
+- metadata generation、重复请求、重启恢复和最终 failed/retry 行为已有自动化测试；
+- real UI 只在 queued/indexing 有限轮询，并在 Folder/KB 切换或卸载时取消请求；
+- Control Plane 运行时固定装配 RAGLite，Python sidecar 位于 `internal/adapters/raglite/sidecar`。
+
+尚未完成的是依赖真实环境和发布周期的验收：RAGFlow 历史数据盘点与退出、预生产权限 E2E、离线模型/扩展、
+一致性备份恢复、故障注入和检索质量/资源门禁。这些不能由仓库单元测试代替。
 
 ## 3. 目标公共契约
 
@@ -150,12 +152,16 @@ POST .../{knowledge_base_id}/scope-migrations
 
 ```json
 {
-  "citations": [
+  "hits": [
     {
-      "document_id": "doc_...",
-      "source_name": "checkout-recovery.md",
-      "excerpt": "先确认连接池和数据库健康状态……",
-      "location": "heading: 恢复步骤"
+      "text": "先确认连接池和数据库健康状态……",
+      "citation": {
+        "knowledge_base_id": "kbs_...",
+        "document_id": "doc_...",
+        "source_name": "checkout-recovery.md",
+        "ordinal": 3,
+        "location": "heading: 恢复步骤"
+      }
     }
   ]
 }
@@ -173,28 +179,28 @@ POST .../{knowledge_base_id}/scope-migrations
 - [ ] 记录停止 RAGFlow 写入的版本、只读/回退窗口和最终删除版本。
 - [ ] 确认现有 v1 user-scoped Knowledge 数据数量；目标公共 API 不保留 scope migration，遗留数据通过受控迁移工具或
   归档流程处理。
-- [ ] 冻结首版格式：先保证 PDF、Markdown、TXT；DOCX/HTML 只有真实验收通过后才开放。
-- [ ] 冻结大小上限、service/tag 规范化、`tags_any/tags_all`、删除冲突和错误码。
+- [x] 冻结首版格式：PDF、Markdown、TXT；DOCX/HTML 未开放。
+- [x] 冻结 10 MiB 大小上限、service/tag 规范化、`tags_any/tags_all`、删除冲突和错误码。
 
 退出标准：不存在未决定的状态机、删除、幂等、过滤或 RAGFlow 退出语义。
 
 ### P1：公共领域模型、Port 与 OpenAPI 收敛
 
-- [ ] 把 `Collection` 命名迁移为 `KnowledgeBase`，删除公共 status/read_only Provider 投影。
-- [ ] 把 Document 状态收敛为 queued/indexing/ready/failed，增加可选 `failure_reason`、`indexed_at`。
-- [ ] 用 `DocumentPassage` 取代 `KnowledgeChunk`，只保留 ordinal、text、可选 location。
-- [ ] 用 `KnowledgeSearchInput` 和 `KnowledgeCitation` 取代 Retrieval 类型，删除 threshold 和 score。
-- [ ] 从 Port 删除 StartIndexing、StopIndexing、MigrateCollectionScope 和 Provider Chunk 语义。
-- [ ] 增加 RetryDocumentIndex 和 ListDocumentPassages。
-- [ ] 冻结 `PUT` 文档 metadata 更新并生成 Go/TypeScript 契约。
-- [ ] 删除或明确废弃未实现、没有事实来源的 `/services` 公共契约。
-- [ ] 更新 `api/events.schema.json`；如果索引只使用轮询且没有新事件，则记录无需新增事件的理由。
+- [x] 把公共资源收敛为 `KnowledgeBase`，不投影 Provider status/read_only。
+- [x] 把 Document 状态收敛为 queued/indexing/ready/failed，增加可选 `failure_reason`、`indexed_at`。
+- [x] 用 `DocumentPassage` 取代公共 `KnowledgeChunk`，只保留 ordinal、text、可选 location。
+- [x] 用 `KnowledgeSearchInput` 和 `KnowledgeCitation` 取代 Retrieval 类型，删除 threshold 和 score。
+- [x] 从产品 Port 删除 StartIndexing、StopIndexing、MigrateCollectionScope 和 Provider Chunk 语义。
+- [x] 增加 RetryDocumentIndex 和 ListDocumentPassages。
+- [x] 冻结 `PUT` 文档 metadata 更新并生成 Go/TypeScript 契约；`PATCH` 只作为未公开兼容入口。
+- [x] `/services` 明确属于 Grafana 派生的全局只读资源，不是 Knowledge 事实来源或筛选字典。
+- [x] 索引状态首版由 Document 轮询读取，不新增 Knowledge event；`api/events.schema.json` 无需改变。
 
 测试：
 
-- [ ] OpenAPI lint、代码生成和生成物零 diff。
-- [ ] 领域状态、输入边界和 JSON schema 测试。
-- [ ] 结构测试证明公共模型不含 RAGLite/RAGFlow、job ID、Chunk ID、threshold、score。
+- [x] OpenAPI lint、代码生成和生成物零 diff。
+- [x] 领域状态、输入边界和 JSON schema 测试。
+- [x] 结构测试证明公共模型不含 RAGLite/RAGFlow、job ID、Chunk ID、threshold、score。
 
 退出标准：REST、Port、领域类型和前端生成类型只表达产品能力。
 
@@ -206,70 +212,70 @@ POST .../{knowledge_base_id}/scope-migrations
 - [x] 增加 metadata/index generation，合并 queued 更新并处理 indexing 期间的后续修改。
 - [x] metadata 更新对 ready/failed 自动排队；queued 合并；indexing 完成后发现新 generation 时再次排队。
 - [x] retry_index 实现为幂等状态转换，不暴露内部 job。
-- [ ] 启动时恢复遗留 indexing、清理半成品，限制自动 attempts，最终失败可由用户重试。
+- [x] 启动时恢复遗留 indexing、清理半成品，自动恢复最多三次，最终失败可由用户重试。
 - [x] queued 删除取消内部未运行任务；indexing 删除返回稳定 conflict。
 - [x] Knowledge Base 非空删除返回稳定 conflict，不级联。
-- [ ] Search 强制只返回 ready Document，并验证 scope、Knowledge Base 和 service/tag 过滤。
-- [ ] Passage 映射为 ordinal/text/location，不返回 DuckDB Chunk ID。
-- [ ] 相同幂等键和相同 payload 返回已有资源；异 payload 返回 idempotency conflict。
-- [ ] 内部 REST schema、错误码、响应大小和 job 状态机固定版本。
+- [x] Search 强制只返回 ready Document，并验证 scope、Knowledge Base 和 service/tag 过滤。
+- [x] Passage 映射为 ordinal/text/location，不返回 DuckDB Chunk ID。
+- [x] 相同确定性 ID 和相同 payload 返回已有资源；异 payload 返回 idempotency conflict。
+- [x] 内部 REST schema、错误码、响应大小和 job 状态机由 adapter/sidecar 契约测试固定。
 
 迁移：
 
-- [ ] 为 provider.sqlite 增加前向 schema migration；旧 pending 映射为 queued，并为其补建唯一任务。
-- [ ] 旧 ready/failed 数据保持原状态；旧 indexing 在首次启动时进入恢复流程。
-- [ ] migration 带 checksum，重复运行幂等，未知新 schema 版本 fail-closed。
+- [x] 为 provider.sqlite 增加前向 schema migration；旧 pending 映射为 queued，并为其补建唯一任务。
+- [x] 旧 ready/failed 数据保持原状态；旧 indexing 在首次启动时进入恢复流程。
+- [x] migration 带 checksum，重复运行幂等，未知新 schema 版本 fail-closed。
 
 退出标准：单 sidecar 在重启、重复请求和 metadata 并发下保持状态机一致。
 
 ### P3：Go adapter 与 Control Plane
 
-- [ ] RAGLite adapter 实现新 Port，删除双 Provider 分支和能力差异映射。
-- [ ] Control Plane 装配直接创建 RAGLite adapter；移除运行时 Provider 选择。
-- [ ] 上传返回 queued Document，不再提供 start/stop。
-- [ ] metadata 更新返回最新状态，retry 返回当前 Document。
-- [ ] Passage、Search 和下载在每次请求中重新验证父 Knowledge Base Folder。
-- [ ] Search 对任一越权 Knowledge Base 整体失败，不静默丢弃。
-- [ ] 增加 service/tag 长度、数量、规范化和组合过滤限制。
-- [ ] 统一最大文件大小；服务端仍是最终限制，不能只依赖浏览器。
-- [ ] `provider_result_unknown` 保留稳定查询对账路径。
-- [ ] 下载和 Passage 响应设置 no-store、大小限制和安全 Content-Disposition。
-- [ ] 日志只记录 ID、状态、耗时、request/trace 和授权 scope，不记录正文、query、Passage 或原文件内容。
+- [x] RAGLite adapter 实现新 Port；RAGFlow 只实现隔离的 `LegacyKnowledgeProvider`，不参与产品装配。
+- [x] Control Plane 装配直接创建 RAGLite adapter；移除运行时 Provider 选择和相关环境变量。
+- [x] 上传返回 queued Document，不再提供 start/stop。
+- [x] metadata 更新返回最新状态，retry 返回当前 Document。
+- [x] Passage、Search 和下载在每次请求中重新验证父 Knowledge Base Folder。
+- [x] Search 对任一越权 Knowledge Base 整体失败，不静默丢弃。
+- [x] 增加 service/tag 长度、数量、规范化和组合过滤限制。
+- [x] 浏览器、Control Plane 和 sidecar 统一 10 MiB 上限，服务端执行最终校验。
+- [x] `provider_result_unknown` 保留用公共资源 GET 刷新对账的路径。
+- [x] 下载、Passage 和 Search 响应设置 no-store；下载使用安全 Content-Disposition。
+- [x] 请求日志只记录 method/path、状态、耗时、request/trace 和授权 scope，不记录正文、query、Passage 或原文件内容。
 
 退出标准：Control Plane 不包含 RAGFlow import、配置、类型或运行时选择，且不保存 Provider 状态副本。
 
 ### P4：Knowledge MCP
 
-- [ ] `knowledge.search` 删除 threshold，增加 service、tags_any、tags_all，并返回有序 citations。
-- [ ] `knowledge.get_document` 改用 Document + 分页 Passage，继续限制单 Passage、数量和总字节数。
-- [ ] `knowledge.list_sources` 映射 queued/indexing/ready/failed。
-- [ ] MCP 不返回 score、Provider Chunk ID、job ID 或内部路径。
-- [ ] MCP 只检索 ready Document；指定越权 Knowledge Base 时整次拒绝。
-- [ ] 保持固定 Actor + Folder allowlist 的当前边界；逐 Turn 多用户委托不属于本计划。
+- [x] `knowledge.search` 删除 threshold，增加 service、tags_any、tags_all，并返回有序 citations。
+- [x] `knowledge.get_document` 改用 Document + 有界 Passage，并限制 Passage 数量和总字节数。
+- [x] `knowledge.list_sources` 映射 queued/indexing/ready/failed。
+- [x] MCP 不返回 score、Provider Chunk ID、job ID 或内部路径。
+- [x] MCP 只检索 ready Document；指定越权 Knowledge Base 时整次拒绝。
+- [x] 保持固定 Actor + Folder allowlist 的当前边界；逐 Turn 多用户委托不属于本计划。
 
 退出标准：MCP 与 REST 使用同一产品 Port 和过滤语义，没有独立检索实现。
 
 ### P5：Grafana Plugin 产品闭环
 
-- [ ] Grafana Plugin、TypeScript 生成类型和公共 OpenAPI 不感知 sidecar 的语言、目录、服务名或内部协议。
-- [ ] real 模式只展示 Knowledge Base、Documents、Search 和 Passage；不恢复 fixture Service/Import/独立 Runbook 模型。
-- [ ] 上传后直接显示 queued，不再显示 pending 或“开始索引”按钮。
-- [ ] 只在 queued/indexing 时有限轮询；离开 Folder/Knowledge Base 或组件卸载时取消请求。
-- [ ] failed 展示脱敏原因和“重试索引”；不显示停止按钮。
-- [ ] metadata 保存后立即显示 queued/indexing，防止用户误以为旧索引仍有效。
-- [ ] Passage 分页加载；location 为空时显示段落序号，不显示“第 0 页”。
-- [ ] Search 支持一个或多个 Knowledge Base、service、tags_any/tags_all 和 limit。
-- [ ] Search 结果不显示百分比分数，引用可打开 Document 和对应 Passage。
-- [ ] 页面消费 `/capabilities`，区分未配置、降级和可用，不以第一次列表 503 代替能力状态。
-- [ ] 错误映射覆盖 forbidden、conflict、capability_unavailable、provider_unavailable、provider_result_unknown；
+- [x] Grafana Plugin、TypeScript 生成类型和公共 OpenAPI 不感知 sidecar 的语言、目录、服务名或内部协议。
+- [x] real 模式只展示 Knowledge Base、Documents、Search 和 Passage；不恢复 fixture Service/Import/独立 Runbook 模型。
+- [x] 上传后直接显示 queued，不再显示 pending 或“开始索引”按钮。
+- [x] 只在 queued/indexing 时有限轮询；离开 Folder/Knowledge Base 或组件卸载时取消请求。
+- [x] failed 展示脱敏原因和“重试索引”；不显示停止按钮。
+- [x] metadata 保存后刷新四态状态，服务端在同一事务中使旧索引不可检索并自动排队。
+- [x] Passage 加载使用 ordinal/text/location；location 为空时显示段落序号，不承诺 PDF 页码。
+- [x] Search 支持一个或多个 Knowledge Base、service、tags_any/tags_all 和 limit。
+- [x] Search 结果不显示百分比分数，引用可切换到 Document 并突出对应 Passage。
+- [x] 页面消费 `/capabilities`，区分未配置、降级和可用，不以第一次列表 503 代替能力状态。
+- [x] 错误映射覆盖 forbidden、conflict、capability_unavailable、provider_unavailable、provider_result_unknown；
   不确定写入提示先刷新对账。
-- [ ] 删除非空 Knowledge Base、删除 indexing Document 显示明确冲突，不提供危险级联确认。
-- [ ] View/Edit/Admin 控件继续只作为体验提示，服务端保持最终授权。
+- [x] 删除非空 Knowledge Base、删除 indexing Document 显示明确冲突，不提供危险级联确认。
+- [x] View/Edit/Admin 控件继续只作为体验提示，服务端保持最终授权。
 
 兼容：
 
 - [ ] 旧 fixture UI 只保留在显式 fixture 模式；物理删除前确认作者并记录兼容窗口。
-- [ ] real 模式不得读取 fixture local/session storage。
+- [x] real 模式不得读取 fixture local/session storage。
 
 退出标准：普通用户无需理解索引 job；完整交互只有上传、观察状态、失败重试、搜索和引用阅读。
 
@@ -293,7 +299,7 @@ POST .../{knowledge_base_id}/scope-migrations
 - [x] RAGLite 完整依赖、sidecar 测试和 Ruff 固定在 Linux/amd64 容器执行；Intel macOS 因
   `onnxruntime 1.28.0` 无 x86_64 wheel，只运行不依赖真实 Runtime 的轻量测试，不能修改锁文件绕过。
 - [ ] 模型和 FTS/VSS 扩展离线预热，稳态启动和首次索引不访问公网。
-- [ ] 文件扩展名、MIME、实际内容、畸形文件和解析超时采用一致 fail-closed 策略。
+- [x] 首版 PDF/Markdown/TXT 在 Control Plane 与 sidecar 双重校验扩展名、MIME、PDF magic、UTF-8 和 NUL，未知格式 fail-closed。
 - [ ] 对 PDF/DOCX 等复杂格式测试内存、CPU、临时磁盘和压缩炸弹限制；未验收格式不在 UI 开放。
 - [ ] 增加队列深度、queued 等待时间、索引耗时、失败率、恢复次数、DuckDB/SQLite/原文件磁盘水位指标。
 - [ ] 演练 provider.sqlite、raglite.db、originals、模型 revision 和 Knowledge ID key 的一致性备份恢复。
@@ -304,6 +310,8 @@ POST .../{knowledge_base_id}/scope-migrations
 
 ### P8：真实 E2E、质量门禁与发布
 
+- [x] Go、sidecar、OpenAPI 生成、部署契约、MCP、Plugin 单元测试、类型检查、lint 和构建纳入 `make verify`。
+- [x] Linux/amd64 完整锁定依赖下执行 51 个 sidecar 测试和 Ruff。
 - [ ] 新增真实浏览器 E2E：Plugin -> Plugin Backend -> Grafana authz -> Control Plane -> RAGLite。
 - [ ] 覆盖 Viewer、Editor、Admin 三用户和至少三个 Folder；权限撤销、伪造 Folder、跨 Folder ID 全部 fail-closed。
 - [ ] 覆盖上传 -> queued -> indexing -> ready -> Passage -> Search -> 下载 -> 删除。
@@ -375,3 +383,17 @@ capability_unavailable
 - 真实权限 E2E、故障恢复、备份恢复和质量门禁全部通过；
 - README、架构、授权、部署和运行手册与真实实现一致；
 - 未配置或故障的 Knowledge 不会静默回退 fixture，也不破坏 Agent/Playbook 已完成链路。
+
+截至 2026-08-17，前 3 项和最后 1 项已在仓库自动化中完成。RAGFlow 退出、真实环境 E2E、灾备/故障演练、
+质量与资源门禁仍是发布阻断项，因此本计划状态是“仓库实现完成，等待迁移与发布验收”，不能标记为生产完成。
+
+## 9. 本轮小步提交记录
+
+关键提交按依赖顺序如下：
+
+- `0971e73`、`4b222c7`、`afe34d1`：冻结产品契约、自动排队和 metadata generation；
+- `f610b3c`、`505be88`：把 Python sidecar 收入 Go adapter 并建立 Linux 测试入口；
+- `244cde0`、`6d16d07`：实现 Passage/Search/retry 并收敛公共 Port/OpenAPI；
+- `0c9a9a0`、`562f279`、`f18d601`：完成 real UI、capability gating 和引用阅读；
+- `034e166`：运行时固定 RAGLite，不再接受 Provider 选择；
+- `960fbdc`、`b6b7c5e`、`2686ef3`：恢复/幂等、格式校验和敏感响应缓存约束。
