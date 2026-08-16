@@ -132,7 +132,13 @@ describe('Control Plane Workbench gateway', () => {
     const gateway = createResourceWorkbenchGateway({ backendSrv });
     const events = await collect(
       gateway.streamMessage(
-        { clientTurnId: 'client-turn-1', sessionId: session.id, input: 'CPU', mentions: ['service:api'] },
+        {
+          clientTurnId: 'client-turn-1',
+          sessionId: session.id,
+          input: 'CPU',
+          mentions: ['service:api'],
+          activeFolder: { uid: 'infra', title: 'Infra', permission: 'View', serviceCount: 0 },
+        },
         new AbortController().signal
       )
     );
@@ -150,7 +156,7 @@ describe('Control Plane Workbench gateway', () => {
       expect.objectContaining({
         url: expect.stringContaining(`/api/v1/sessions/${session.id}/turns:stream`),
         data: { message: 'CPU', mentions: ['service:api'] },
-        headers: { 'Idempotency-Key': 'client-turn-1' },
+        headers: { 'Idempotency-Key': 'client-turn-1', 'X-Aegis-Folder-UID': 'infra' },
       })
     );
   });

@@ -121,7 +121,7 @@ export interface SendMessageInput {
   clientTurnId: string;
   sessionId: string;
   input: string;
-  /** 真实链路当前允许没有 Folder 上下文。 */
+  /** StartTurn 必须携带当前 Folder，Session 历史本身仍保持 User-owned。 */
   activeFolder?: Folder;
   mentions: string[];
 }

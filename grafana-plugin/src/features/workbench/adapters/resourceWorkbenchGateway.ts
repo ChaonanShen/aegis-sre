@@ -116,7 +116,8 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
         `${sessionPath(input.sessionId)}/turns:stream`,
         { message: input.input, mentions: input.mentions },
         input.clientTurnId,
-        signal
+        signal,
+        input.activeFolder?.uid
       );
     },
     async cancelTurn(sessionId, turnId, idempotencyKey, signal) {
@@ -132,7 +133,8 @@ export function createResourceWorkbenchGateway(options: ResourceWorkbenchGateway
         `${sessionPath(input.sessionId)}/approvals/${encodeURIComponent(input.request.id)}:resolve`,
         { decision: input.decision, ...(input.feedback ? { reason: input.feedback } : {}) },
         input.request.clientTurnId,
-        signal
+        signal,
+        input.activeFolder?.uid
       );
     },
   };
@@ -143,14 +145,18 @@ async function* streamEvents(
   path: string,
   data: unknown,
   idempotencyKey: string,
-  signal: AbortSignal
+  signal: AbortSignal,
+  folderUid?: string
 ): AsyncGenerator<AgentEvent> {
   throwIfAborted(signal);
   const request: BackendSrvRequest = {
     url: `${PLUGIN_RESOURCE_BASE_URL}${path}`,
     method: 'POST',
     data,
-    headers: { 'Idempotency-Key': idempotencyKey },
+    headers: {
+      'Idempotency-Key': idempotencyKey,
+      ...(folderUid ? { 'X-Aegis-Folder-UID': folderUid } : {}),
+    },
     abortSignal: signal,
     showErrorAlert: false,
     validatePath: true,
