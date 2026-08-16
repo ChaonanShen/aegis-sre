@@ -39,7 +39,7 @@ services:
     build:
       # Compose 会以首个 -f 文件为相对路径基准；叠加根 compose.yaml 时这里必须指向仓库根。
       context: .
-      dockerfile: providers/raglite/Dockerfile
+      dockerfile: internal/adapters/raglite/sidecar/Dockerfile
     environment:
       AEGIS_RAGLITE_DATA_DIR: /var/lib/aegis/raglite
       AEGIS_RAGLITE_MAX_UPLOAD_BYTES: "20971520"

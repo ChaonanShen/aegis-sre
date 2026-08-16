@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from aegis_raglite_provider.backend import Chunk, SearchHit
-from aegis_raglite_provider.models import Collection, Document
+from aegis_raglite_sidecar.backend import Chunk, SearchHit
+from aegis_raglite_sidecar.models import Collection, Document
 
 
 class FakeBackend:

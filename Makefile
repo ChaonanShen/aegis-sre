@@ -59,11 +59,11 @@ grafana-mcp-config-check:
 
 raglite-provider-test:
 	@test "$$($(UV_BIN) --version | cut -d ' ' -f 2)" = "$(UV_VERSION)" || (echo "expected uv $(UV_VERSION)" >&2; exit 1)
-	cd providers/raglite && $(UV_BIN) run --extra test --locked pytest
+	cd internal/adapters/raglite/sidecar && $(UV_BIN) run --extra test --locked pytest
 
 raglite-provider-lint:
 	@test "$$($(UV_BIN) --version | cut -d ' ' -f 2)" = "$(UV_VERSION)" || (echo "expected uv $(UV_VERSION)" >&2; exit 1)
-	cd providers/raglite && $(UV_BIN) run --extra test --locked ruff check .
+	cd internal/adapters/raglite/sidecar && $(UV_BIN) run --extra test --locked ruff check .
 
 raglite-config-check:
 	docker compose -f compose.yaml -f deploy/raglite/compose.yaml config --quiet
@@ -72,7 +72,7 @@ raglite-deploy-test:
 	./scripts/test-raglite-deploy.sh
 
 raglite-image-smoke:
-	docker build -f providers/raglite/Dockerfile -t aegis-raglite-provider:test .
+	docker build -f internal/adapters/raglite/sidecar/Dockerfile -t aegis-raglite-provider:test .
 	docker run --rm --entrypoint python aegis-raglite-provider:test -c 'import llama_cpp, onnxruntime, raglite; print("RAGLite runtime imports passed")'
 
 # 真实冒烟验收显式要求两个 datasource UID，避免以 fixture 假装 Grafana 已连通。

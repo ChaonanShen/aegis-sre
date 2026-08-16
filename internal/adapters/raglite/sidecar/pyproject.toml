@@ -3,7 +3,7 @@ requires = ["hatchling==1.27.0"]
 build-backend = "hatchling.build"
 
 [project]
-name = "aegis-raglite-provider"
+name = "aegis-raglite-sidecar"
 version = "0.1.0"
 description = "Internal RAGLite Knowledge Provider for Aegis SRE"
 requires-python = ">=3.11,<3.14"
@@ -30,7 +30,7 @@ target-version = "py311"
 select = ["E", "F", "I", "B", "UP"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/aegis_raglite_provider"]
+packages = ["src/aegis_raglite_sidecar"]
 
 [tool.pytest.ini_options]
 addopts = "-q --strict-markers"

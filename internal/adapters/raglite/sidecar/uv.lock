@@ -7,7 +7,7 @@ resolution-markers = [
 ]
 
 [[package]]
-name = "aegis-raglite-provider"
+name = "aegis-raglite-sidecar"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

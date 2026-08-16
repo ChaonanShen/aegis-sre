@@ -6,10 +6,10 @@ import threading
 from pathlib import Path
 from typing import BinaryIO
 
-from aegis_raglite_provider.backend import Backend, Chunk, SearchHit
-from aegis_raglite_provider.models import Collection, Document, Job
-from aegis_raglite_provider.original_store import OriginalStore
-from aegis_raglite_provider.repository import ConflictError, Repository
+from aegis_raglite_sidecar.backend import Backend, Chunk, SearchHit
+from aegis_raglite_sidecar.models import Collection, Document, Job
+from aegis_raglite_sidecar.original_store import OriginalStore
+from aegis_raglite_sidecar.repository import ConflictError, Repository
 
 
 class CapabilityError(Exception):

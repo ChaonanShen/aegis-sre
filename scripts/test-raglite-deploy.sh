@@ -14,7 +14,7 @@ docker compose \
 jq -e --arg root "$repository_root" '
   .services["raglite-provider"] as $provider
   | $provider.build.context == $root
-  and $provider.build.dockerfile == "providers/raglite/Dockerfile"
+  and $provider.build.dockerfile == "internal/adapters/raglite/sidecar/Dockerfile"
   and $provider.read_only == true
   and (($provider.ports // []) | length == 0)
   and ($provider.networks | has("aegis-knowledge"))

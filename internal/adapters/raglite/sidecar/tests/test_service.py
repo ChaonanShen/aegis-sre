@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 from fakes import FakeBackend
 
-from aegis_raglite_provider.backend import Chunk
-from aegis_raglite_provider.original_store import OriginalStore
-from aegis_raglite_provider.repository import ConflictError, NotFoundError, Repository
-from aegis_raglite_provider.service import CapabilityError, KnowledgeService, ValidationError
+from aegis_raglite_sidecar.backend import Chunk
+from aegis_raglite_sidecar.original_store import OriginalStore
+from aegis_raglite_sidecar.repository import ConflictError, NotFoundError, Repository
+from aegis_raglite_sidecar.service import CapabilityError, KnowledgeService, ValidationError
 
 
 def new_service(tmp_path: Path) -> tuple[KnowledgeService, FakeBackend]:

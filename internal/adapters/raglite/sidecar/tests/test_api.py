@@ -5,11 +5,11 @@ from pathlib import Path
 from fakes import FakeBackend
 from fastapi.testclient import TestClient
 
-from aegis_raglite_provider.api import create_app
-from aegis_raglite_provider.config import TokenSource
-from aegis_raglite_provider.original_store import OriginalStore
-from aegis_raglite_provider.repository import Repository
-from aegis_raglite_provider.service import KnowledgeService
+from aegis_raglite_sidecar.api import create_app
+from aegis_raglite_sidecar.config import TokenSource
+from aegis_raglite_sidecar.original_store import OriginalStore
+from aegis_raglite_sidecar.repository import Repository
+from aegis_raglite_sidecar.service import KnowledgeService
 
 
 def new_client(tmp_path: Path) -> tuple[TestClient, KnowledgeService, FakeBackend]:

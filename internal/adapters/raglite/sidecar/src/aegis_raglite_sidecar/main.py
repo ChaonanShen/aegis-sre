@@ -1,11 +1,11 @@
 """Production application entrypoint."""
 
-from aegis_raglite_provider.api import create_app
-from aegis_raglite_provider.backend import RAGLiteBackend
-from aegis_raglite_provider.config import Config, TokenSource
-from aegis_raglite_provider.original_store import OriginalStore
-from aegis_raglite_provider.repository import Repository
-from aegis_raglite_provider.service import KnowledgeService
+from aegis_raglite_sidecar.api import create_app
+from aegis_raglite_sidecar.backend import RAGLiteBackend
+from aegis_raglite_sidecar.config import Config, TokenSource
+from aegis_raglite_sidecar.original_store import OriginalStore
+from aegis_raglite_sidecar.repository import Repository
+from aegis_raglite_sidecar.service import KnowledgeService
 
 config = Config.from_env()
 repository = Repository(config.data_dir / "provider.sqlite")

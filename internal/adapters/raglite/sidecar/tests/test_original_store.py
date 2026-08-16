@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from aegis_raglite_provider.original_store import OriginalStore
+from aegis_raglite_sidecar.original_store import OriginalStore
 
 
 def test_save_sanitizes_name_hashes_and_reads_original(tmp_path: Path) -> None:

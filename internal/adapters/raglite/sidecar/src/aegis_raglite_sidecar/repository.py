@@ -9,7 +9,7 @@ import uuid
 from dataclasses import replace
 from pathlib import Path
 
-from aegis_raglite_provider.models import Collection, Document, Job, now_iso
+from aegis_raglite_sidecar.models import Collection, Document, Job, now_iso
 
 
 class ConflictError(Exception):

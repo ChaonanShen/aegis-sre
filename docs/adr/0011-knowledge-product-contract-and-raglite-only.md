@@ -27,7 +27,7 @@ Aegis 的架构目标不是对外提供通用 RAG 抽象，而是为 SRE 工作�
 1. Aegis Knowledge 只支持固定版本的 RAGLite sidecar，不再支持运行时选择 RAGFlow。
 2. 删除目标态中的 Provider registry、`AEGIS_KNOWLEDGE_PROVIDER` 选择和 RAGFlow 专属配置。
 3. Control Plane 仍只依赖 `ports.KnowledgeProvider`；RAGLite、DuckDB、SQLite、模型和内部 REST 类型只存在于
-   `internal/adapters/raglite`、`providers/raglite` 与部署层。
+   `internal/adapters/raglite`、`internal/adapters/raglite/sidecar` 与部署层。
 4. RAGFlow 退出遵守根目录删除规范：先停止新增写入并完成数据迁移、对账和回退窗口；旧实现保留一到两个发布周期的
    只读或可回退能力。确认无生产数据时，也必须记录依据并取得原作者确认后才能缩短窗口。
 

@@ -443,7 +443,7 @@ providers/
     uv.lock                       # 完整依赖 lockfile
     Dockerfile                    # 固定基础镜像、单 worker、非 root runtime
     healthcheck.py                # 容器内带 Bearer Token 的健康检查
-    src/aegis_raglite_provider/
+    src/aegis_raglite_sidecar/
       main.py                     # FastAPI/Uvicorn 入口
       config.py                   # 数据目录、模型和限制
       api.py                      # REST、鉴权依赖和稳定错误响应
@@ -479,9 +479,9 @@ scripts/
 | --- | --- | --- |
 | `internal/ports`、`domain` | Aegis 稳定类型 | RAGFlow/RAGLite SDK、Provider ID |
 | `internal/adapters/raglite` | sidecar HTTP contract、ID codec | Python 内部模块、DuckDB 文件 |
-| `providers/raglite/api.py` | application service、认证 | 直接拼 SQL、直接访问 DuckDB |
-| `providers/raglite/service.py` | repository、RAGLite facade、原文件 store | FastAPI request/response 对象 |
-| `providers/raglite/repository.py`、`backend.py`、`original_store.py` | SQLite、DuckDB、文件系统、RAGLite | Grafana、Control Plane 内存状态 |
+| `internal/adapters/raglite/sidecar/api.py` | application service、认证 | 直接拼 SQL、直接访问 DuckDB |
+| `internal/adapters/raglite/sidecar/service.py` | repository、RAGLite facade、原文件 store | FastAPI request/response 对象 |
+| `internal/adapters/raglite/sidecar/repository.py`、`backend.py`、`original_store.py` | SQLite、DuckDB、文件系统、RAGLite | Grafana、Control Plane 内存状态 |
 | `deploy/raglite` | 镜像、卷、secret、网络 | 业务逻辑、Provider 映射 |
 
 ### 13.2 数据所有权

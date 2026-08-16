@@ -13,9 +13,9 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from aegis_raglite_provider.config import TokenSource
-from aegis_raglite_provider.repository import ConflictError, NotFoundError
-from aegis_raglite_provider.service import CapabilityError, KnowledgeService, ValidationError
+from aegis_raglite_sidecar.config import TokenSource
+from aegis_raglite_sidecar.repository import ConflictError, NotFoundError
+from aegis_raglite_sidecar.service import CapabilityError, KnowledgeService, ValidationError
 
 
 class CollectionCreate(BaseModel):

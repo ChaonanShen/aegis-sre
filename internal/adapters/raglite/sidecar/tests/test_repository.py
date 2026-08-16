@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from aegis_raglite_provider.models import Collection, Document
-from aegis_raglite_provider.repository import ConflictError, NotFoundError, Repository
+from aegis_raglite_sidecar.models import Collection, Document
+from aegis_raglite_sidecar.repository import ConflictError, NotFoundError, Repository
 
 
 def new_repository(tmp_path: Path) -> Repository:

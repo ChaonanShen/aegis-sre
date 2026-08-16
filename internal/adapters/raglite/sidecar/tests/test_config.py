@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from aegis_raglite_provider.config import Config, TokenSource
+from aegis_raglite_sidecar.config import Config, TokenSource
 
 
 def test_config_requires_absolute_data_and_token_paths(

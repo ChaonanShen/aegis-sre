@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from aegis_raglite_provider.backend import _required_metadata_string
+from aegis_raglite_sidecar.backend import _required_metadata_string
 
 
 def test_required_metadata_string_reads_raglite_normalized_value() -> None:

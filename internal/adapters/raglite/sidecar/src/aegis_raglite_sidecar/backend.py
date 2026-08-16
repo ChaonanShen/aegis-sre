@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from aegis_raglite_provider.models import Collection, Document
+from aegis_raglite_sidecar.models import Collection, Document
 
 
 @dataclass(frozen=True)

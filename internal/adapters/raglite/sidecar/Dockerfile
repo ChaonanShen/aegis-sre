@@ -5,9 +5,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir uv==0.8.4
 WORKDIR /app
-COPY providers/raglite/pyproject.toml providers/raglite/uv.lock ./
+COPY internal/adapters/raglite/sidecar/pyproject.toml internal/adapters/raglite/sidecar/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
-COPY providers/raglite/src ./src
+COPY internal/adapters/raglite/sidecar/src ./src
 RUN uv sync --frozen --no-dev
 
 FROM python:3.11.13-slim-bookworm@sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1
@@ -19,7 +19,7 @@ RUN apt-get update \
     && mkdir -p /app /var/lib/aegis/raglite \
     && chown -R aegis:aegis /var/lib/aegis/raglite
 COPY --from=build /app/.venv /app/.venv
-COPY providers/raglite/healthcheck.py /usr/local/bin/raglite-healthcheck
+COPY internal/adapters/raglite/sidecar/healthcheck.py /usr/local/bin/raglite-healthcheck
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     AEGIS_RAGLITE_DATA_DIR=/var/lib/aegis/raglite \
@@ -30,4 +30,4 @@ VOLUME ["/var/lib/aegis/raglite"]
 EXPOSE 8090
 USER aegis
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=20 CMD ["python", "/usr/local/bin/raglite-healthcheck"]
-ENTRYPOINT ["uvicorn", "aegis_raglite_provider.main:app", "--host=0.0.0.0", "--port=8090", "--workers=1"]
+ENTRYPOINT ["uvicorn", "aegis_raglite_sidecar.main:app", "--host=0.0.0.0", "--port=8090", "--workers=1"]
