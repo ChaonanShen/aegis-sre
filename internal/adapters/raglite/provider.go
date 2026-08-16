@@ -57,7 +57,7 @@ func (p *Provider) ListCollections(ctx context.Context, actor domain.ActorContex
 	}
 	mapped := make([]ports.KnowledgeCollection, 0, len(items))
 	for _, item := range items {
-		value, mapErr := mapCollection(item, scope)
+		value, mapErr := mapCollection(item, scope, actor.FolderUID)
 		if mapErr != nil {
 			return domain.Page[ports.KnowledgeCollection]{}, mapErr
 		}
@@ -74,7 +74,7 @@ func (p *Provider) GetCollection(ctx context.Context, actor domain.ActorContext,
 	if err != nil {
 		return ports.KnowledgeCollection{}, mapProviderError(err)
 	}
-	return mapCollection(item, scope)
+	return mapCollection(item, scope, actor.FolderUID)
 }
 func (p *Provider) CreateCollection(ctx context.Context, actor domain.ActorContext, input ports.CreateKnowledgeCollectionInput) (ports.KnowledgeCollection, error) {
 	if err := requireFolder(actor, input.FolderUID); err != nil {
@@ -88,22 +88,28 @@ func (p *Provider) CreateCollection(ctx context.Context, actor domain.ActorConte
 	if err != nil {
 		return ports.KnowledgeCollection{}, mapProviderError(err)
 	}
-	return mapCollection(item, scope)
+	return mapCollection(item, scope, actor.FolderUID)
 }
 func (p *Provider) UpdateCollection(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef, input ports.UpdateKnowledgeCollectionInput) (ports.KnowledgeCollection, error) {
 	scope, err := p.scope(actor)
 	if err != nil {
 		return ports.KnowledgeCollection{}, err
 	}
+	if _, err := p.requireCollection(ctx, actor, ref); err != nil {
+		return ports.KnowledgeCollection{}, err
+	}
 	item, err := p.client.UpdateCollection(ctx, scope, string(ref.ID), input.Name, string(input.Status))
 	if err != nil {
 		return ports.KnowledgeCollection{}, mapProviderError(err)
 	}
-	return mapCollection(item, scope)
+	return mapCollection(item, scope, actor.FolderUID)
 }
 func (p *Provider) DeleteCollection(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) error {
 	scope, err := p.scope(actor)
 	if err != nil {
+		return err
+	}
+	if _, err := p.requireCollection(ctx, actor, ref); err != nil {
 		return err
 	}
 	return mapProviderError(p.client.DeleteCollection(ctx, scope, string(ref.ID)))
@@ -111,6 +117,9 @@ func (p *Provider) DeleteCollection(ctx context.Context, actor domain.ActorConte
 func (p *Provider) ListDocuments(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef, page domain.PageRequest) (domain.Page[ports.KnowledgeDocument], error) {
 	scope, err := p.scope(actor)
 	if err != nil {
+		return domain.Page[ports.KnowledgeDocument]{}, err
+	}
+	if _, err := p.requireCollection(ctx, actor, ref); err != nil {
 		return domain.Page[ports.KnowledgeDocument]{}, err
 	}
 	items, err := p.client.ListDocuments(ctx, scope, string(ref.ID))
@@ -132,6 +141,9 @@ func (p *Provider) GetDocument(ctx context.Context, actor domain.ActorContext, r
 	if err != nil {
 		return ports.KnowledgeDocument{}, err
 	}
+	if _, err := p.requireCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID}); err != nil {
+		return ports.KnowledgeDocument{}, err
+	}
 	item, err := p.client.GetDocument(ctx, scope, string(ref.ID))
 	if err != nil {
 		return ports.KnowledgeDocument{}, mapProviderError(err)
@@ -141,6 +153,9 @@ func (p *Provider) GetDocument(ctx context.Context, actor domain.ActorContext, r
 func (p *Provider) UploadDocument(ctx context.Context, actor domain.ActorContext, collection ports.KnowledgeCollectionRef, file ports.DocumentFile) (ports.KnowledgeDocument, error) {
 	scope, err := p.scope(actor)
 	if err != nil {
+		return ports.KnowledgeDocument{}, err
+	}
+	if _, err := p.requireCollection(ctx, actor, collection); err != nil {
 		return ports.KnowledgeDocument{}, err
 	}
 	if !file.ID.Valid() || file.Content == nil || file.SHA256 == "" {
@@ -160,6 +175,9 @@ func (p *Provider) UpdateDocument(ctx context.Context, actor domain.ActorContext
 	if err != nil {
 		return ports.KnowledgeDocument{}, err
 	}
+	if _, err := p.requireCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID}); err != nil {
+		return ports.KnowledgeDocument{}, err
+	}
 	item, err := p.client.UpdateDocument(ctx, scope, string(ref.ID), input.Service, input.Tags)
 	if err != nil {
 		return ports.KnowledgeDocument{}, mapProviderError(err)
@@ -171,12 +189,18 @@ func (p *Provider) StartIndexing(ctx context.Context, actor domain.ActorContext,
 	if err != nil {
 		return err
 	}
+	if _, err := p.requireCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID}); err != nil {
+		return err
+	}
 	_, err = p.client.StartIndexing(ctx, scope, string(ref.ID))
 	return mapProviderError(err)
 }
 func (p *Provider) StopIndexing(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef) error {
 	scope, err := p.scope(actor)
 	if err != nil {
+		return err
+	}
+	if _, err := p.requireCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID}); err != nil {
 		return err
 	}
 	return mapProviderError(p.client.StopIndexing(ctx, scope, string(ref.ID)))
@@ -186,11 +210,17 @@ func (p *Provider) DeleteDocument(ctx context.Context, actor domain.ActorContext
 	if err != nil {
 		return err
 	}
+	if _, err := p.requireCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID}); err != nil {
+		return err
+	}
 	return mapProviderError(p.client.DeleteDocument(ctx, scope, string(ref.ID)))
 }
 func (p *Provider) ListChunks(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef, page domain.PageRequest) (domain.Page[ports.KnowledgeChunk], error) {
 	scope, err := p.scope(actor)
 	if err != nil {
+		return domain.Page[ports.KnowledgeChunk]{}, err
+	}
+	if _, err := p.requireCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID}); err != nil {
 		return domain.Page[ports.KnowledgeChunk]{}, err
 	}
 	items, err := p.client.ListChunks(ctx, scope, string(ref.ID))
@@ -236,6 +266,9 @@ func (p *Provider) Retrieve(ctx context.Context, actor domain.ActorContext, inpu
 	collections := make([]string, len(input.Collections))
 	allowedCollections := make(map[string]domain.ID, len(input.Collections))
 	for i, ref := range input.Collections {
+		if _, err := p.requireCollection(ctx, actor, ref); err != nil {
+			return nil, err
+		}
 		collections[i] = string(ref.ID)
 		allowedCollections[string(ref.ID)] = ref.ID
 	}
@@ -280,9 +313,21 @@ func requireFolder(actor domain.ActorContext, folder string) error {
 	}
 	return nil
 }
-func mapCollection(item Collection, expectedScope string) (ports.KnowledgeCollection, error) {
+func (p *Provider) requireCollection(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
+	scope, err := p.scope(actor)
+	if err != nil {
+		return ports.KnowledgeCollection{}, err
+	}
+	item, err := p.client.GetCollection(ctx, scope, string(ref.ID))
+	if err != nil {
+		return ports.KnowledgeCollection{}, mapProviderError(err)
+	}
+	return mapCollection(item, scope, actor.FolderUID)
+}
+
+func mapCollection(item Collection, expectedScope, expectedFolder string) (ports.KnowledgeCollection, error) {
 	id := domain.ID(item.ID)
-	if !id.Valid() || !strings.HasPrefix(item.ID, "kbs_") || item.Scope != expectedScope {
+	if !id.Valid() || !strings.HasPrefix(item.ID, "kbs_") || item.Scope != expectedScope || item.FolderUID != expectedFolder {
 		return ports.KnowledgeCollection{}, resultUnknown(errors.New("collection identity or scope is invalid"))
 	}
 	created, err := time.Parse(time.RFC3339Nano, item.CreatedAt)

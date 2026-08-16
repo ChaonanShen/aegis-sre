@@ -100,6 +100,21 @@ func TestProviderRejectsDigestMismatchAndScopeMismatch(t *testing.T) {
 	assertCode(t, err, domain.ErrorProviderResultUnknown)
 }
 
+func TestProviderRejectsReturnedFolderMismatchBeforeChildMutation(t *testing.T) {
+	provider, fake, _, actor := testProvider(t)
+	foreign := fake.collection()
+	foreign.FolderUID = "folder-b"
+	fake.getCollection = &foreign
+
+	_, err := provider.GetCollection(context.Background(), actor, ports.KnowledgeCollectionRef{ID: "kbs_abcdefgh"})
+	assertCode(t, err, domain.ErrorProviderResultUnknown)
+	err = provider.DeleteDocument(context.Background(), actor, ports.KnowledgeDocumentRef{ID: "doc_abcdefgh", CollectionID: "kbs_abcdefgh"})
+	assertCode(t, err, domain.ErrorProviderResultUnknown)
+	if fake.mutations != 0 {
+		t.Fatalf("child mutation reached Provider before parent Folder validation: %d", fake.mutations)
+	}
+}
+
 func TestProviderMapsCapabilityAndNotFoundErrors(t *testing.T) {
 	provider, fake, _, actor := testProvider(t)
 	fake.err = &ProviderError{Code: "capability_unavailable", StatusCode: 422}
@@ -128,14 +143,16 @@ func assertCode(t *testing.T, err error, code domain.ErrorCode) {
 }
 
 type fakeClient struct {
-	scope       string
-	lastScope   string
-	collections []Collection
-	documents   []Document
-	chunks      []Chunk
-	hits        []SearchHit
-	err         error
-	badDigest   bool
+	scope         string
+	lastScope     string
+	collections   []Collection
+	documents     []Document
+	chunks        []Chunk
+	hits          []SearchHit
+	err           error
+	badDigest     bool
+	getCollection *Collection
+	mutations     int
 }
 
 func (f *fakeClient) collection() Collection {
@@ -165,9 +182,13 @@ func (f *fakeClient) GetCollection(_ context.Context, scope, _ string) (Collecti
 	if f.err != nil {
 		return Collection{}, f.err
 	}
+	if f.getCollection != nil {
+		return *f.getCollection, nil
+	}
 	return f.collection(), nil
 }
 func (f *fakeClient) CreateCollection(_ context.Context, scope string, in Collection) (Collection, error) {
+	f.mutations++
 	f.lastScope = scope
 	if f.err != nil {
 		return Collection{}, f.err
@@ -180,6 +201,7 @@ func (f *fakeClient) CreateCollection(_ context.Context, scope string, in Collec
 	return value, nil
 }
 func (f *fakeClient) UpdateCollection(_ context.Context, scope, _, name, status string) (Collection, error) {
+	f.mutations++
 	value := f.collection()
 	value.Name = name
 	value.Status = status
@@ -187,6 +209,7 @@ func (f *fakeClient) UpdateCollection(_ context.Context, scope, _, name, status 
 	return value, f.err
 }
 func (f *fakeClient) DeleteCollection(_ context.Context, scope, _ string) error {
+	f.mutations++
 	f.lastScope = scope
 	return f.err
 }
@@ -202,23 +225,28 @@ func (f *fakeClient) GetDocument(_ context.Context, scope, _ string) (Document, 
 	return f.document(), f.err
 }
 func (f *fakeClient) UploadDocument(_ context.Context, scope, _, _, _, _, _ string, _ []string, content io.Reader) (Document, error) {
+	f.mutations++
 	f.lastScope = scope
 	_, _ = io.Copy(io.Discard, content)
 	return f.document(), f.err
 }
 func (f *fakeClient) UpdateDocument(_ context.Context, scope, _, _ string, _ []string) (Document, error) {
+	f.mutations++
 	f.lastScope = scope
 	return f.document(), f.err
 }
 func (f *fakeClient) DeleteDocument(_ context.Context, scope, _ string) error {
+	f.mutations++
 	f.lastScope = scope
 	return f.err
 }
 func (f *fakeClient) StartIndexing(_ context.Context, scope, _ string) (Job, error) {
+	f.mutations++
 	f.lastScope = scope
 	return Job{ID: "job_abcdefgh"}, f.err
 }
 func (f *fakeClient) StopIndexing(_ context.Context, scope, _ string) error {
+	f.mutations++
 	f.lastScope = scope
 	return f.err
 }
