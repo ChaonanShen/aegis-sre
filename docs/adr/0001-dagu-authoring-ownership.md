@@ -3,6 +3,9 @@
 - 状态：接受
 - 日期：2026-08-13
 
+Folder ownership、旧 Org-scoped Playbook 兼容和权限继承由
+[ADR 0009](0009-playbook-folder-ownership.md) 补充；本文的 Aegis/GitOps 写入边界继续有效。
+
 ## 背景
 
 Dagu YAML 是 Playbook 的唯一事实来源。Aegis UI 和 GitOps 如果同时修改同一个 DAG 文件，
@@ -27,4 +30,3 @@ Dagu YAML 是 Playbook 的唯一事实来源。Aegis UI 和 GitOps 如果同时�
 - Dagu 仍是定义、运行、步骤和 Artifact 的唯一持久化引擎。
 - 命名空间在写入前即可判定所有权，Control Plane 无需数据库或锁服务。
 - GitOps DAG 默认不会出现在 Aegis UI；这是避免隐式双写的有意限制。
-

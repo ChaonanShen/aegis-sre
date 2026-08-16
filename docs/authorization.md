@@ -690,16 +690,16 @@ Skills 各自解析 Header。Header 名称是平台传输细节，不应散落�
 
 ## 21. 必须先确认的未决问题
 
-1. Session 是否接受“历史消息仍由 owner 可读、只禁止新的 Folder 操作”的权限撤销语义？
-2. Playbook Folder scope 使用 Dagu 原生 metadata/tag，还是进入新的不可逆 `pbk_` scope 命名？
-3. 删除共享 Knowledge Base/Playbook 是否必须 Admin，还是 Edit 即可？
-4. 哪些 Agent/Playbook 审批必须 Admin，哪些 Edit 可以处理？
-5. Skill 是否需要私人草稿，还是所有真实 Skill 都直接 Folder-owned？
-6. 生产是否保持单 Grafana Org；如果不是，可信用户授权链如何替代 `externalServiceAccounts`？
-7. Audit 的唯一事实来源、保留期限和 Org Admin 查询能力由哪个现有系统承载？
-8. MCP 用户委托能力由哪个组件签发，Agent runtime 如何按 Turn 注入，TTL、密钥轮换和吊销如何实现？
-9. 各 Agent Provider 能否在原生 tool-call/approval metadata 中持久化可信审批目标；不能时是否禁用该审批能力？
-10. Folder orphan 的 inventory/reconciliation 由哪个现有系统承载，Org Admin 治理入口的恢复与删除策略是什么？
+以下首版语义已经冻结：Session 历史采用授权时点快照；Playbook 使用 Dagu 原生 labels 保存 Folder owner；删除
+Knowledge Base/Playbook 和处理 Approval 要求 Admin；Control Plane 签发 5 分钟逐 Turn 用户委托；Provider 无法
+保存可信 Approval target 时禁用 approve。实现细节见 ADR 0009 和 ADR 0010。
+
+仍需确认：
+
+1. Skill 是否需要私人草稿，还是所有真实 Skill 都直接 Folder-owned？
+2. 生产是否保持单 Grafana Org；如果不是，可信用户授权链如何替代 `externalServiceAccounts`？
+3. Audit 的唯一事实来源、保留期限和 Org Admin 查询能力由哪个现有系统承载？
+4. Folder orphan 的 inventory/reconciliation 由哪个现有系统承载，Org Admin 治理入口的恢复与删除策略是什么？
 
 这些问题会改变跨模块公共契约、Provider metadata 或资源生命周期。未确认前可以建设通用授权基础设施，
 但不能通过临时数据库、fixture 字段或前端判断提前固化答案。
@@ -715,5 +715,7 @@ Skills 各自解析 Header。Header 名称是平台传输细节，不应散落�
 - [Dagu Playbook 写入归属 ADR](adr/0001-dagu-authoring-ownership.md)
 - [Agent/Playbook MCP 边界 ADR](adr/0005-agent-playbook-mcp-boundary.md)
 - [Canvas SQLite 持久化 ADR](adr/0007-canvas-sqlite-persistence.md)
+- [Playbook Folder Ownership ADR](adr/0009-playbook-folder-ownership.md)
+- [Agent 委托与 Approval 目标 ADR](adr/0010-agent-delegation-and-approval-target.md)
 - [Grafana App Plugin RBAC 官方文档](https://grafana.com/developers/plugin-tools/how-to-guides/app-plugins/implement-rbac-in-app-plugins)
 - [Grafana App Plugin Service Account 官方文档](https://grafana.com/developers/plugin-tools/how-to-guides/app-plugins/use-a-service-account)

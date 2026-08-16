@@ -205,4 +205,6 @@ Knowledge 的持久卷由各自组件负责备份恢复，Canvas 卷单独备份
 - [Knowledge 身份与 Folder 授权 ADR](adr/0004-knowledge-identity-and-folder-authorization.md)
 - [Agent/Playbook MCP 边界 ADR](adr/0005-agent-playbook-mcp-boundary.md)
 - [Canvas SQLite ADR](adr/0007-canvas-sqlite-persistence.md)
+- [Playbook Folder Ownership ADR](adr/0009-playbook-folder-ownership.md)
+- [Agent 委托与 Approval 目标 ADR](adr/0010-agent-delegation-and-approval-target.md)
 - [OpenAPI 公共契约](../api/openapi.yaml)

@@ -1,7 +1,10 @@
 # ADR 0002：Playbook 首版按 Grafana Org 隔离
 
-- 状态：已接受
+- 状态：部分被 ADR 0009 取代
 - 日期：2026-08-13
+
+本文保留公共 ID 的 Tenant/Org 隔离与历史兼容背景；仅按 Org Role 授权的决策已被
+[ADR 0009](0009-playbook-folder-ownership.md) 的 Dagu 原生 Folder labels 取代。
 
 ## 背景
 

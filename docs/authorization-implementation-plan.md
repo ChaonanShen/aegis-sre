@@ -74,6 +74,9 @@ RoutePolicy 和模块实现以以下矩阵为首版默认值。后续如果降�
 
 ## 4. 阶段 0：冻结 ADR 与兼容策略
 
+状态：**已完成。** Playbook Folder ownership 见 [ADR 0009](adr/0009-playbook-folder-ownership.md)，Agent 委托与
+Approval target 见 [ADR 0010](adr/0010-agent-delegation-and-approval-target.md)。首版权限风险矩阵已冻结。
+
 ### 4.1 Playbook Folder ownership ADR
 
 新增 ADR，扩展或取代 ADR 0001 中只有 Aegis/GitOps 写入归属、没有 Folder ownership 的部分。ADR 必须通过
