@@ -13,7 +13,14 @@ jest.mock('@grafana/runtime', () => ({
       of({
         data:
           request.url === '/api/search'
-            ? [{ uid: 'ops', title: 'Operations', type: 'dash-folder' }]
+            ? [
+                {
+                  uid: 'ops',
+                  title: 'Operations',
+                  type: 'dash-folder',
+                  accessControl: { 'grafana-plugin-app.folder-resources:read': true },
+                },
+              ]
             : { items: [], has_more: false },
         status: 200,
         headers: new Headers(),
