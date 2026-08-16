@@ -310,7 +310,8 @@ POST .../{knowledge_base_id}/scope-migrations
 
 ### P8：真实 E2E、质量门禁与发布
 
-- [x] Go、sidecar、OpenAPI 生成、部署契约、MCP、Plugin 单元测试、类型检查、lint 和构建纳入 `make verify`。
+- [x] Go、OpenAPI 生成、部署契约、MCP、Plugin 单元测试、类型检查、lint 和构建由 `make verify` 覆盖；
+  sidecar 完整依赖测试由独立的 `make raglite-sidecar-test` 覆盖。
 - [x] Linux/amd64 完整锁定依赖下执行 51 个 sidecar 测试和 Ruff。
 - [ ] 新增真实浏览器 E2E：Plugin -> Plugin Backend -> Grafana authz -> Control Plane -> RAGLite。
 - [ ] 覆盖 Viewer、Editor、Admin 三用户和至少三个 Folder；权限撤销、伪造 Folder、跨 Folder ID 全部 fail-closed。
