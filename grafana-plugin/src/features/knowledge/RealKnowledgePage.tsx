@@ -3,7 +3,7 @@ import { AlertCircle, Download, FileText, Plus, RefreshCw, Search, Trash2, Uploa
 import { useAppShell } from '../../app/AppShellContext';
 import {
   KnowledgeBaseRecord,
-  KnowledgeChunkRecord,
+  DocumentPassageRecord,
   KnowledgeDocumentRecord,
   KnowledgeSearchHit,
 } from './managementModel';
@@ -11,7 +11,7 @@ import { KnowledgeManagementGateway } from './ports/KnowledgeManagementGateway';
 import './knowledge.css';
 
 type Loadable<T> = { status: 'loading' } | { status: 'error'; error: Error } | { status: 'success'; data: T };
-type Tab = 'documents' | 'search' | 'runbooks';
+type Tab = 'documents' | 'search';
 
 export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManagementGateway }) {
   const { activeFolder } = useAppShell();
@@ -80,11 +80,11 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
     return () => controller.abort();
   }, [folderUid, loadDocuments, refreshDocuments, selectedBaseId]);
 
-  // RAGFlow 解析是异步过程，仅在存在进行中文档时轮询，离开 Folder/KB 立即取消。
+  // 只在自动索引队列仍有工作时轮询，离开 Folder/KB 立即取消。
   useEffect(() => {
     if (
       documents.status !== 'success' ||
-      !documents.data.some(({ status }) => status === 'pending' || status === 'indexing')
+      !documents.data.some(({ status }) => status === 'queued' || status === 'indexing')
     ) {
       return;
     }
@@ -145,7 +145,6 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
             type="button"
           >
             <span>{base.name}</span>
-            <small>{base.status}</small>
           </button>
         ))}
         {bases.data.length === 0 && <p>此 Folder 尚无知识库。</p>}
@@ -166,11 +165,9 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
             <header className="knowledge-page-header">
               <div>
                 <h1>{selectedBase.name}</h1>
-                <p>
-                  Folder: {activeFolder?.title} · {selectedBase.status}
-                </p>
+                <p>Folder: {activeFolder?.title}</p>
               </div>
-              {writable && !selectedBase.read_only && (
+              {writable && (
                 <KnowledgeBaseActions
                   base={selectedBase}
                   busy={busy}
@@ -180,21 +177,6 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
                   folderUid={folderUid}
                   refresh={() => setRefreshBases((value) => value + 1)}
                 />
-              )}
-              {admin && selectedBase.read_only && (
-                <button
-                  className="knowledge-button secondary"
-                  disabled={busy}
-                  onClick={() =>
-                    void mutate(async () => {
-                      await gateway.migrateLegacyKnowledgeBase(folderUid, selectedBase.id);
-                      setRefreshBases((value) => value + 1);
-                    }, '知识库已迁移为当前 Folder 原生资源。')
-                  }
-                  type="button"
-                >
-                  迁移到当前 Folder
-                </button>
               )}
             </header>
             {notice && (
@@ -207,13 +189,8 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
                 当前 Folder 仅有查看权限；服务端会继续执行最终权限校验。
               </div>
             )}
-            {selectedBase.read_only && (
-              <div className="knowledge-permission-banner">
-                这是 legacy 用户作用域知识库，只能读取；Folder Admin 可执行原生 scope 迁移，原文档不会重新上传。
-              </div>
-            )}
             <nav className="knowledge-management-tabs" aria-label="知识库功能">
-              {(['documents', 'search', 'runbooks'] as Tab[]).map((item) => (
+              {(['documents', 'search'] as Tab[]).map((item) => (
                 <button className={tab === item ? 'active' : ''} key={item} onClick={() => setTab(item)} type="button">
                   {tabLabel(item)}
                 </button>
@@ -228,17 +205,17 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
                 knowledgeBaseId={selectedBase.id}
                 mutate={mutate}
                 refresh={() => setRefreshDocuments((value) => value + 1)}
-                writable={writable && !selectedBase.read_only}
+                writable={writable}
               />
             )}
             {tab === 'search' && (
-              <SearchPanel folderUid={folderUid} gateway={gateway} knowledgeBaseId={selectedBase.id} />
-            )}
-            {tab === 'runbooks' && (
-              <div className="knowledge-empty">
-                <strong>Runbook 尚未接入 Knowledge Provider</strong>
-                <p>请前往 Playbooks 页面管理原生 Dagu YAML；这里不会显示 fixture 数据。</p>
-              </div>
+              <SearchPanel
+                bases={bases.data}
+                folderUid={folderUid}
+                gateway={gateway}
+                key={selectedBase.id}
+                knowledgeBaseId={selectedBase.id}
+              />
             )}
           </>
         )}
@@ -264,14 +241,6 @@ function KnowledgeBaseActions({
   onMutate: (operation: () => Promise<void>, success: string) => Promise<void>;
   refresh: () => void;
 }) {
-  const toggle = () =>
-    onMutate(async () => {
-      await gateway.updateKnowledgeBase(folderUid, base.id, {
-        name: base.name,
-        status: base.status === 'active' ? 'disabled' : 'active',
-      });
-      refresh();
-    }, '知识库状态已更新。');
   const remove = () => {
     if (!window.confirm(`删除知识库“${base.name}”？`)) {
       return;
@@ -290,7 +259,7 @@ function KnowledgeBaseActions({
           const name = String(new FormData(event.currentTarget).get('name') ?? '').trim();
           if (name && name !== base.name) {
             void onMutate(async () => {
-              await gateway.updateKnowledgeBase(folderUid, base.id, { name, status: base.status });
+              await gateway.updateKnowledgeBase(folderUid, base.id, { name });
               refresh();
             }, '知识库名称已更新。');
           }
@@ -301,9 +270,6 @@ function KnowledgeBaseActions({
           保存名称
         </button>
       </form>
-      <button className="knowledge-button secondary" disabled={busy} onClick={() => void toggle()} type="button">
-        {base.status === 'active' ? '停用' : '启用'}
-      </button>
       {canDelete && (
         <button className="knowledge-button danger" disabled={busy} onClick={remove} type="button">
           <Trash2 size={13} /> 删除
@@ -333,10 +299,12 @@ function DocumentsPanel({
   writable: boolean;
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [chunks, setChunks] = useState<{
+  const passagesAbortRef = useRef<AbortController>();
+  const [passages, setPassages] = useState<{
     document: KnowledgeDocumentRecord;
-    state: Loadable<KnowledgeChunkRecord[]>;
+    state: Loadable<DocumentPassageRecord[]>;
   }>();
+  useEffect(() => () => passagesAbortRef.current?.abort(), []);
   const upload = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const element = event.currentTarget;
@@ -356,12 +324,22 @@ function DocumentsPanel({
       refresh();
     }, '文档已上传，等待解析。');
   };
-  const showChunks = (document: KnowledgeDocumentRecord) => {
-    setChunks({ document, state: { status: 'loading' } });
+  const showPassages = (document: KnowledgeDocumentRecord) => {
+    passagesAbortRef.current?.abort();
+    const controller = new AbortController();
+    passagesAbortRef.current = controller;
+    setPassages({ document, state: { status: 'loading' } });
     void gateway
-      .listChunks(folderUid, knowledgeBaseId, document.id)
-      .then((data) => setChunks({ document, state: { status: 'success', data } }))
-      .catch((error: unknown) => setChunks({ document, state: { status: 'error', error: toError(error) } }));
+      .listPassages(folderUid, knowledgeBaseId, document.id, controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) {
+          setPassages({ document, state: { status: 'success', data } });
+        }
+      })
+      .catch(
+        (error: unknown) =>
+          !isAbortError(error) && setPassages({ document, state: { status: 'error', error: toError(error) } })
+      );
   };
   const download = async (document: KnowledgeDocumentRecord) => {
     await mutate(async () => {
@@ -385,7 +363,7 @@ function DocumentsPanel({
       {writable && (
         <form className="knowledge-upload-form" onSubmit={upload}>
           <input
-            accept=".pdf,.docx,.md,.txt,.html"
+            accept=".pdf,.md,.txt"
             aria-label="选择文档"
             name="file"
             ref={fileInputRef}
@@ -412,8 +390,8 @@ function DocumentsPanel({
             </div>
             <span className={`knowledge-status ${document.status}`}>{document.status}</span>
             <div className="knowledge-document-actions">
-              <button onClick={() => showChunks(document)} type="button">
-                切片
+              <button onClick={() => showPassages(document)} type="button">
+                段落
               </button>
               <button aria-label={`下载 ${document.name}`} onClick={() => void download(document)} type="button">
                 <Download size={13} />
@@ -444,10 +422,12 @@ function DocumentsPanel({
           </article>
         ))}
         {documents.data.length === 0 && (
-          <div className="knowledge-empty">尚无文档。上传 PDF、DOCX、Markdown、TXT 或 HTML 文件开始构建索引。</div>
+          <div className="knowledge-empty">尚无文档。上传 PDF、Markdown 或 TXT 文件后会自动构建索引。</div>
         )}
       </section>
-      {chunks && <ChunksPanel close={() => setChunks(undefined)} document={chunks.document} state={chunks.state} />}
+      {passages && (
+        <PassagesPanel close={() => setPassages(undefined)} document={passages.document} state={passages.state} />
+      )}
     </>
   );
 }
@@ -512,7 +492,6 @@ function DocumentWriteActions({
   mutate: (operation: () => Promise<void>, success: string) => Promise<void>;
   refresh: () => void;
 }) {
-  const index = document.status === 'indexing' ? gateway.stopIndexing : gateway.startIndexing;
   const remove = () => {
     if (window.confirm(`删除文档“${document.name}”？`)) {
       void mutate(async () => {
@@ -523,21 +502,20 @@ function DocumentWriteActions({
   };
   return (
     <>
-      <button
-        disabled={busy}
-        onClick={() =>
-          void mutate(
-            async () => {
-              await index(folderUid, knowledgeBaseId, document.id);
+      {document.status === 'failed' && (
+        <button
+          disabled={busy}
+          onClick={() =>
+            void mutate(async () => {
+              await gateway.retryDocumentIndex(folderUid, knowledgeBaseId, document.id);
               refresh();
-            },
-            document.status === 'indexing' ? '已请求停止解析。' : '已请求开始解析。'
-          )
-        }
-        type="button"
-      >
-        {document.status === 'indexing' ? '停止' : '索引'}
-      </button>
+            }, '文档已重新进入索引队列。')
+          }
+          type="button"
+        >
+          重试索引
+        </button>
+      )}
       <button aria-label={`删除 ${document.name}`} disabled={busy} onClick={remove} type="button">
         <Trash2 size={13} />
       </button>
@@ -545,34 +523,32 @@ function DocumentWriteActions({
   );
 }
 
-function ChunksPanel({
+function PassagesPanel({
   close,
   document,
   state,
 }: {
   close: () => void;
   document: KnowledgeDocumentRecord;
-  state: Loadable<KnowledgeChunkRecord[]>;
+  state: Loadable<DocumentPassageRecord[]>;
 }) {
   return (
     <section className="knowledge-chunks">
       <header>
-        <strong>{document.name} 的切片</strong>
+        <strong>{document.name} 的段落</strong>
         <button onClick={close} type="button">
           关闭
         </button>
       </header>
       {state.status === 'loading' ? (
-        <State text="正在加载切片…" />
+        <State text="正在加载段落…" />
       ) : state.status === 'error' ? (
         <ErrorState error={state.error} retry={close} />
       ) : (
-        state.data.map((chunk) => (
-          <article key={chunk.id}>
-            <small>
-              第 {chunk.page_number} 页 · {chunk.position}
-            </small>
-            <p>{chunk.text}</p>
+        state.data.map((passage) => (
+          <article key={passage.ordinal}>
+            <small>{passage.location || `段落 ${passage.ordinal}`}</small>
+            <p>{passage.text}</p>
           </article>
         ))
       )}
@@ -581,35 +557,50 @@ function ChunksPanel({
 }
 
 function SearchPanel({
+  bases,
   folderUid,
   gateway,
   knowledgeBaseId,
 }: {
+  bases: KnowledgeBaseRecord[];
   folderUid: string;
   gateway: KnowledgeManagementGateway;
   knowledgeBaseId: string;
 }) {
   const [query, setQuery] = useState('');
   const [service, setService] = useState('');
+  const [tagsAny, setTagsAny] = useState('');
+  const [tagsAll, setTagsAll] = useState('');
+  const [knowledgeBaseIds, setKnowledgeBaseIds] = useState([knowledgeBaseId]);
   const [state, setState] = useState<Loadable<KnowledgeSearchHit[]> | undefined>();
   const requestRef = useRef(0);
+  const searchAbortRef = useRef<AbortController>();
+  useEffect(() => () => searchAbortRef.current?.abort(), []);
   const search = async (event: FormEvent) => {
     event.preventDefault();
+    searchAbortRef.current?.abort();
+    const controller = new AbortController();
+    searchAbortRef.current = controller;
     const request = ++requestRef.current;
     setState({ status: 'loading' });
     try {
-      const hits = await gateway.search(folderUid, {
-        query,
-        knowledgeBaseIds: [knowledgeBaseId],
-        service: service.trim() || undefined,
-        limit: 10,
-        threshold: 0.2,
-      });
+      const hits = await gateway.search(
+        folderUid,
+        {
+          query,
+          knowledgeBaseIds,
+          service: service.trim() || undefined,
+          tagsAny: splitTags(tagsAny),
+          tagsAll: splitTags(tagsAll),
+          limit: 10,
+        },
+        controller.signal
+      );
       if (request === requestRef.current) {
         setState({ status: 'success', data: hits });
       }
     } catch (error) {
-      if (request === requestRef.current) {
+      if (request === requestRef.current && !isAbortError(error)) {
         setState({ status: 'error', error: toError(error) });
       }
     }
@@ -617,6 +608,20 @@ function SearchPanel({
   return (
     <section>
       <form className="knowledge-search-form" onSubmit={search}>
+        <select
+          aria-label="检索知识库"
+          multiple
+          onChange={(event) =>
+            setKnowledgeBaseIds(Array.from(event.currentTarget.selectedOptions, (option) => option.value))
+          }
+          value={knowledgeBaseIds}
+        >
+          {bases.map((base) => (
+            <option key={base.id} value={base.id}>
+              {base.name}
+            </option>
+          ))}
+        </select>
         <input
           aria-label="检索问题"
           onChange={(event) => setQuery(event.currentTarget.value)}
@@ -624,6 +629,8 @@ function SearchPanel({
           required
           value={query}
         />
+        <input aria-label="任一标签" onChange={(event) => setTagsAny(event.currentTarget.value)} placeholder="任一标签" value={tagsAny} />
+        <input aria-label="全部标签" onChange={(event) => setTagsAll(event.currentTarget.value)} placeholder="全部标签" value={tagsAll} />
         <input
           aria-label="筛选服务"
           onChange={(event) => setService(event.currentTarget.value)}
@@ -639,15 +646,14 @@ function SearchPanel({
       {state?.status === 'success' && (
         <div className="knowledge-search-results">
           {state.data.map((hit, index) => (
-            <article key={`${hit.citation.document_id}:${hit.citation.position}:${index}`}>
+            <article key={`${hit.citation.document_id}:${hit.citation.ordinal}:${index}`}>
               <p>{hit.text}</p>
               <footer>
-                {hit.citation.source_name} · 第 {hit.citation.page_number} 页 · {hit.citation.position} ·{' '}
-                {(hit.score * 100).toFixed(1)}%
+                {hit.citation.source_name} · {hit.citation.location || `段落 ${hit.citation.ordinal}`}
               </footer>
             </article>
           ))}
-          {state.data.length === 0 && <div className="knowledge-empty">没有达到阈值的检索结果。</div>}
+          {state.data.length === 0 && <div className="knowledge-empty">没有检索结果。</div>}
         </div>
       )}
     </section>
@@ -669,7 +675,7 @@ function ErrorState({ error, retry }: { error: Error; retry: () => void }) {
   );
 }
 function tabLabel(tab: Tab): string {
-  return tab === 'documents' ? '文档' : tab === 'search' ? '检索测试' : 'Runbooks';
+  return tab === 'documents' ? '文档' : '检索测试';
 }
 function splitTags(value: string): string[] {
   return value

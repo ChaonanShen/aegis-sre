@@ -12,8 +12,6 @@ const kb: KnowledgeBaseRecord = {
   id: 'kbs_ops',
   name: 'Operations',
   folder_uid: 'ops',
-  status: 'active',
-  read_only: false,
   created_at: '2026-08-14T00:00:00Z',
   updated_at: '2026-08-14T00:00:00Z',
 };
@@ -73,29 +71,22 @@ describe('real Knowledge management page', () => {
     fireEvent.click(screen.getByRole('button', { name: '检索' }));
 
     expect(await screen.findByText('先检查健康状态。')).toBeInTheDocument();
-    expect(screen.getByText(/restart.md · 第 2 页 · paragraph-4/)).toBeInTheDocument();
+    expect(screen.getByText(/restart.md · paragraph-4/)).toBeInTheDocument();
     expect(gateway.search).toHaveBeenCalledWith(
       'ops',
-      expect.objectContaining({ knowledgeBaseIds: [kb.id], query: '如何重启' })
+      expect.objectContaining({ knowledgeBaseIds: [kb.id], query: '如何重启' }),
+      expect.any(AbortSignal)
     );
   });
 
-  test('never fills the real Runbooks tab with migrated fixture data', async () => {
-    renderPage(fakeGateway());
-    await screen.findByRole('heading', { name: 'Operations' });
-    fireEvent.click(screen.getByRole('button', { name: 'Runbooks' }));
-    expect(screen.getByText('Runbook 尚未接入 Knowledge Provider')).toBeInTheDocument();
-    expect(screen.getByText(/不会显示 fixture 数据/)).toBeInTheDocument();
-  });
-
-  test('loads and renders document chunks with their source position', async () => {
+  test('loads and renders document passages without Provider chunk IDs', async () => {
     const gateway = fakeGateway();
     renderPage(gateway);
     await screen.findByText('restart.md');
     const list = await screen.findByRole('region', { name: '文档列表' });
-    fireEvent.click(within(list).getByRole('button', { name: '切片' }));
+    fireEvent.click(within(list).getByRole('button', { name: '段落' }));
     expect(await screen.findByText('检查实例健康并逐个重启。')).toBeInTheDocument();
-    expect(screen.getByText('第 2 页 · paragraph-4')).toBeInTheDocument();
+    expect(screen.getByText('paragraph-4')).toBeInTheDocument();
   });
 
   test('updates document service and tags through the public metadata contract', async () => {
@@ -114,6 +105,22 @@ describe('real Knowledge management page', () => {
     );
   });
 
+  test('offers retry only for failed documents and never shows stop or manual index actions', async () => {
+    const gateway = fakeGateway();
+    gateway.listDocuments = jest.fn(async () => [
+      { ...document, status: 'failed' as const, failure_reason: '文档解析失败' },
+    ]);
+    renderPage(gateway);
+
+    expect(await screen.findByText('文档解析失败')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试索引' }));
+    await waitFor(() =>
+      expect(gateway.retryDocumentIndex).toHaveBeenCalledWith('ops', kb.id, document.id)
+    );
+    expect(screen.queryByRole('button', { name: '停止' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '索引' })).not.toBeInTheDocument();
+  });
+
   test('shows root deletion only to Folder admins while editors retain ordinary writes', async () => {
     const editor = renderPage(fakeGateway(), 'Edit');
     await screen.findByRole('heading', { name: 'Operations' });
@@ -126,17 +133,6 @@ describe('real Knowledge management page', () => {
     expect(screen.getByRole('button', { name: /删除$/ })).toBeInTheDocument();
   });
 
-  test('keeps legacy knowledge bases read-only and exposes provider-native migration only to admins', async () => {
-    const gateway = fakeGateway();
-    gateway.listKnowledgeBases = jest.fn(async () => [{ ...kb, read_only: true }]);
-    renderPage(gateway, 'Admin');
-
-    expect(await screen.findByText(/legacy 用户作用域知识库/)).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '保存名称' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /上传/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '迁移到当前 Folder' }));
-    await waitFor(() => expect(gateway.migrateLegacyKnowledgeBase).toHaveBeenCalledWith('ops', kb.id));
-  });
 });
 
 function renderPage(gateway: KnowledgeManagementGateway, permission: FolderPermission = 'Edit') {
@@ -158,29 +154,30 @@ function fakeGateway(): KnowledgeManagementGateway {
     createKnowledgeBase: jest.fn(async () => kb),
     updateKnowledgeBase: jest.fn(async () => kb),
     deleteKnowledgeBase: jest.fn(async () => undefined),
-    migrateLegacyKnowledgeBase: jest.fn(async () => kb),
     listDocuments: jest.fn(async () => [document]),
     getDocument: jest.fn(async () => document),
     uploadDocument: jest.fn(async () => document),
     updateDocument: jest.fn(async () => document),
     deleteDocument: jest.fn(async () => undefined),
-    startIndexing: jest.fn(async () => undefined),
-    stopIndexing: jest.fn(async () => undefined),
-    listChunks: jest.fn(async () => [
+    retryDocumentIndex: jest.fn(async () => document),
+    listPassages: jest.fn(async () => [
       {
-        id: 'chk_1',
-        document_id: document.id,
+        ordinal: 1,
         text: '检查实例健康并逐个重启。',
-        position: 'paragraph-4',
-        page_number: 2,
+        location: 'paragraph-4',
       },
     ]),
     downloadDocument: jest.fn(async () => new Blob(['# restart'])),
     search: jest.fn(async () => [
       {
         text: '先检查健康状态。',
-        score: 0.91,
-        citation: { document_id: document.id, source_name: document.name, position: 'paragraph-4', page_number: 2 },
+        citation: {
+          document_id: document.id,
+          knowledge_base_id: kb.id,
+          source_name: document.name,
+          ordinal: 1,
+          location: 'paragraph-4',
+        },
       },
     ]),
   };

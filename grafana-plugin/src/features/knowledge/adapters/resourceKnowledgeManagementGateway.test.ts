@@ -6,8 +6,6 @@ const kb = {
   id: 'kbs_abcdefgh',
   name: 'Operations',
   folder_uid: 'ops',
-  status: 'active',
-  read_only: false,
   created_at: '2026-08-14T00:00:00Z',
   updated_at: '2026-08-14T00:00:00Z',
 } as const;
@@ -18,7 +16,7 @@ const document = {
   media_type: 'text/markdown',
   service: 'api',
   tags: ['prod'],
-  status: 'pending',
+  status: 'queued',
   size: 12,
 } as const;
 
@@ -68,42 +66,44 @@ describe('Control Plane Knowledge management gateway', () => {
     expect((requests[1].data as FormData).getAll('tags')).toEqual(['prod', 'guide']);
   });
 
-  test('forwards document lifecycle actions and validates stable citations', async () => {
+  test('forwards retry and product search filters without Provider scoring fields', async () => {
     const hit = {
       text: 'restart it',
-      score: 0.9,
-      citation: { document_id: document.id, source_name: document.name, position: 'p1', page_number: 1 },
+      citation: {
+        document_id: document.id,
+        knowledge_base_id: kb.id,
+        source_name: document.name,
+        ordinal: 1,
+        location: 'p1',
+      },
     };
-    const backend = fakeBackend([undefined, undefined, undefined, { hits: [hit] }]);
+    const backend = fakeBackend([document, undefined, { hits: [hit] }]);
     const gateway = createResourceKnowledgeManagementGateway({ backendSrv: backend });
-    await gateway.startIndexing('ops', kb.id, document.id);
-    await gateway.stopIndexing('ops', kb.id, document.id);
+    await gateway.retryDocumentIndex('ops', kb.id, document.id);
     await gateway.deleteDocument('ops', kb.id, document.id);
     await expect(
-      gateway.search('ops', { query: 'restart', knowledgeBaseIds: [kb.id], limit: 5, threshold: 0.2 })
+      gateway.search('ops', {
+        query: 'restart',
+        knowledgeBaseIds: [kb.id],
+        tagsAny: ['guide'],
+        tagsAll: ['prod'],
+        limit: 5,
+      })
     ).resolves.toEqual([hit]);
 
     const requests = calls(backend);
     expect(requests.map((request) => request.url)).toEqual([
-      expect.stringContaining(`${document.id}:index`),
-      expect.stringContaining(`${document.id}:stop`),
+      expect.stringContaining(`${document.id}:retry-index`),
       expect.stringContaining(document.id),
       expect.stringContaining('/knowledge:search'),
     ]);
-    expect(requests[3].data).toEqual({ query: 'restart', knowledge_base_ids: [kb.id], limit: 5, threshold: 0.2 });
-  });
-
-  test('uses the explicit Admin scope-migration endpoint without copying document content', async () => {
-    const backend = fakeBackend([kb]);
-    const gateway = createResourceKnowledgeManagementGateway({ backendSrv: backend });
-    await expect(gateway.migrateLegacyKnowledgeBase('ops', kb.id)).resolves.toEqual(kb);
-    expect(calls(backend)[0]).toEqual(
-      expect.objectContaining({
-        method: 'POST',
-        url: expect.stringContaining(`/api/v1/knowledge-bases/${kb.id}/scope-migrations`),
-        headers: { 'X-Aegis-Folder-UID': 'ops' },
-      })
-    );
+    expect(requests[2].data).toEqual({
+      query: 'restart',
+      knowledge_base_ids: [kb.id],
+      tags_any: ['guide'],
+      tags_all: ['prod'],
+      limit: 5,
+    });
   });
 
   test('rejects missing folder scope before any network request', async () => {

@@ -7,7 +7,7 @@ type KnowledgeBase = components['schemas']['KnowledgeBase'];
 type KnowledgeBasePage = components['schemas']['KnowledgeBasePage'];
 type Document = components['schemas']['Document'];
 type DocumentPage = components['schemas']['DocumentPage'];
-type ChunkPage = components['schemas']['KnowledgeChunkPage'];
+type PassagePage = components['schemas']['DocumentPassagePage'];
 type SearchResponse = components['schemas']['KnowledgeSearchResponse'];
 
 export function createResourceKnowledgeManagementGateway(
@@ -48,13 +48,6 @@ export function createResourceKnowledgeManagementGateway(
     },
     deleteKnowledgeBase(folderUid, id, signal) {
       return client().requestVoid(kbPath(id), { method: 'DELETE', headers: headers(folderUid), signal });
-    },
-    migrateLegacyKnowledgeBase(folderUid, id, signal) {
-      return client().request(`${kbPath(id)}/scope-migrations`, isKnowledgeBase, {
-        method: 'POST',
-        headers: headers(folderUid),
-        signal,
-      });
     },
     async listDocuments(folderUid, knowledgeBaseId, signal) {
       return collectPages(
@@ -104,28 +97,21 @@ export function createResourceKnowledgeManagementGateway(
         signal,
       });
     },
-    startIndexing(folderUid, knowledgeBaseId, documentId, signal) {
-      return client().requestVoid(`${documentPath(knowledgeBaseId, documentId)}:index`, {
+    retryDocumentIndex(folderUid, knowledgeBaseId, documentId, signal) {
+      return client().request(`${documentPath(knowledgeBaseId, documentId)}:retry-index`, isDocument, {
         method: 'POST',
         headers: headers(folderUid),
         signal,
       });
     },
-    stopIndexing(folderUid, knowledgeBaseId, documentId, signal) {
-      return client().requestVoid(`${documentPath(knowledgeBaseId, documentId)}:stop`, {
-        method: 'POST',
-        headers: headers(folderUid),
-        signal,
-      });
-    },
-    async listChunks(folderUid, knowledgeBaseId, documentId, signal) {
+    async listPassages(folderUid, knowledgeBaseId, documentId, signal) {
       return collectPages(
         async (cursor) =>
-          client().request(`${documentPath(knowledgeBaseId, documentId)}/chunks${pageQuery(cursor)}`, isChunkPage, {
+          client().request(`${documentPath(knowledgeBaseId, documentId)}/passages${pageQuery(cursor)}`, isPassagePage, {
             headers: headers(folderUid),
             signal,
           }),
-        'Chunk'
+        'Passage'
       );
     },
     downloadDocument(folderUid, knowledgeBaseId, documentId, signal) {
@@ -141,8 +127,9 @@ export function createResourceKnowledgeManagementGateway(
           query: input.query,
           knowledge_base_ids: input.knowledgeBaseIds,
           ...(input.service ? { service: input.service } : {}),
+          ...(input.tagsAny?.length ? { tags_any: input.tagsAny } : {}),
+          ...(input.tagsAll?.length ? { tags_all: input.tagsAll } : {}),
           limit: input.limit,
-          threshold: input.threshold,
         },
         headers: headers(folderUid),
         signal,
@@ -211,8 +198,6 @@ function isKnowledgeBase(value: unknown): value is KnowledgeBase {
     typeof value.id === 'string' &&
     typeof value.name === 'string' &&
     typeof value.folder_uid === 'string' &&
-    (value.status === 'active' || value.status === 'disabled') &&
-    typeof value.read_only === 'boolean' &&
     typeof value.created_at === 'string' &&
     typeof value.updated_at === 'string'
   );
@@ -229,7 +214,7 @@ function isDocument(value: unknown): value is Document {
     typeof value.media_type === 'string' &&
     typeof value.service === 'string' &&
     isStringArray(value.tags) &&
-    ['pending', 'indexing', 'ready', 'failed', 'disabled'].includes(String(value.status)) &&
+    ['queued', 'indexing', 'ready', 'failed'].includes(String(value.status)) &&
     typeof value.size === 'number' &&
     (value.failure_reason === undefined || typeof value.failure_reason === 'string')
   );
@@ -237,18 +222,16 @@ function isDocument(value: unknown): value is Document {
 function isDocumentPage(value: unknown): value is DocumentPage {
   return isPage(value) && value.items.every(isDocument);
 }
-function isChunk(value: unknown): value is components['schemas']['KnowledgeChunk'] {
+function isPassage(value: unknown): value is components['schemas']['DocumentPassage'] {
   return (
     isObject(value) &&
-    typeof value.id === 'string' &&
-    typeof value.document_id === 'string' &&
+    typeof value.ordinal === 'number' &&
     typeof value.text === 'string' &&
-    typeof value.position === 'string' &&
-    typeof value.page_number === 'number'
+    (value.location === undefined || typeof value.location === 'string')
   );
 }
-function isChunkPage(value: unknown): value is ChunkPage {
-  return isPage(value) && value.items.every(isChunk);
+function isPassagePage(value: unknown): value is PassagePage {
+  return isPage(value) && value.items.every(isPassage);
 }
 function isSearchResponse(value: unknown): value is SearchResponse {
   return (
@@ -258,12 +241,12 @@ function isSearchResponse(value: unknown): value is SearchResponse {
       (hit) =>
         isObject(hit) &&
         typeof hit.text === 'string' &&
-        typeof hit.score === 'number' &&
         isObject(hit.citation) &&
         typeof hit.citation.document_id === 'string' &&
+        typeof hit.citation.knowledge_base_id === 'string' &&
         typeof hit.citation.source_name === 'string' &&
-        typeof hit.citation.position === 'string' &&
-        typeof hit.citation.page_number === 'number'
+        typeof hit.citation.ordinal === 'number' &&
+        (hit.citation.location === undefined || typeof hit.citation.location === 'string')
     )
   );
 }

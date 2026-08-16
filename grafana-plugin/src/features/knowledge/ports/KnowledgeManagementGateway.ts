@@ -1,7 +1,7 @@
 import {
   DocumentUploadInput,
   KnowledgeBaseRecord,
-  KnowledgeChunkRecord,
+  DocumentPassageRecord,
   KnowledgeDocumentRecord,
   KnowledgeSearchHit,
   KnowledgeSearchInput,
@@ -18,11 +18,10 @@ export interface KnowledgeManagementGateway {
   updateKnowledgeBase(
     folderUid: string,
     id: string,
-    input: { name: string; status: 'active' | 'disabled' },
+    input: { name: string },
     signal?: AbortSignal
   ): Promise<KnowledgeBaseRecord>;
   deleteKnowledgeBase(folderUid: string, id: string, signal?: AbortSignal): Promise<void>;
-  migrateLegacyKnowledgeBase(folderUid: string, id: string, signal?: AbortSignal): Promise<KnowledgeBaseRecord>;
   listDocuments(folderUid: string, knowledgeBaseId: string, signal?: AbortSignal): Promise<KnowledgeDocumentRecord[]>;
   getDocument(
     folderUid: string,
@@ -44,14 +43,18 @@ export interface KnowledgeManagementGateway {
     signal?: AbortSignal
   ): Promise<KnowledgeDocumentRecord>;
   deleteDocument(folderUid: string, knowledgeBaseId: string, documentId: string, signal?: AbortSignal): Promise<void>;
-  startIndexing(folderUid: string, knowledgeBaseId: string, documentId: string, signal?: AbortSignal): Promise<void>;
-  stopIndexing(folderUid: string, knowledgeBaseId: string, documentId: string, signal?: AbortSignal): Promise<void>;
-  listChunks(
+  retryDocumentIndex(
     folderUid: string,
     knowledgeBaseId: string,
     documentId: string,
     signal?: AbortSignal
-  ): Promise<KnowledgeChunkRecord[]>;
+  ): Promise<KnowledgeDocumentRecord>;
+  listPassages(
+    folderUid: string,
+    knowledgeBaseId: string,
+    documentId: string,
+    signal?: AbortSignal
+  ): Promise<DocumentPassageRecord[]>;
   downloadDocument(folderUid: string, knowledgeBaseId: string, documentId: string, signal?: AbortSignal): Promise<Blob>;
   search(folderUid: string, input: KnowledgeSearchInput, signal?: AbortSignal): Promise<KnowledgeSearchHit[]>;
 }
