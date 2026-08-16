@@ -169,7 +169,7 @@ func (svc *service) getRun(ctx context.Context, _ *mcp.CallToolRequest, input ge
 	if err != nil {
 		return nil, runOutput{}, sanitize(err)
 	}
-	if !domain.PlaybookIDInScope(state.Ref.PlaybookID, actor) {
+	if !domain.PlaybookIDVisibleInScope(state.Ref.PlaybookID, actor) {
 		return nil, runOutput{}, toolError("not_found")
 	}
 	return nil, runOutput{RunID: string(state.Ref.ID), PlaybookID: string(state.Ref.PlaybookID), Status: string(state.Status)}, nil

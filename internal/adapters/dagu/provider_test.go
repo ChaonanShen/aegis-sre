@@ -146,6 +146,84 @@ func TestProviderEnforcesStoredFolderOwnershipBeforeReadWriteAndRun(t *testing.T
 	}
 }
 
+func TestProviderKeepsConfiguredLegacyPlaybooksReadOnly(t *testing.T) {
+	t.Parallel()
+	actor := providerTestActor("legacy-ops")
+	legacyID := domain.ID("pbk_" + domain.PlaybookLegacyScopeKey(actor) + "_abcdefgh")
+	mutations := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		switch {
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/dags":
+			_, _ = w.Write([]byte(`{"dags":[{"fileName":"` + string(legacyID) + `","dag":{"name":"legacy"}}],"pagination":{"currentPage":1,"perPage":10,"totalPages":1}}`))
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/dags/"+string(legacyID):
+			_ = json.NewEncoder(w).Encode(map[string]any{"spec": "name: legacy\nsteps: []\n"})
+		case request.Method == http.MethodGet && request.URL.Path == "/api/v1/dag-runs":
+			if request.URL.Query().Get("dagRunId") != "" {
+				_, _ = w.Write([]byte(`{"dagRuns":[{"dagRunId":"run_abcdefgh","name":"legacy","labels":["` + playbookRunLabel(string(legacyID)) + `"]}]}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"dagRuns":[]}`))
+		case request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, "/artifacts"):
+			_, _ = w.Write([]byte(`{"items":[{"name":"report.md","path":"report.md"}]}`))
+		default:
+			mutations++
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	provider, err := NewProvider(client, WithLegacyFolderUID(actor.FolderUID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := ports.PlaybookRef{ID: legacyID}
+	runRef := ports.PlaybookRunRef{ID: "run_abcdefgh", PlaybookID: legacyID}
+
+	page, err := provider.List(context.Background(), actor, domain.PageRequest{Limit: 10})
+	if err != nil || len(page.Items) != 1 || page.Items[0].Ref != ref {
+		t.Fatalf("legacy list = %#v, err = %v", page, err)
+	}
+	if _, err := provider.Get(context.Background(), actor, ref); err != nil {
+		t.Fatalf("legacy Get error = %v", err)
+	}
+	if _, err := provider.ListRuns(context.Background(), actor, ref, domain.PageRequest{}); err != nil {
+		t.Fatalf("legacy ListRuns error = %v", err)
+	}
+	artifacts, err := provider.ListArtifacts(context.Background(), actor, runRef)
+	if err != nil || len(artifacts) != 1 {
+		t.Fatalf("legacy artifacts = %#v, err = %v", artifacts, err)
+	}
+	if _, err := provider.Get(context.Background(), providerTestActor("other"), ref); !isNotFoundError(err) {
+		t.Fatalf("legacy resource escaped configured Folder: %#v", err)
+	}
+
+	writes := []func() error{
+		func() error { return provider.Update(context.Background(), actor, ref, []byte("steps: []\n")) },
+		func() error { return provider.Delete(context.Background(), actor, ref) },
+		func() error {
+			_, err := provider.StartRun(context.Background(), actor, ref, ports.RunPlaybookInput{ID: "run_new12345"})
+			return err
+		},
+		func() error { return provider.CancelRun(context.Background(), actor, runRef) },
+		func() error {
+			_, err := provider.RetryRun(context.Background(), actor, runRef, "run_new12345")
+			return err
+		},
+		func() error { return provider.CompleteHumanTask(context.Background(), actor, runRef, "review", nil) },
+		func() error {
+			return provider.ResolveApproval(context.Background(), actor, runRef, "approve", ports.ApprovalApprove, nil)
+		},
+	}
+	for index, write := range writes {
+		if err := write(); !isNotFoundError(err) {
+			t.Fatalf("legacy write %d error = %#v", index, err)
+		}
+	}
+	if mutations != 0 {
+		t.Fatalf("legacy writes reached Dagu mutations: %d", mutations)
+	}
+}
+
 func isNotFoundError(err error) bool {
 	var appErr *domain.AppError
 	return errors.As(err, &appErr) && appErr.Code == domain.ErrorNotFound

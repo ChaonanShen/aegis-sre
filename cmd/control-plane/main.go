@@ -133,7 +133,11 @@ func run(logger *slog.Logger) error {
 		if err != nil {
 			return err
 		}
-		provider, err := dagu.NewProvider(client)
+		providerOptions := make([]dagu.ProviderOption, 0, 1)
+		if cfg.PlaybookLegacyFolder != "" {
+			providerOptions = append(providerOptions, dagu.WithLegacyFolderUID(cfg.PlaybookLegacyFolder))
+		}
+		provider, err := dagu.NewProvider(client, providerOptions...)
 		if err != nil {
 			return err
 		}

@@ -18,6 +18,14 @@ const (
 	labelFolderKey    = "aegis.folder.key"
 )
 
+type ownershipStatus uint8
+
+const (
+	ownershipMissing ownershipStatus = iota
+	ownershipMatches
+	ownershipConflicts
+)
+
 func folderOwnershipKey(folderUID string) string {
 	sum := sha256.Sum256([]byte(folderUID))
 	return hex.EncodeToString(sum[:])
@@ -33,6 +41,10 @@ func expectedOwnershipLabels(folderUID string) map[string]string {
 }
 
 func labelsOwnedByFolder(labels []string, folderUID string) bool {
+	return labelsOwnershipStatus(labels, folderUID) == ownershipMatches
+}
+
+func labelsOwnershipStatus(labels []string, folderUID string) ownershipStatus {
 	parsed := make(map[string]string, len(labels))
 	for _, label := range labels {
 		key, value, found := strings.Cut(strings.TrimSpace(label), "=")
@@ -40,18 +52,33 @@ func labelsOwnedByFolder(labels []string, folderUID string) bool {
 			parsed[strings.ToLower(strings.TrimSpace(key))] = strings.ToLower(strings.TrimSpace(value))
 		}
 	}
-	for key, value := range expectedOwnershipLabels(folderUID) {
-		if parsed[key] != value {
-			return false
+	expected := expectedOwnershipLabels(folderUID)
+	hasReserved := false
+	for key := range expected {
+		if _, exists := parsed[key]; exists {
+			hasReserved = true
+			break
 		}
 	}
-	return true
+	if !hasReserved {
+		return ownershipMissing
+	}
+	for key, value := range expected {
+		if parsed[key] != value {
+			return ownershipConflicts
+		}
+	}
+	return ownershipMatches
 }
 
 func specOwnedByFolder(spec, folderUID string) bool {
+	return specOwnershipStatus(spec, folderUID) == ownershipMatches
+}
+
+func specOwnershipStatus(spec, folderUID string) ownershipStatus {
 	var document yaml.Node
 	if yaml.Unmarshal([]byte(spec), &document) != nil || len(document.Content) != 1 || document.Content[0].Kind != yaml.MappingNode {
-		return false
+		return ownershipConflicts
 	}
 	root := document.Content[0]
 	for index := 0; index+1 < len(root.Content); index += 2 {
@@ -60,15 +87,15 @@ func specOwnedByFolder(spec, folderUID string) bool {
 		}
 		labels, err := decodeLabels(root.Content[index+1])
 		if err != nil {
-			return false
+			return ownershipConflicts
 		}
 		serialized := make([]string, 0, len(labels))
 		for key, value := range labels {
 			serialized = append(serialized, key+"="+value)
 		}
-		return labelsOwnedByFolder(serialized, folderUID)
+		return labelsOwnershipStatus(serialized, folderUID)
 	}
-	return false
+	return ownershipMissing
 }
 
 func bindFolderOwnership(spec []byte, folderUID string) ([]byte, error) {

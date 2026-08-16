@@ -110,6 +110,24 @@ func TestLoadAcceptsDaguBasicAuthPasswordFile(t *testing.T) {
 	}
 }
 
+func TestLoadAcceptsExplicitPlaybookLegacyFolder(t *testing.T) {
+	values := map[string]string{
+		EnvDaguURL:              "http://dagu.internal",
+		EnvPlaybookLegacyFolder: "legacy-ops",
+	}
+	cfg, err := Load(func(key string) string { return values[key] })
+	if err != nil || cfg.PlaybookLegacyFolder != "legacy-ops" {
+		t.Fatalf("config = %+v, err = %v", cfg, err)
+	}
+}
+
+func TestLoadRejectsPlaybookLegacyFolderWithoutDagu(t *testing.T) {
+	values := map[string]string{EnvPlaybookLegacyFolder: "legacy-ops"}
+	if _, err := Load(func(key string) string { return values[key] }); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("error = %v, want ErrInvalid", err)
+	}
+}
+
 func TestLoadRejectsInvalidValues(t *testing.T) {
 	tests := map[string]map[string]string{
 		"address":            {EnvHTTPAddress: "bad address"},

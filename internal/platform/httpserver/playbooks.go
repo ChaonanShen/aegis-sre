@@ -349,7 +349,7 @@ func scopedPlaybookRef(w http.ResponseWriter, request *http.Request, actor domai
 	if !ok {
 		return ports.PlaybookRef{}, false
 	}
-	if !domain.PlaybookIDInScope(ref.ID, actor) {
+	if !domain.PlaybookIDVisibleInScope(ref.ID, actor) {
 		writeAPIProblem(w, request, http.StatusNotFound, "not_found", "playbook not found", false)
 		return ports.PlaybookRef{}, false
 	}
@@ -396,7 +396,7 @@ func scopedRunStateWithAccess(w http.ResponseWriter, request *http.Request, prov
 	if handleProviderError(w, request, err) {
 		return domain.ActorContext{}, ports.PlaybookRunState{}, false
 	}
-	if !domain.PlaybookIDInScope(state.Ref.PlaybookID, actor) {
+	if !domain.PlaybookIDVisibleInScope(state.Ref.PlaybookID, actor) {
 		writeAPIProblem(w, request, http.StatusNotFound, "not_found", "run not found", false)
 		return domain.ActorContext{}, ports.PlaybookRunState{}, false
 	}

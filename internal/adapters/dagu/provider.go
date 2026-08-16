@@ -21,15 +21,36 @@ import (
 )
 
 type Provider struct {
-	client       *Client
-	pollInterval time.Duration
+	client          *Client
+	pollInterval    time.Duration
+	legacyFolderUID string
 }
 
-func NewProvider(client *Client) (*Provider, error) {
+type ProviderOption func(*Provider) error
+
+func WithLegacyFolderUID(folderUID string) ProviderOption {
+	return func(provider *Provider) error {
+		if strings.TrimSpace(folderUID) == "" || len(folderUID) > 128 || strings.ContainsAny(folderUID, "\r\n\x00") {
+			return errors.New("legacy Folder UID is invalid")
+		}
+		provider.legacyFolderUID = folderUID
+		return nil
+	}
+}
+
+func NewProvider(client *Client, options ...ProviderOption) (*Provider, error) {
 	if client == nil {
 		return nil, errors.New("Dagu client is required")
 	}
-	return &Provider{client: client, pollInterval: time.Second}, nil
+	provider := &Provider{client: client, pollInterval: time.Second}
+	for _, option := range options {
+		if option != nil {
+			if err := option(provider); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return provider, nil
 }
 
 func (provider *Provider) Check(ctx context.Context) error {
@@ -56,10 +77,10 @@ func (provider *Provider) List(ctx context.Context, actor domain.ActorContext, r
 		if !ok {
 			continue
 		}
-		if !domain.PlaybookIDInScope(id, actor) {
-			continue
-		}
-		if !labelsOwnedByFolder(dag.DAG.Labels, actor.FolderUID) {
+		status := labelsOwnershipStatus(dag.DAG.Labels, actor.FolderUID)
+		current := domain.PlaybookIDInScope(id, actor) && status == ownershipMatches
+		legacy := provider.legacyFolderUID == actor.FolderUID && domain.PlaybookIDInLegacyScope(id, actor) && status == ownershipMissing
+		if !current && !legacy {
 			continue
 		}
 		items = append(items, ports.PlaybookResource{
@@ -81,7 +102,7 @@ func (provider *Provider) List(ctx context.Context, actor domain.ActorContext, r
 }
 
 func (provider *Provider) Get(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRef) (ports.PlaybookResource, error) {
-	dag, err := provider.ownedPlaybook(ctx, actor, ref)
+	dag, err := provider.readablePlaybook(ctx, actor, ref)
 	if err != nil {
 		return ports.PlaybookResource{}, err
 	}
@@ -195,7 +216,7 @@ func (provider *Provider) ListRuns(ctx context.Context, actor domain.ActorContex
 	if _, err := playbookDAGName(ref.ID); err != nil {
 		return domain.Page[ports.PlaybookRunState]{}, err
 	}
-	if _, err := provider.ownedPlaybook(ctx, actor, ref); err != nil {
+	if _, err := provider.readablePlaybook(ctx, actor, ref); err != nil {
 		return domain.Page[ports.PlaybookRunState]{}, err
 	}
 	limit := request.Limit
@@ -245,7 +266,7 @@ func (provider *Provider) ListRuns(ctx context.Context, actor domain.ActorContex
 }
 
 func (provider *Provider) GetRun(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRunRef) (ports.PlaybookRunState, error) {
-	resolved, summary, err := provider.resolveRun(ctx, actor, ref)
+	resolved, summary, err := provider.resolveRun(ctx, actor, ref, true)
 	if err != nil {
 		return ports.PlaybookRunState{}, err
 	}
@@ -257,7 +278,7 @@ func (provider *Provider) GetRun(ctx context.Context, actor domain.ActorContext,
 }
 
 func (provider *Provider) CancelRun(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRunRef) error {
-	ref, run, err := provider.resolveRun(ctx, actor, ref)
+	ref, run, err := provider.resolveRun(ctx, actor, ref, false)
 	if err != nil {
 		return err
 	}
@@ -265,7 +286,7 @@ func (provider *Provider) CancelRun(ctx context.Context, actor domain.ActorConte
 }
 
 func (provider *Provider) RetryRun(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRunRef, newRunID domain.ID) (ports.PlaybookRunRef, error) {
-	ref, run, err := provider.resolveRun(ctx, actor, ref)
+	ref, run, err := provider.resolveRun(ctx, actor, ref, false)
 	if err != nil {
 		return ports.PlaybookRunRef{}, err
 	}
@@ -285,7 +306,7 @@ func (provider *Provider) RetryRun(ctx context.Context, actor domain.ActorContex
 }
 
 func (provider *Provider) StreamRun(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRunRef, after int64) (ports.EventStream, error) {
-	resolved, _, err := provider.resolveRun(ctx, actor, ref)
+	resolved, _, err := provider.resolveRun(ctx, actor, ref, true)
 	if err != nil {
 		return nil, err
 	}
@@ -293,7 +314,7 @@ func (provider *Provider) StreamRun(ctx context.Context, actor domain.ActorConte
 }
 
 func (provider *Provider) CompleteHumanTask(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRunRef, stepID string, input map[string]any) error {
-	ref, run, err := provider.resolveRun(ctx, actor, ref)
+	ref, run, err := provider.resolveRun(ctx, actor, ref, false)
 	if err != nil {
 		return err
 	}
@@ -301,7 +322,7 @@ func (provider *Provider) CompleteHumanTask(ctx context.Context, actor domain.Ac
 }
 
 func (provider *Provider) ResolveApproval(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRunRef, stepID string, action ports.ApprovalAction, input map[string]string) error {
-	ref, run, err := provider.resolveRun(ctx, actor, ref)
+	ref, run, err := provider.resolveRun(ctx, actor, ref, false)
 	if err != nil {
 		return err
 	}
@@ -312,7 +333,7 @@ func (provider *Provider) ResolveApproval(ctx context.Context, actor domain.Acto
 }
 
 func (provider *Provider) ListArtifacts(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRunRef) ([]ports.ArtifactRef, error) {
-	ref, run, err := provider.resolveRun(ctx, actor, ref)
+	ref, run, err := provider.resolveRun(ctx, actor, ref, true)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +348,7 @@ func (provider *Provider) PreviewArtifact(ctx context.Context, actor domain.Acto
 	if err := validateArtifactPath(artifactPath); err != nil {
 		return ports.ArtifactPreview{}, err
 	}
-	ref, run, err := provider.resolveRun(ctx, actor, ref)
+	ref, run, err := provider.resolveRun(ctx, actor, ref, true)
 	if err != nil {
 		return ports.ArtifactPreview{}, err
 	}
@@ -342,7 +363,7 @@ func (provider *Provider) DownloadArtifact(ctx context.Context, actor domain.Act
 	if err := validateArtifactPath(artifactPath); err != nil {
 		return ports.ArtifactDownload{}, err
 	}
-	ref, run, err := provider.resolveRun(ctx, actor, ref)
+	ref, run, err := provider.resolveRun(ctx, actor, ref, true)
 	if err != nil {
 		return ports.ArtifactDownload{}, err
 	}
@@ -623,7 +644,7 @@ func runBelongsToPlaybook(run DAGRun, playbookID domain.ID) bool {
 	return ok && actual == playbookID
 }
 
-func (provider *Provider) resolveRun(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRunRef) (ports.PlaybookRunRef, DAGRun, error) {
+func (provider *Provider) resolveRun(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRunRef, allowLegacy bool) (ports.PlaybookRunRef, DAGRun, error) {
 	if err := requireIDPrefix(ref.ID, "run_"); err != nil {
 		return ports.PlaybookRunRef{}, DAGRun{}, err
 	}
@@ -638,17 +659,48 @@ func (provider *Provider) resolveRun(ctx context.Context, actor domain.ActorCont
 	if !ok || (ref.PlaybookID != "" && ref.PlaybookID != playbookID) {
 		return ports.PlaybookRunRef{}, DAGRun{}, errors.New("Dagu run does not belong to the requested Aegis playbook")
 	}
-	if _, err := provider.ownedPlaybook(ctx, actor, ports.PlaybookRef{ID: playbookID}); err != nil {
-		return ports.PlaybookRunRef{}, DAGRun{}, err
+	playbookRef := ports.PlaybookRef{ID: playbookID}
+	var ownershipErr error
+	if allowLegacy {
+		_, ownershipErr = provider.readablePlaybook(ctx, actor, playbookRef)
+	} else {
+		_, ownershipErr = provider.ownedPlaybook(ctx, actor, playbookRef)
+	}
+	if ownershipErr != nil {
+		return ports.PlaybookRunRef{}, DAGRun{}, ownershipErr
 	}
 	return ports.PlaybookRunRef{ID: ref.ID, PlaybookID: playbookID}, run, nil
 }
 
-// ownedPlaybook makes the Provider data authoritative for Folder ownership.
-// A guessed public ID and a trusted request Folder must both match the labels
-// stored in the native Dagu YAML; mismatches are deliberately indistinguishable
-// from missing resources.
+// ownedPlaybook 以 Provider 原生数据作为 Folder ownership 的事实来源。
+// 公共 ID 和可信请求 Folder 必须同时匹配 Dagu YAML labels；不匹配统一表现为资源不存在。
 func (provider *Provider) ownedPlaybook(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRef) (DAGDetails, error) {
+	dag, err := provider.loadPlaybook(ctx, actor, ref)
+	if err != nil {
+		return DAGDetails{}, err
+	}
+	if specOwnershipStatus(dag.Spec, actor.FolderUID) != ownershipMatches {
+		return DAGDetails{}, ownershipNotFound()
+	}
+	return dag, nil
+}
+
+func (provider *Provider) readablePlaybook(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRef) (DAGDetails, error) {
+	dag, err := provider.loadPlaybook(ctx, actor, ref)
+	if err != nil {
+		return DAGDetails{}, err
+	}
+	status := specOwnershipStatus(dag.Spec, actor.FolderUID)
+	if status == ownershipMatches {
+		return dag, nil
+	}
+	if status == ownershipMissing && provider.legacyFolderUID == actor.FolderUID && domain.PlaybookIDInLegacyScope(ref.ID, actor) {
+		return dag, nil
+	}
+	return DAGDetails{}, ownershipNotFound()
+}
+
+func (provider *Provider) loadPlaybook(ctx context.Context, actor domain.ActorContext, ref ports.PlaybookRef) (DAGDetails, error) {
 	dagName, err := playbookDAGName(ref.ID)
 	if err != nil {
 		return DAGDetails{}, err
@@ -659,9 +711,6 @@ func (provider *Provider) ownedPlaybook(ctx context.Context, actor domain.ActorC
 	dag, err := provider.client.GetDAG(ctx, dagName)
 	if err != nil {
 		return DAGDetails{}, err
-	}
-	if !specOwnedByFolder(dag.Spec, actor.FolderUID) {
-		return DAGDetails{}, ownershipNotFound()
 	}
 	return dag, nil
 }

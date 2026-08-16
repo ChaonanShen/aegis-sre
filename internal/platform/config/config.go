@@ -29,6 +29,7 @@ const (
 	EnvDaguTokenFile        = "AEGIS_DAGU_TOKEN_FILE"
 	EnvDaguBasicUser        = "AEGIS_DAGU_BASIC_AUTH_USERNAME"
 	EnvDaguBasicPass        = "AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE"
+	EnvPlaybookLegacyFolder = "AEGIS_PLAYBOOK_LEGACY_FOLDER_UID"
 	EnvKnowledgeEnabled     = "AEGIS_KNOWLEDGE_ENABLED"
 	EnvKnowledgeProvider    = "AEGIS_KNOWLEDGE_PROVIDER"
 	EnvKnowledgeURL         = "AEGIS_KNOWLEDGE_URL"
@@ -73,6 +74,7 @@ type Config struct {
 	DaguTokenFile         string
 	DaguBasicUser         string
 	DaguBasicPass         string
+	PlaybookLegacyFolder  string
 	AgentProvider         string
 	AgentTenantID         string
 	AgentOrgID            string
@@ -183,6 +185,7 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	daguBasicUser := strings.TrimSpace(getenv(EnvDaguBasicUser))
 	daguBasicPass := strings.TrimSpace(getenv(EnvDaguBasicPass))
+	playbookLegacyFolder := strings.TrimSpace(getenv(EnvPlaybookLegacyFolder))
 	if (daguBasicUser == "") != (daguBasicPass == "") {
 		return Config{}, fmt.Errorf("%w: %s and %s must be configured together", ErrInvalid, EnvDaguBasicUser, EnvDaguBasicPass)
 	}
@@ -196,6 +199,14 @@ func Load(getenv func(string) string) (Config, error) {
 		info, err := os.Stat(daguBasicPass)
 		if err != nil || !info.Mode().IsRegular() {
 			return Config{}, fmt.Errorf("%w: %s must point to a readable regular file", ErrInvalid, EnvDaguBasicPass)
+		}
+	}
+	if playbookLegacyFolder != "" {
+		if !validAgentConfigValue(playbookLegacyFolder) {
+			return Config{}, fmt.Errorf("%w: %s is invalid", ErrInvalid, EnvPlaybookLegacyFolder)
+		}
+		if endpoints[CapabilityPlaybook] == "" {
+			return Config{}, fmt.Errorf("%w: %s requires %s", ErrInvalid, EnvPlaybookLegacyFolder, EnvDaguURL)
 		}
 	}
 
@@ -378,7 +389,7 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("%w: %s must be enabled before Canvas is configured", ErrInvalid, EnvCanvasEnabled)
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, KnowledgeProvider: knowledgeProvider, KnowledgeTokenFile: knowledgeTokenFile, RAGFlowAPIKeyFile: knowledgeTokenFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, KnowledgeTimeout: knowledgeTimeout, RAGFlowTimeout: knowledgeTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders, PlaybookMCPTokenFile: playbookMCPTokenFile, PlaybookMCPFolders: playbookMCPFolders, CanvasEnabled: canvasEnabled, CanvasDBPath: canvasDBPath, CanvasMCPTokenFile: canvasMCPTokenFile}, nil
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, PlaybookLegacyFolder: playbookLegacyFolder, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, KnowledgeProvider: knowledgeProvider, KnowledgeTokenFile: knowledgeTokenFile, RAGFlowAPIKeyFile: knowledgeTokenFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, KnowledgeTimeout: knowledgeTimeout, RAGFlowTimeout: knowledgeTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders, PlaybookMCPTokenFile: playbookMCPTokenFile, PlaybookMCPFolders: playbookMCPFolders, CanvasEnabled: canvasEnabled, CanvasDBPath: canvasDBPath, CanvasMCPTokenFile: canvasMCPTokenFile}, nil
 }
 
 func parseBool(raw string, defaultValue bool) (bool, error) {
