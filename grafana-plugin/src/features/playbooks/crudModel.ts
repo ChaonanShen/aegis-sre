@@ -6,6 +6,7 @@ export interface PlaybookSummary {
   name: string;
   description: string;
   status: PlaybookStatus;
+  readOnly: boolean;
 }
 
 export interface PlaybookDocument extends PlaybookSummary {

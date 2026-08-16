@@ -89,6 +89,7 @@ func (provider *Provider) List(ctx context.Context, actor domain.ActorContext, r
 			Name:        dag.DAG.Name,
 			Description: dag.DAG.Description,
 			Enabled:     !dag.Suspended,
+			ReadOnly:    legacy,
 		})
 		if len(items) == limit {
 			break
@@ -108,7 +109,8 @@ func (provider *Provider) Get(ctx context.Context, actor domain.ActorContext, re
 		return ports.PlaybookResource{}, err
 	}
 	name, description := dagMetadata(dag.DAG, dag.Spec)
-	return ports.PlaybookResource{Ref: ref, FolderUID: actor.FolderUID, Name: name, Description: description, YAML: []byte(dag.Spec), Enabled: !dag.Suspended}, nil
+	readOnly := specOwnershipStatus(dag.Spec, actor.FolderUID) == ownershipMissing
+	return ports.PlaybookResource{Ref: ref, FolderUID: actor.FolderUID, Name: name, Description: description, YAML: []byte(dag.Spec), Enabled: !dag.Suspended, ReadOnly: readOnly}, nil
 }
 
 func (provider *Provider) Create(ctx context.Context, actor domain.ActorContext, input ports.CreatePlaybookInput) (ports.PlaybookRef, error) {

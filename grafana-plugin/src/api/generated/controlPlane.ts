@@ -363,6 +363,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/playbooks/{playbook_id}/migrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                playbook_id: components["parameters"]["PlaybookID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["migrateLegacyPlaybook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/playbooks/{playbook_id}": {
         parameters: {
             query?: never;
@@ -836,6 +854,8 @@ export interface components {
             description: string;
             /** @enum {string} */
             status: "active" | "disabled";
+            /** @description True only for compatibility resources that must be explicitly copied before mutation. */
+            read_only: boolean;
             source: string;
         };
         PlaybookSummary: {
@@ -845,6 +865,8 @@ export interface components {
             description: string;
             /** @enum {string} */
             status: "active" | "disabled";
+            /** @description True only for compatibility resources that must be explicitly copied before mutation. */
+            read_only: boolean;
         };
         PlaybookPage: components["schemas"]["PageMetadata"] & {
             items: components["schemas"]["PlaybookSummary"][];
@@ -1724,6 +1746,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ValidationResult"];
+                };
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    migrateLegacyPlaybook: {
+        parameters: {
+            query?: never;
+            header: {
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                playbook_id: components["parameters"]["PlaybookID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description New Folder-owned Playbook copied from the legacy definition */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Playbook"];
                 };
             };
             default: components["responses"]["Problem"];

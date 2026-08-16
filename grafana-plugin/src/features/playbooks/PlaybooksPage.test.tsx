@@ -128,10 +128,30 @@ describe('PlaybooksPage native Dagu CRUD', () => {
     await screen.findByText('diagnose-api', { selector: 'code' });
     expect(screen.getByRole('button', { name: '删除' })).toBeInTheDocument();
   });
+
+  test('marks legacy playbooks read-only and lets only admins copy them', async () => {
+    const editorGateway = fakeGateway();
+    editorGateway.getPlaybook.mockResolvedValue({ ...document(), readOnly: true });
+    const editor = renderPage('/a/grafana-plugin-app/playbooks/pbk_scope_abcdefgh', editorGateway, 'Edit');
+    expect(await screen.findByRole('status')).toHaveTextContent('旧 Org-scoped Playbook');
+    expect(screen.queryByRole('button', { name: '编辑' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '复制并迁移' })).not.toBeInTheDocument();
+    editor.unmount();
+
+    const adminGateway = fakeGateway();
+    adminGateway.getPlaybook.mockResolvedValue({ ...document(), readOnly: true });
+    adminGateway.migrateLegacyPlaybook = jest.fn(async () => ({ ...document(), id: 'pbk_scope_migrated1' }));
+    renderPage('/a/grafana-plugin-app/playbooks/pbk_scope_abcdefgh', adminGateway, 'Admin');
+    fireEvent.click(await screen.findByRole('button', { name: '复制并迁移' }));
+    await waitFor(() => expect(adminGateway.migrateLegacyPlaybook).toHaveBeenCalledWith(
+      'pbk_scope_abcdefgh', expect.stringMatching(/^playbook-migration-/)
+    ));
+    expect(screen.queryByRole('button', { name: '删除' })).not.toBeInTheDocument();
+  });
 });
 
 function document(source = firstSource): PlaybookDocument {
-  return { id: 'pbk_scope_abcdefgh', folderUid: 'ops', name: 'diagnose-api', description: 'Diagnose API', status: 'active', source };
+  return { id: 'pbk_scope_abcdefgh', folderUid: 'ops', name: 'diagnose-api', description: 'Diagnose API', status: 'active', readOnly: false, source };
 }
 
 function run(status: PlaybookRunRecord['status']): PlaybookRunRecord {

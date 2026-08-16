@@ -71,6 +71,16 @@ export function createResourcePlaybookCrudGateway(
     async deletePlaybook(id, signal) {
       await client().requestVoid(playbookPath(id), { method: 'DELETE', headers: folderHeaders(), signal });
     },
+    async migrateLegacyPlaybook(id, idempotencyKey, signal) {
+      return toDocument(
+        await client().request(`${playbookPath(id)}/migrations`, isPlaybook, {
+          method: 'POST',
+          headers: { ...folderHeaders(), 'Idempotency-Key': idempotencyKey },
+          signal,
+        }),
+        requireFolder(options.folderUid)
+      );
+    },
     async validatePlaybook(source, signal) {
       requireNativeSource(source);
       return client().request('/api/v1/playbooks/validate', isValidationResult, {
@@ -167,7 +177,7 @@ function toSummary(value: ContractSummary, expectedFolderUid: string): PlaybookS
   if (value.folder_uid !== expectedFolderUid) {
     throw new ResourceClientError(502, 'provider_unavailable', 'Playbook Folder ownership 响应不一致。');
   }
-  return { id: value.id, folderUid: value.folder_uid, name: value.name, description: value.description, status: value.status };
+  return { id: value.id, folderUid: value.folder_uid, name: value.name, description: value.description, status: value.status, readOnly: value.read_only };
 }
 
 function toDocument(value: ContractPlaybook, expectedFolderUid: string): PlaybookDocument {
@@ -207,9 +217,11 @@ function isPlaybook(value: unknown): value is ContractPlaybook {
   return Boolean(
     item &&
       typeof item.id === 'string' &&
+      typeof item.folder_uid === 'string' &&
       typeof item.name === 'string' &&
       typeof item.description === 'string' &&
       typeof item.status === 'string' &&
+      typeof item.read_only === 'boolean' &&
       typeof item.source === 'string'
   );
 }
@@ -219,9 +231,11 @@ function isSummary(value: unknown): value is ContractSummary {
   return Boolean(
     item &&
       typeof item.id === 'string' &&
+      typeof item.folder_uid === 'string' &&
       typeof item.name === 'string' &&
       typeof item.description === 'string' &&
-      typeof item.status === 'string'
+      typeof item.status === 'string' &&
+      typeof item.read_only === 'boolean'
   );
 }
 

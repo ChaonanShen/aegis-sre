@@ -21,6 +21,7 @@ type PlaybookResource struct {
 	Description string
 	YAML        []byte
 	Enabled     bool
+	ReadOnly    bool
 }
 
 type ValidationIssue struct {

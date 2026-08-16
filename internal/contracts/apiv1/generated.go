@@ -687,12 +687,15 @@ type PageMetadata struct {
 
 // Playbook defines model for Playbook.
 type Playbook struct {
-	Description string         `json:"description"`
-	FolderUid   string         `json:"folder_uid"`
-	Id          BusinessID     `json:"id"`
-	Name        string         `json:"name"`
-	Source      string         `json:"source"`
-	Status      PlaybookStatus `json:"status"`
+	Description string     `json:"description"`
+	FolderUid   string     `json:"folder_uid"`
+	Id          BusinessID `json:"id"`
+	Name        string     `json:"name"`
+
+	// ReadOnly True only for compatibility resources that must be explicitly copied before mutation.
+	ReadOnly bool           `json:"read_only"`
+	Source   string         `json:"source"`
+	Status   PlaybookStatus `json:"status"`
 }
 
 // PlaybookStatus defines model for Playbook.Status.
@@ -752,11 +755,14 @@ type PlaybookStepStatus string
 
 // PlaybookSummary defines model for PlaybookSummary.
 type PlaybookSummary struct {
-	Description string                `json:"description"`
-	FolderUid   string                `json:"folder_uid"`
-	Id          BusinessID            `json:"id"`
-	Name        string                `json:"name"`
-	Status      PlaybookSummaryStatus `json:"status"`
+	Description string     `json:"description"`
+	FolderUid   string     `json:"folder_uid"`
+	Id          BusinessID `json:"id"`
+	Name        string     `json:"name"`
+
+	// ReadOnly True only for compatibility resources that must be explicitly copied before mutation.
+	ReadOnly bool                  `json:"read_only"`
+	Status   PlaybookSummaryStatus `json:"status"`
 }
 
 // PlaybookSummaryStatus defines model for PlaybookSummary.Status.
@@ -978,6 +984,11 @@ type ListPlaybooksParams struct {
 
 // CreatePlaybookParams defines parameters for CreatePlaybook.
 type CreatePlaybookParams struct {
+	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
+}
+
+// MigrateLegacyPlaybookParams defines parameters for MigrateLegacyPlaybook.
+type MigrateLegacyPlaybookParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 

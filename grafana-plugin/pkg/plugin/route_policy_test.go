@@ -34,6 +34,7 @@ func TestRoutePolicyFor(t *testing.T) {
 		{name: "playbook create", method: http.MethodPost, path: "/api/v1/playbooks", access: folderAccessWrite},
 		{name: "playbook validate", method: http.MethodPost, path: "/api/v1/playbooks/validate", access: folderAccessWrite},
 		{name: "playbook delete", method: http.MethodDelete, path: "/api/v1/playbooks/playbook-1", access: folderAccessAdmin},
+		{name: "playbook migration", method: http.MethodPost, path: "/api/v1/playbooks/playbook-1/migrations", access: folderAccessAdmin},
 		{name: "run start", method: http.MethodPost, path: "/api/v1/playbooks/playbook-1/runs", access: folderAccessWrite},
 		{name: "run get", method: http.MethodGet, path: "/api/v1/runs/run-1", access: folderAccessRead},
 		{name: "run cancel", method: http.MethodPost, path: "/api/v1/runs/run-1:cancel", access: folderAccessWrite},

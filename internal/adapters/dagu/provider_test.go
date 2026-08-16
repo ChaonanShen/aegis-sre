@@ -180,10 +180,11 @@ func TestProviderKeepsConfiguredLegacyPlaybooksReadOnly(t *testing.T) {
 	runRef := ports.PlaybookRunRef{ID: "run_abcdefgh", PlaybookID: legacyID}
 
 	page, err := provider.List(context.Background(), actor, domain.PageRequest{Limit: 10})
-	if err != nil || len(page.Items) != 1 || page.Items[0].Ref != ref {
+	if err != nil || len(page.Items) != 1 || page.Items[0].Ref != ref || !page.Items[0].ReadOnly {
 		t.Fatalf("legacy list = %#v, err = %v", page, err)
 	}
-	if _, err := provider.Get(context.Background(), actor, ref); err != nil {
+	resource, err := provider.Get(context.Background(), actor, ref)
+	if err != nil || !resource.ReadOnly {
 		t.Fatalf("legacy Get error = %v", err)
 	}
 	if _, err := provider.ListRuns(context.Background(), actor, ref, domain.PageRequest{}); err != nil {

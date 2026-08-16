@@ -31,6 +31,7 @@ type playbookHTTPFake struct {
 	approvalCalls  int
 	deleteCalls    int
 	checkErr       error
+	getReadOnly    bool
 }
 
 func (fake *playbookHTTPFake) Check(context.Context) error { return fake.checkErr }
@@ -44,12 +45,13 @@ func (fake *playbookHTTPFake) ListRuns(_ context.Context, _ domain.ActorContext,
 
 func (fake *playbookHTTPFake) Create(_ context.Context, _ domain.ActorContext, input ports.CreatePlaybookInput) (ports.PlaybookRef, error) {
 	fake.created = input
+	fake.getReadOnly = false
 	return ports.PlaybookRef{ID: input.ID}, fake.err
 }
 
 func (fake *playbookHTTPFake) Get(_ context.Context, actor domain.ActorContext, ref ports.PlaybookRef) (ports.PlaybookResource, error) {
 	fake.getCalls++
-	return ports.PlaybookResource{Ref: ref, FolderUID: actor.FolderUID, Name: "diagnose", Description: "Diagnose service", YAML: fake.created.YAML, Enabled: true}, fake.err
+	return ports.PlaybookResource{Ref: ref, FolderUID: actor.FolderUID, Name: "diagnose", Description: "Diagnose service", YAML: fake.created.YAML, Enabled: true, ReadOnly: fake.getReadOnly}, fake.err
 }
 
 func (fake *playbookHTTPFake) Validate(_ context.Context, _ domain.ActorContext, _ []byte) ([]ports.ValidationIssue, error) {
@@ -143,6 +145,58 @@ func TestCreatePlaybookUsesStablePublicIDAndNativeYAML(t *testing.T) {
 	_ = json.Unmarshal(repeatResponse.Body.Bytes(), &second)
 	if first["id"] != second["id"] {
 		t.Fatalf("stable IDs differ: %v != %v", first["id"], second["id"])
+	}
+}
+
+func TestMigrateLegacyPlaybookCopiesDefinitionWithAdminAccess(t *testing.T) {
+	t.Parallel()
+	actor := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user", FolderUID: "folder-a"}
+	legacyID := domain.ID("pbk_" + domain.PlaybookLegacyScopeKey(actor) + "_abcdefgh")
+	fake := &playbookHTTPFake{getReadOnly: true, created: ports.CreatePlaybookInput{YAML: []byte("name: legacy\nsteps: []\n")}}
+	handler := New(config.Config{Endpoints: map[config.Capability]string{config.CapabilityPlaybook: "http://dagu"}}, nil, WithPlaybookProvider(fake)).Handler
+	request := playbookActorRequest(http.MethodPost, "/api/v1/playbooks/"+string(legacyID)+"/migrations", "")
+	request.Header.Set("X-Aegis-Folder-Access", "admin")
+	request.Header.Set("Idempotency-Key", "migrate-legacy-1")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if fake.created.ID == legacyID || !domain.PlaybookIDInScope(fake.created.ID, actor) {
+		t.Fatalf("migration created ID = %q", fake.created.ID)
+	}
+	if string(fake.created.YAML) != "name: legacy\nsteps: []\n" {
+		t.Fatalf("migration YAML = %q", fake.created.YAML)
+	}
+}
+
+func TestMigratePlaybookRejectsNonLegacyAndNonAdmin(t *testing.T) {
+	t.Parallel()
+	actor := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user", FolderUID: "folder-a"}
+	legacyID := domain.ID("pbk_" + domain.PlaybookLegacyScopeKey(actor) + "_abcdefgh")
+	for _, test := range []struct {
+		name       string
+		access     string
+		readOnly   bool
+		wantStatus int
+	}{
+		{name: "editor", access: "write", readOnly: true, wantStatus: http.StatusForbidden},
+		{name: "already owned", access: "admin", readOnly: false, wantStatus: http.StatusConflict},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			fake := &playbookHTTPFake{getReadOnly: test.readOnly}
+			handler := New(config.Config{Endpoints: map[config.Capability]string{config.CapabilityPlaybook: "http://dagu"}}, nil, WithPlaybookProvider(fake)).Handler
+			request := playbookActorRequest(http.MethodPost, "/api/v1/playbooks/"+string(legacyID)+"/migrations", "")
+			request.Header.Set("X-Aegis-Folder-Access", test.access)
+			request.Header.Set("Idempotency-Key", "migrate-legacy-1")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.wantStatus {
+				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+			}
+		})
 	}
 }
 

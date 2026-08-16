@@ -19,6 +19,7 @@ export interface PlaybookCrudGateway {
   createPlaybook(input: CreatePlaybookInput, signal?: AbortSignal): Promise<PlaybookDocument>;
   updatePlaybook(id: string, input: UpdatePlaybookInput, signal?: AbortSignal): Promise<PlaybookDocument>;
   deletePlaybook(id: string, signal?: AbortSignal): Promise<void>;
+  migrateLegacyPlaybook?(id: string, idempotencyKey: string, signal?: AbortSignal): Promise<PlaybookDocument>;
   validatePlaybook(source: string, signal?: AbortSignal): Promise<PlaybookValidationResult>;
   listRuns(playbookId: string, signal?: AbortSignal): Promise<PlaybookRunRecord[]>;
   startRun(playbookId: string, input: StartPlaybookRunInput, signal?: AbortSignal): Promise<PlaybookRunRecord>;

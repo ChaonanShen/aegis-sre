@@ -496,6 +496,22 @@ paths:
                 $ref: '#/components/schemas/ValidationResult'
         default:
           $ref: '#/components/responses/Problem'
+  /playbooks/{playbook_id}/migrations:
+    parameters:
+      - $ref: '#/components/parameters/PlaybookID'
+    post:
+      operationId: migrateLegacyPlaybook
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      responses:
+        '201':
+          description: New Folder-owned Playbook copied from the legacy definition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Playbook'
+        default:
+          $ref: '#/components/responses/Problem'
   /playbooks/{playbook_id}:
     parameters:
       - $ref: '#/components/parameters/PlaybookID'
@@ -1416,7 +1432,7 @@ components:
     Playbook:
       type: object
       additionalProperties: false
-      required: [id, folder_uid, name, description, status, source]
+      required: [id, folder_uid, name, description, status, read_only, source]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
@@ -1429,12 +1445,15 @@ components:
         status:
           type: string
           enum: [active, disabled]
+        read_only:
+          type: boolean
+          description: True only for compatibility resources that must be explicitly copied before mutation.
         source:
           type: string
     PlaybookSummary:
       type: object
       additionalProperties: false
-      required: [id, folder_uid, name, description, status]
+      required: [id, folder_uid, name, description, status, read_only]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
@@ -1447,6 +1466,9 @@ components:
         status:
           type: string
           enum: [active, disabled]
+        read_only:
+          type: boolean
+          description: True only for compatibility resources that must be explicitly copied before mutation.
     PlaybookPage:
       allOf:
         - $ref: '#/components/schemas/PageMetadata'

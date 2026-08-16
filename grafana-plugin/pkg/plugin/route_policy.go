@@ -157,6 +157,9 @@ func policyForPlaybooks(method string, segments []string) (routePolicy, bool) {
 			return routePolicy{access: folderAccessAdmin}, true
 		}
 	case 3:
+		if segments[2] == "migrations" {
+			return routePolicy{access: folderAccessAdmin}, method == http.MethodPost
+		}
 		if segments[2] == "validate" {
 			return routePolicy{access: folderAccessWrite}, method == http.MethodPost
 		}

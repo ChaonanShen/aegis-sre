@@ -118,6 +118,39 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("POST /api/v1/playbooks/{playbook_id}/migrations", func(w http.ResponseWriter, request *http.Request) {
+		actor, allowed := requireFolderAccess(w, request, folderAccessAdmin)
+		if !allowed {
+			return
+		}
+		key, ok := requireIdempotencyKey(w, request)
+		if !ok {
+			return
+		}
+		legacyRef, ok := scopedPlaybookRef(w, request, actor)
+		if !ok {
+			return
+		}
+		legacy, err := provider.Get(request.Context(), actor, legacyRef)
+		if handleProviderError(w, request, err) {
+			return
+		}
+		if !legacy.ReadOnly {
+			writeAPIProblem(w, request, http.StatusConflict, "conflict", "playbook is already Folder-owned", false)
+			return
+		}
+		// 迁移是显式复制：旧 Dagu YAML 和历史 Run 保持只读，新资源获得当前 Folder 的原生 ownership label。
+		id := scopedPlaybookID(actor, "legacy-migration\x00"+string(legacyRef.ID)+"\x00"+key)
+		ref, err := provider.Create(request.Context(), actor, ports.CreatePlaybookInput{ID: id, YAML: legacy.YAML})
+		if handleProviderError(w, request, err) {
+			return
+		}
+		resource, err := provider.Get(request.Context(), actor, ref)
+		if handleProviderError(w, request, err) {
+			return
+		}
+		writeJSON(w, http.StatusCreated, playbookJSON(resource))
+	})
 	mux.HandleFunc("POST /api/v1/playbooks/{playbook_id}/validate", func(w http.ResponseWriter, request *http.Request) {
 		actor, allowed := requirePlaybookActor(w, request, true)
 		if !allowed {
@@ -472,7 +505,7 @@ func playbookJSON(resource ports.PlaybookResource) map[string]any {
 }
 
 func playbookSummaryJSON(resource ports.PlaybookResource) map[string]any {
-	value := map[string]any{"id": resource.Ref.ID, "folder_uid": resource.FolderUID, "name": resource.Name, "description": resource.Description, "status": "disabled"}
+	value := map[string]any{"id": resource.Ref.ID, "folder_uid": resource.FolderUID, "name": resource.Name, "description": resource.Description, "status": "disabled", "read_only": resource.ReadOnly}
 	if resource.Enabled {
 		value["status"] = "active"
 	}

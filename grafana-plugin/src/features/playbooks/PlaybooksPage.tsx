@@ -108,7 +108,7 @@ function PlaybookList({
         <section aria-label="Playbook 列表" className="playbook-grid">
           {filtered.map((playbook) => (
             <button className="playbook-card" key={playbook.id} onClick={() => onOpen(playbook.id)} type="button">
-              <div className="playbook-card-heading"><strong>{playbook.name}</strong><span className="playbook-tag">{playbook.status}</span></div>
+              <div className="playbook-card-heading"><strong>{playbook.name}</strong><span className="playbook-tag">{playbook.readOnly ? 'legacy 只读' : playbook.status}</span></div>
               <p>{playbook.description}</p>
             </button>
           ))}
@@ -141,6 +141,7 @@ function PlaybookDetail({ admin, gateway, playbook, writable }: { admin: boolean
   const navigate = useNavigate();
   const [tab, setTab] = useState<'dag' | 'yaml' | 'runs'>('dag');
   const [deleting, setDeleting] = useState(false);
+  const [migrating, setMigrating] = useState(false);
   const [error, setError] = useState('');
   const projection = useMemo(() => {
     try {
@@ -163,6 +164,21 @@ function PlaybookDetail({ admin, gateway, playbook, writable }: { admin: boolean
       setDeleting(false);
     }
   };
+  const migrate = async () => {
+    if (migrating || !gateway.migrateLegacyPlaybook) {
+      return;
+    }
+    setMigrating(true);
+    setError('');
+    try {
+      const migrated = await gateway.migrateLegacyPlaybook(playbook.id, newOperationID('playbook-migration'));
+      navigate(prefixRoute(`${ROUTES.Playbooks}/${migrated.id}`));
+    } catch (reason) {
+      setError(toError(reason).message);
+      setMigrating(false);
+    }
+  };
+  const mutable = writable && !playbook.readOnly;
   return (
     <main className="playbooks-page">
       <header className="playbook-page-header">
@@ -171,11 +187,13 @@ function PlaybookDetail({ admin, gateway, playbook, writable }: { admin: boolean
           <p>{playbook.description}</p>
         </div>
         <div className="playbook-header-actions">
-          {writable && <button className="playbook-button secondary" onClick={() => navigate(prefixRoute(`${ROUTES.Playbooks}/${playbook.id}/edit`))} type="button">编辑</button>}
-          {admin && <button className="playbook-button danger" disabled={deleting} onClick={() => void remove()} type="button">{deleting ? '删除中…' : '删除'}</button>}
+          {mutable && <button className="playbook-button secondary" onClick={() => navigate(prefixRoute(`${ROUTES.Playbooks}/${playbook.id}/edit`))} type="button">编辑</button>}
+          {playbook.readOnly && admin && gateway.migrateLegacyPlaybook && <button className="playbook-button primary" disabled={migrating} onClick={() => void migrate()} type="button">{migrating ? '迁移中…' : '复制并迁移'}</button>}
+          {admin && !playbook.readOnly && <button className="playbook-button danger" disabled={deleting} onClick={() => void remove()} type="button">{deleting ? '删除中…' : '删除'}</button>}
         </div>
       </header>
       {error && <div className="playbook-editor-error" role="alert">{error}</div>}
+      {playbook.readOnly && <div className="playbook-editor-error" role="status">这是旧 Org-scoped Playbook，只能读取。Folder Admin 可复制为新的 Folder-owned Playbook；旧定义和运行记录不会被删除。</div>}
       <div className="playbook-tabs" role="tablist">
         <button aria-selected={tab === 'dag'} className={tab === 'dag' ? 'active' : ''} onClick={() => setTab('dag')} role="tab" type="button">DAG 可视化</button>
         <button aria-selected={tab === 'yaml'} className={tab === 'yaml' ? 'active' : ''} onClick={() => setTab('yaml')} role="tab" type="button">YAML 源码</button>
@@ -183,7 +201,7 @@ function PlaybookDetail({ admin, gateway, playbook, writable }: { admin: boolean
       </div>
       {tab === 'dag' && <section className="playbook-panel">{projection ? <PlaybookDag steps={projection.steps} /> : <div className="playbook-empty compact">当前 YAML 无法生成简化 DAG 预览，请查看原生源码。</div>}</section>}
       {tab === 'yaml' && <section className="playbook-panel"><pre aria-label="Playbook YAML">{playbook.source}</pre></section>}
-      {tab === 'runs' && <PlaybookRunsPanel admin={admin} gateway={gateway} playbookId={playbook.id} parameters={projection?.parameters} writable={writable} />}
+      {tab === 'runs' && <PlaybookRunsPanel admin={admin && !playbook.readOnly} gateway={gateway} playbookId={playbook.id} parameters={projection?.parameters} writable={mutable} />}
     </main>
   );
 }
@@ -226,3 +244,7 @@ function LoadError({ error, retry }: { error: Error; retry: () => void }) {
 
 function toError(error: unknown): Error { return error instanceof Error ? error : new Error('Playbook 加载失败。'); }
 function isAbortError(error: unknown): boolean { return error instanceof DOMException && error.name === 'AbortError'; }
+function newOperationID(prefix: string): string {
+  const suffix = typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+  return `${prefix}-${suffix}`;
+}
