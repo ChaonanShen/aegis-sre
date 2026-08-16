@@ -66,7 +66,7 @@ func (delayedEOFStream) Close() error { return nil }
 
 func TestCanvasTurnContextCarriesPublicSessionAndPublishRules(t *testing.T) {
 	context := canvasTurnContext(contextCanvasFake{}, "ses_abcdefgh")
-	if !strings.Contains(context, "session_id is ses_abcdefgh") || !strings.Contains(context, "node-exporter") || !strings.Contains(context, "query_prometheus range") || !strings.Contains(context, "canvas.publish_query_chart") || !strings.Contains(context, "Unix-second sample timestamps") || !strings.Contains(context, "toISOString()") || !strings.Contains(context, "trailing Z") || !strings.Contains(context, `"kind":"VizConfig"`) || !strings.Contains(context, `"defaults":{}`) || !strings.Contains(context, `"overrides":[]`) || !strings.Contains(context, `spec.options`) || !strings.Contains(context, `spec.fieldConfig.defaults`) {
+	if !strings.Contains(context, "session_id is ses_abcdefgh") || !strings.Contains(context, "trusted server clock is ") || !strings.Contains(context, "(UTC)") || !strings.Contains(context, "end=now") || !strings.Contains(context, "keep the query request's exact start/end") || !strings.Contains(context, "Never derive or replace from/to from the minimum/maximum returned sample timestamps") || !strings.Contains(context, "node-exporter") || !strings.Contains(context, "query_prometheus range") || !strings.Contains(context, "canvas.publish_query_chart") || !strings.Contains(context, "trailing Z") || !strings.Contains(context, `"kind":"VizConfig"`) || !strings.Contains(context, `"defaults":{}`) || !strings.Contains(context, `"overrides":[]`) || !strings.Contains(context, `spec.options`) || !strings.Contains(context, `spec.fieldConfig.defaults`) {
 		t.Fatalf("context = %q", context)
 	}
 	if canvasTurnContext(nil, "ses_abcdefgh") != "" {

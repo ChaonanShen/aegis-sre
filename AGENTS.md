@@ -7,7 +7,7 @@
 - Agent、Knowledge、Playbook 必须通过 `internal/ports` 中的稳定接口接入；Provider 特有协议只允许存在于对应 adapter。
 - Playbook 以原生 Dagu YAML 为唯一事实来源，不增加自定义 DSL。
 - Agent 使用 MCP 访问 Grafana、Knowledge 和 Dagu；插件管理操作通过 Control Plane API，不直接访问 Provider。
-- 新增服务或跨模块依赖前，先更新 `docs/architecture.md` 或提交 ADR，避免演变为无边界的微服务集合。
+- 稳定架构基线见 [`docs/architecture.md`](docs/architecture.md)；实现跨模块改动、新增服务或替换 Provider 前必须先对照并在必要时更新该文档或提交 ADR，避免演变为无边界的微服务集合。
 
 ## 代码修改
 
@@ -28,4 +28,3 @@
 ## Grafana Plugin
 
 修改 `grafana-plugin/` 时还必须遵守该目录中的 `AGENTS.md`。`.config/` 由 Grafana 插件工具管理，不得手工修改。
-
