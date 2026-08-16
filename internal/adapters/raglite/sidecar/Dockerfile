@@ -10,6 +10,12 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY internal/adapters/raglite/sidecar/src ./src
 RUN uv sync --frozen --no-dev
 
+FROM build AS test
+RUN uv sync --frozen --extra test
+COPY internal/adapters/raglite/sidecar/tests ./tests
+RUN uv run --frozen pytest \
+    && uv run --frozen ruff check .
+
 FROM python:3.11.13-slim-bookworm@sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1
 RUN apt-get update \
     && apt-get install --yes --no-install-recommends libgomp1 \

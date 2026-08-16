@@ -41,6 +41,24 @@ jobs:
       - name: Build
         run: go build ./...
 
+  raglite-sidecar:
+    name: RAGLite sidecar
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Test and lint locked Python runtime
+        run: make raglite-sidecar-test
+
+      - name: Build and smoke test runtime image
+        run: make raglite-image-smoke
+
+      - name: Verify deployment contract
+        run: make raglite-config-check raglite-deploy-test
+
   dagu-contract:
     name: Dagu mcp.call contract
     runs-on: ubuntu-latest

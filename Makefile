@@ -1,4 +1,4 @@
-.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate node-health-playbook-validate node-capacity-playbook-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke raglite-provider-test raglite-provider-lint raglite-config-check raglite-deploy-test raglite-image-smoke local-secrets local-config-check local-up local-agent-smoke local-playbook-smoke local-node-health-smoke local-node-capacity-run agent-playbook-e2e local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
+.PHONY: verify contracts-generate contracts-check contracts-go-generate contracts-go-check contracts-ts-generate contracts-ts-check control-plane-test control-plane-build dagu-validate node-health-playbook-validate node-capacity-playbook-validate dagu-contract-test grafana-mcp-config-check grafana-mcp-smoke raglite-sidecar-test raglite-config-check raglite-deploy-test raglite-image-smoke local-secrets local-config-check local-up local-agent-smoke local-playbook-smoke local-node-health-smoke local-node-capacity-run agent-playbook-e2e local-smoke codex-schema-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 OAPI_CODEGEN_VERSION := v2.8.0
 MAGE_VERSION := v1.17.2
@@ -6,9 +6,6 @@ DAGU_VERSION := v2.13.0
 DAGU_BIN ?= dagu
 CODEX_VERSION := 0.144.4
 CODEX_BIN ?= codex
-UV_VERSION := 0.8.4
-UV_BIN ?= uv
-
 verify: contracts-check codex-schema-check control-plane-test control-plane-build dagu-validate grafana-mcp-config-check plugin-backend-test plugin-backend-build plugin-typecheck plugin-lint plugin-test plugin-build
 
 contracts-generate: contracts-go-generate contracts-ts-generate
@@ -57,13 +54,8 @@ dagu-contract-test:
 grafana-mcp-config-check:
 	GRAFANA_URL=http://grafana:3000 GRAFANA_READ_TOKEN_FILE=/run/secrets/read GRAFANA_WRITE_TOKEN_FILE=/run/secrets/write docker compose -f deploy/grafana-mcp/compose.yaml config --quiet
 
-raglite-provider-test:
-	@test "$$($(UV_BIN) --version | cut -d ' ' -f 2)" = "$(UV_VERSION)" || (echo "expected uv $(UV_VERSION)" >&2; exit 1)
-	cd internal/adapters/raglite/sidecar && $(UV_BIN) run --extra test --locked pytest
-
-raglite-provider-lint:
-	@test "$$($(UV_BIN) --version | cut -d ' ' -f 2)" = "$(UV_VERSION)" || (echo "expected uv $(UV_VERSION)" >&2; exit 1)
-	cd internal/adapters/raglite/sidecar && $(UV_BIN) run --extra test --locked ruff check .
+raglite-sidecar-test:
+	docker build --target test -f internal/adapters/raglite/sidecar/Dockerfile -t aegis-raglite-sidecar:test .
 
 raglite-config-check:
 	docker compose -f compose.yaml -f deploy/raglite/compose.yaml config --quiet
@@ -72,8 +64,8 @@ raglite-deploy-test:
 	./scripts/test-raglite-deploy.sh
 
 raglite-image-smoke:
-	docker build -f internal/adapters/raglite/sidecar/Dockerfile -t aegis-raglite-provider:test .
-	docker run --rm --entrypoint python aegis-raglite-provider:test -c 'import llama_cpp, onnxruntime, raglite; print("RAGLite runtime imports passed")'
+	docker build -f internal/adapters/raglite/sidecar/Dockerfile -t aegis-raglite-sidecar:test .
+	docker run --rm --entrypoint python aegis-raglite-sidecar:test -c 'import llama_cpp, onnxruntime, raglite; print("RAGLite runtime imports passed")'
 
 # 真实冒烟验收显式要求两个 datasource UID，避免以 fixture 假装 Grafana 已连通。
 grafana-mcp-smoke:

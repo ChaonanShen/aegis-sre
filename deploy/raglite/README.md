@@ -20,6 +20,23 @@ sidecar 不发布主机端口，只加入内部 `aegis-knowledge` 网络。首�
 `llama-cpp-python`，首次索引会下载固定配置的 BGE-M3 Q4 和 SaT 模型，因此不应把首次启动耗时
 当作稳态启动时间。生产镜像发布前还要预热并固化模型与 DuckDB FTS/VSS 扩展缓存。
 
+## 测试平台约束
+
+`onnxruntime==1.28.0` 没有 Intel macOS (`x86_64`) wheel，因此该平台不能直接执行
+`uv sync --extra test --locked` 的完整锁定依赖安装。完整 sidecar 测试必须在与生产镜像一致的
+Linux/amd64 容器中运行；不能通过跳过 ONNX Runtime 或修改锁文件让本地测试假通过。
+
+仓库提供统一容器入口，使用固定 Python 镜像、`uv 0.8.4` 和完整 `uv.lock`：
+
+```sh
+make raglite-sidecar-test
+make raglite-image-smoke
+```
+
+该流程已在 Intel Mac 的 Docker Linux/amd64 VM 中验证，`onnxruntime 1.28.0`、RAGLite 和
+`llama-cpp-python` 完整安装，sidecar 测试与 Ruff 均通过。首次执行会源码编译
+`llama-cpp-python`，可能需要约 10 分钟；CI 和日常重复执行复用同一 Docker 构建缓存。
+
 ## 数据和恢复
 
 停止写入后，把 `raglite-data` 卷作为一致性集合备份。卷内包括：

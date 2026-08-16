@@ -289,6 +289,8 @@ POST .../{knowledge_base_id}/scope-migrations
 ### P7：安全、恢复和可观测性
 
 - [ ] 固定 RAGLite、Python、DuckDB、Pandoc、模型、扩展和最终镜像 digest。
+- [ ] RAGLite 完整依赖、sidecar 测试和 Ruff 固定在 Linux/amd64 容器执行；Intel macOS 因
+  `onnxruntime 1.28.0` 无 x86_64 wheel，只运行不依赖真实 Runtime 的轻量测试，不能修改锁文件绕过。
 - [ ] 模型和 FTS/VSS 扩展离线预热，稳态启动和首次索引不访问公网。
 - [ ] 文件扩展名、MIME、实际内容、畸形文件和解析超时采用一致 fail-closed 策略。
 - [ ] 对 PDF/DOCX 等复杂格式测试内存、CPU、临时磁盘和压缩炸弹限制；未验收格式不在 UI 开放。
@@ -320,6 +322,7 @@ POST .../{knowledge_base_id}/scope-migrations
 | Sidecar repository | schema migration、唯一 queued job、generation、幂等、条件状态转换 |
 | Sidecar worker | 自动索引、重试、重启恢复、半成品清理、并发 metadata 更新 |
 | RAGLite backend | PDF/MD/TXT、Passage、service/tags、ready-only Search、删除残留 |
+| RAGLite runtime | Linux/amd64、完整 `uv.lock`、ONNX Runtime/RAGLite/llama.cpp 导入、sidecar pytest 与 Ruff |
 | Go adapter | wire schema、认证、超时、响应上限、错误净化、ID/scope 映射 |
 | HTTP | read/write/admin、分页、上传、retry、Passage、Search、冲突与对账 |
 | MCP | allowlist、越权、bounded Passage/citations、无 score/job/chunk ID |
