@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -55,26 +56,36 @@ func (p *Provider) ListCollections(ctx context.Context, actor domain.ActorContex
 	if err != nil {
 		return domain.Page[ports.KnowledgeCollection]{}, mapProviderError(err)
 	}
-	mapped := make([]ports.KnowledgeCollection, 0, len(items))
+	legacyScope, _ := p.ids.LegacyScopeFingerprint(actor)
+	legacyItems, err := p.client.ListCollections(ctx, legacyScope, folder)
+	if err != nil {
+		return domain.Page[ports.KnowledgeCollection]{}, mapProviderError(err)
+	}
+	mapped := make([]ports.KnowledgeCollection, 0, len(items)+len(legacyItems))
+	seen := make(map[domain.ID]struct{}, len(items)+len(legacyItems))
 	for _, item := range items {
 		value, mapErr := mapCollection(item, scope, actor.FolderUID)
 		if mapErr != nil {
 			return domain.Page[ports.KnowledgeCollection]{}, mapErr
+		}
+		seen[value.Ref.ID] = struct{}{}
+		mapped = append(mapped, value)
+	}
+	for _, item := range legacyItems {
+		value, mapErr := mapCollection(item, legacyScope, actor.FolderUID)
+		if mapErr != nil {
+			return domain.Page[ports.KnowledgeCollection]{}, mapErr
+		}
+		if _, exists := seen[value.Ref.ID]; exists {
+			return domain.Page[ports.KnowledgeCollection]{}, resultUnknown(errors.New("duplicate collection across current and legacy scopes"))
 		}
 		mapped = append(mapped, value)
 	}
 	return paginate(mapped, page)
 }
 func (p *Provider) GetCollection(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
-	scope, err := p.scope(actor)
-	if err != nil {
-		return ports.KnowledgeCollection{}, err
-	}
-	item, err := p.client.GetCollection(ctx, scope, string(ref.ID))
-	if err != nil {
-		return ports.KnowledgeCollection{}, mapProviderError(err)
-	}
-	return mapCollection(item, scope, actor.FolderUID)
+	collection, _, err := p.readableCollection(ctx, actor, ref)
+	return collection, err
 }
 func (p *Provider) CreateCollection(ctx context.Context, actor domain.ActorContext, input ports.CreateKnowledgeCollectionInput) (ports.KnowledgeCollection, error) {
 	if err := requireFolder(actor, input.FolderUID); err != nil {
@@ -115,11 +126,11 @@ func (p *Provider) DeleteCollection(ctx context.Context, actor domain.ActorConte
 	return mapProviderError(p.client.DeleteCollection(ctx, scope, string(ref.ID)))
 }
 func (p *Provider) ListDocuments(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef, page domain.PageRequest) (domain.Page[ports.KnowledgeDocument], error) {
-	scope, err := p.scope(actor)
-	if err != nil {
+	if _, err := p.scope(actor); err != nil {
 		return domain.Page[ports.KnowledgeDocument]{}, err
 	}
-	if _, err := p.requireCollection(ctx, actor, ref); err != nil {
+	_, scope, err := p.readableCollection(ctx, actor, ref)
+	if err != nil {
 		return domain.Page[ports.KnowledgeDocument]{}, err
 	}
 	items, err := p.client.ListDocuments(ctx, scope, string(ref.ID))
@@ -137,11 +148,11 @@ func (p *Provider) ListDocuments(ctx context.Context, actor domain.ActorContext,
 	return paginate(mapped, page)
 }
 func (p *Provider) GetDocument(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef) (ports.KnowledgeDocument, error) {
-	scope, err := p.scope(actor)
-	if err != nil {
+	if _, err := p.scope(actor); err != nil {
 		return ports.KnowledgeDocument{}, err
 	}
-	if _, err := p.requireCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID}); err != nil {
+	_, scope, err := p.readableCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID})
+	if err != nil {
 		return ports.KnowledgeDocument{}, err
 	}
 	item, err := p.client.GetDocument(ctx, scope, string(ref.ID))
@@ -216,11 +227,11 @@ func (p *Provider) DeleteDocument(ctx context.Context, actor domain.ActorContext
 	return mapProviderError(p.client.DeleteDocument(ctx, scope, string(ref.ID)))
 }
 func (p *Provider) ListChunks(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef, page domain.PageRequest) (domain.Page[ports.KnowledgeChunk], error) {
-	scope, err := p.scope(actor)
-	if err != nil {
+	if _, err := p.scope(actor); err != nil {
 		return domain.Page[ports.KnowledgeChunk]{}, err
 	}
-	if _, err := p.requireCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID}); err != nil {
+	_, scope, err := p.readableCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID})
+	if err != nil {
 		return domain.Page[ports.KnowledgeChunk]{}, err
 	}
 	items, err := p.client.ListChunks(ctx, scope, string(ref.ID))
@@ -241,11 +252,18 @@ func (p *Provider) ListChunks(ctx context.Context, actor domain.ActorContext, re
 	return paginate(mapped, page)
 }
 func (p *Provider) DownloadDocument(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef) (ports.KnowledgeDocumentDownload, error) {
-	scope, err := p.scope(actor)
+	if _, err := p.scope(actor); err != nil {
+		return ports.KnowledgeDocumentDownload{}, err
+	}
+	_, scope, err := p.readableCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID})
 	if err != nil {
 		return ports.KnowledgeDocumentDownload{}, err
 	}
-	document, err := p.GetDocument(ctx, actor, ref)
+	item, err := p.client.GetDocument(ctx, scope, string(ref.ID))
+	if err != nil {
+		return ports.KnowledgeDocumentDownload{}, mapProviderError(err)
+	}
+	document, err := mapDocument(item, ref.CollectionID)
 	if err != nil {
 		return ports.KnowledgeDocumentDownload{}, err
 	}
@@ -256,25 +274,33 @@ func (p *Provider) DownloadDocument(ctx context.Context, actor domain.ActorConte
 	return ports.KnowledgeDocumentDownload{Name: document.Name, MediaType: document.MediaType, Size: document.Size, Content: response.Body}, nil
 }
 func (p *Provider) Retrieve(ctx context.Context, actor domain.ActorContext, input ports.RetrievalInput) ([]ports.RetrievalHit, error) {
-	scope, err := p.scope(actor)
-	if err != nil {
+	if _, err := p.scope(actor); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(input.Query) == "" || len(input.Collections) == 0 || input.Limit < 1 || input.Limit > 100 {
 		return nil, invalidArgument(errors.New("invalid knowledge retrieval input"))
 	}
-	collections := make([]string, len(input.Collections))
+	collectionsByScope := make(map[string][]string)
 	allowedCollections := make(map[string]domain.ID, len(input.Collections))
-	for i, ref := range input.Collections {
-		if _, err := p.requireCollection(ctx, actor, ref); err != nil {
+	for _, ref := range input.Collections {
+		_, scope, err := p.readableCollection(ctx, actor, ref)
+		if err != nil {
 			return nil, err
 		}
-		collections[i] = string(ref.ID)
+		collectionsByScope[scope] = append(collectionsByScope[scope], string(ref.ID))
 		allowedCollections[string(ref.ID)] = ref.ID
 	}
-	hits, err := p.client.Search(ctx, scope, input.Query, collections, input.Service, input.Limit, input.Threshold)
-	if err != nil {
-		return nil, mapProviderError(err)
+	hits := make([]SearchHit, 0)
+	for scope, collections := range collectionsByScope {
+		result, err := p.client.Search(ctx, scope, input.Query, collections, input.Service, input.Limit, input.Threshold)
+		if err != nil {
+			return nil, mapProviderError(err)
+		}
+		hits = append(hits, result...)
+	}
+	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Score > hits[j].Score })
+	if len(hits) > input.Limit {
+		hits = hits[:input.Limit]
 	}
 	mapped := make([]ports.RetrievalHit, 0, len(hits))
 	for _, hit := range hits {
@@ -323,6 +349,33 @@ func (p *Provider) requireCollection(ctx context.Context, actor domain.ActorCont
 		return ports.KnowledgeCollection{}, mapProviderError(err)
 	}
 	return mapCollection(item, scope, actor.FolderUID)
+}
+
+func (p *Provider) readableCollection(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, string, error) {
+	scope, err := p.scope(actor)
+	if err != nil {
+		return ports.KnowledgeCollection{}, "", err
+	}
+	item, err := p.client.GetCollection(ctx, scope, string(ref.ID))
+	if err == nil {
+		collection, mapErr := mapCollection(item, scope, actor.FolderUID)
+		return collection, scope, mapErr
+	}
+	if !isProviderNotFound(err) {
+		return ports.KnowledgeCollection{}, "", mapProviderError(err)
+	}
+	legacyScope, _ := p.ids.LegacyScopeFingerprint(actor)
+	item, err = p.client.GetCollection(ctx, legacyScope, string(ref.ID))
+	if err != nil {
+		return ports.KnowledgeCollection{}, "", mapProviderError(err)
+	}
+	collection, mapErr := mapCollection(item, legacyScope, actor.FolderUID)
+	return collection, legacyScope, mapErr
+}
+
+func isProviderNotFound(err error) bool {
+	var providerErr *ProviderError
+	return errors.As(err, &providerErr) && providerErr.Code == "not_found"
 }
 
 func mapCollection(item Collection, expectedScope, expectedFolder string) (ports.KnowledgeCollection, error) {

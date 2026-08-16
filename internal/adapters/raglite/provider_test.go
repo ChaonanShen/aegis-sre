@@ -24,7 +24,8 @@ func testProvider(t *testing.T) (*Provider, *fakeClient, *knowledgeid.Codec, dom
 	}
 	actor := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user", FolderUID: "folder-a"}
 	scope, _ := codec.ScopeFingerprint(actor)
-	fake := &fakeClient{scope: scope}
+	legacyScope, _ := codec.LegacyScopeFingerprint(actor)
+	fake := &fakeClient{scope: scope, legacyScope: legacyScope}
 	provider, err := NewProvider(fake, codec)
 	if err != nil {
 		t.Fatal(err)
@@ -115,6 +116,50 @@ func TestProviderRejectsReturnedFolderMismatchBeforeChildMutation(t *testing.T) 
 	}
 }
 
+func TestProviderReadsLegacyUserScopeButRejectsWritesAndOtherUsers(t *testing.T) {
+	provider, fake, codec, actor := testProvider(t)
+	legacy := fake.collection()
+	legacy.ID = "kbs_legacy12345"
+	legacy.Name = "Legacy"
+	legacy.Scope = fake.legacyScope
+	fake.legacyCollection = &legacy
+	legacyDocument := fake.document()
+	legacyDocument.CollectionID = legacy.ID
+	fake.documents = []Document{legacyDocument}
+	ref := ports.KnowledgeCollectionRef{ID: domain.ID(legacy.ID)}
+
+	collection, err := provider.GetCollection(context.Background(), actor, ref)
+	if err != nil || collection.Name != "Legacy" {
+		t.Fatalf("legacy collection = %#v, err = %v", collection, err)
+	}
+	if _, err := provider.ListDocuments(context.Background(), actor, ref, domain.PageRequest{}); err != nil {
+		t.Fatalf("legacy document list failed: %v", err)
+	}
+	if _, err := provider.UpdateCollection(context.Background(), actor, ref, ports.UpdateKnowledgeCollectionInput{Name: "changed", Status: domain.KnowledgeBaseActive}); appErrorCode(err) != domain.ErrorNotFound {
+		t.Fatalf("legacy update error = %#v", err)
+	}
+	other := actor
+	other.UserID = "other-user"
+	otherLegacyScope, _ := codec.LegacyScopeFingerprint(other)
+	if otherLegacyScope == fake.legacyScope {
+		t.Fatal("legacy test scope must remain user-bound")
+	}
+	if _, err := provider.GetCollection(context.Background(), other, ref); appErrorCode(err) != domain.ErrorNotFound {
+		t.Fatalf("legacy resource escaped creator: %#v", err)
+	}
+	if fake.mutations != 0 {
+		t.Fatalf("legacy write reached Provider: %d", fake.mutations)
+	}
+}
+
+func appErrorCode(err error) domain.ErrorCode {
+	var appErr *domain.AppError
+	if errors.As(err, &appErr) {
+		return appErr.Code
+	}
+	return ""
+}
+
 func TestProviderMapsCapabilityAndNotFoundErrors(t *testing.T) {
 	provider, fake, _, actor := testProvider(t)
 	fake.err = &ProviderError{Code: "capability_unavailable", StatusCode: 422}
@@ -143,16 +188,18 @@ func assertCode(t *testing.T, err error, code domain.ErrorCode) {
 }
 
 type fakeClient struct {
-	scope         string
-	lastScope     string
-	collections   []Collection
-	documents     []Document
-	chunks        []Chunk
-	hits          []SearchHit
-	err           error
-	badDigest     bool
-	getCollection *Collection
-	mutations     int
+	scope            string
+	legacyScope      string
+	lastScope        string
+	collections      []Collection
+	documents        []Document
+	chunks           []Chunk
+	hits             []SearchHit
+	err              error
+	badDigest        bool
+	getCollection    *Collection
+	legacyCollection *Collection
+	mutations        int
 }
 
 func (f *fakeClient) collection() Collection {
@@ -175,9 +222,15 @@ func (f *fakeClient) ListCollections(_ context.Context, scope, _ string) ([]Coll
 	if f.collections != nil {
 		return f.collections, nil
 	}
+	if scope == f.legacyScope {
+		if f.legacyCollection == nil {
+			return []Collection{}, nil
+		}
+		return []Collection{*f.legacyCollection}, nil
+	}
 	return []Collection{f.collection()}, nil
 }
-func (f *fakeClient) GetCollection(_ context.Context, scope, _ string) (Collection, error) {
+func (f *fakeClient) GetCollection(_ context.Context, scope, id string) (Collection, error) {
 	f.lastScope = scope
 	if f.err != nil {
 		return Collection{}, f.err
@@ -185,7 +238,13 @@ func (f *fakeClient) GetCollection(_ context.Context, scope, _ string) (Collecti
 	if f.getCollection != nil {
 		return *f.getCollection, nil
 	}
-	return f.collection(), nil
+	if scope == f.scope && id == f.collection().ID {
+		return f.collection(), nil
+	}
+	if scope == f.legacyScope && f.legacyCollection != nil && id == f.legacyCollection.ID {
+		return *f.legacyCollection, nil
+	}
+	return Collection{}, &ProviderError{Code: "not_found", StatusCode: http.StatusNotFound}
 }
 func (f *fakeClient) CreateCollection(_ context.Context, scope string, in Collection) (Collection, error) {
 	f.mutations++
