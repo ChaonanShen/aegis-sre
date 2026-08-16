@@ -38,9 +38,9 @@ describe('PlaybooksPage native Dagu CRUD', () => {
   test('creates from native YAML after server validation and keeps one operation key', async () => {
     const gateway = fakeGateway();
     renderPage('/a/grafana-plugin-app/playbooks/new', gateway);
-    const editor = screen.getByRole('textbox', { name: 'Playbook YAML 编辑器' });
+    const editor = await screen.findByRole('textbox', { name: 'Playbook YAML 编辑器' });
     fireEvent.change(editor, { target: { value: firstSource } });
-    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    fireEvent.click(await screen.findByRole('button', { name: '保存' }));
     await waitFor(() => expect(gateway.createPlaybook).toHaveBeenCalledTimes(1));
     expect(gateway.validatePlaybook).toHaveBeenCalledWith(firstSource, expect.any(AbortSignal));
     expect(gateway.createPlaybook).toHaveBeenCalledWith(
@@ -53,7 +53,7 @@ describe('PlaybooksPage native Dagu CRUD', () => {
     const gateway = fakeGateway();
     gateway.validatePlaybook = jest.fn(async (_source: string, _signal?: AbortSignal) => ({ valid: false, errors: [{ path: 'steps[0]', message: 'action is required' }] }));
     renderPage('/a/grafana-plugin-app/playbooks/new', gateway);
-    fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    fireEvent.click(await screen.findByRole('button', { name: '保存' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('steps[0]: action is required');
     expect(gateway.createPlaybook).not.toHaveBeenCalled();
   });
@@ -124,7 +124,7 @@ function run(status: PlaybookRunRecord['status']): PlaybookRunRecord {
 }
 
 function fakeGateway(): jest.Mocked<PlaybookCrudGateway> {
-  return {
+  const gateway = {
     listPlaybooks: jest.fn(async () => [document()]),
     getPlaybook: jest.fn(async (_id: string, _signal?: AbortSignal) => document()),
     createPlaybook: jest.fn(async ({ source }) => document(source)),
@@ -136,13 +136,22 @@ function fakeGateway(): jest.Mocked<PlaybookCrudGateway> {
     getRun: jest.fn(),
     cancelRun: jest.fn(),
     retryRun: jest.fn(),
-  };
+  } as jest.Mocked<PlaybookCrudGateway>;
+  gateway.withFolder = jest.fn(() => gateway);
+  return gateway;
 }
 
 function renderPage(initialEntry: string, gateway: PlaybookCrudGateway) {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
-      <AppServicesProvider services={{ playbookGateway: gateway }}>
+      <AppServicesProvider
+        services={{
+          folderGateway: {
+            listFolders: async () => [{ uid: 'ops', title: 'Operations', permission: 'Admin', serviceCount: 0 }],
+          },
+          playbookGateway: gateway,
+        }}
+      >
         <AppShellProvider>
           <Routes>
             <Route element={<PlaybooksPage />} path="/a/grafana-plugin-app/playbooks" />

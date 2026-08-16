@@ -12,6 +12,8 @@ import {
 } from '../crudModel';
 
 export interface PlaybookCrudGateway {
+  /** 返回绑定到单个可信请求 Folder 的 gateway；真实模式不允许使用未绑定实例。 */
+  withFolder?(folderUid: string): PlaybookCrudGateway;
   listPlaybooks(signal?: AbortSignal): Promise<PlaybookSummary[]>;
   getPlaybook(id: string, signal?: AbortSignal): Promise<PlaybookDocument>;
   createPlaybook(input: CreatePlaybookInput, signal?: AbortSignal): Promise<PlaybookDocument>;

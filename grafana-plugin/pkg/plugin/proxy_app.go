@@ -145,6 +145,14 @@ func (app *App) requireFolderAuthorization(next http.Handler) http.Handler {
 			return
 		}
 		folderUID := safeFolderUID(request.Header.Get(headerFolderUID))
+		queryFolderUID := safeFolderUID(request.URL.Query().Get("folder_uid"))
+		if folderUID != "" && queryFolderUID != "" && folderUID != queryFolderUID {
+			writeProblem(w, http.StatusForbidden, "forbidden", "Folder context is ambiguous")
+			return
+		}
+		if folderUID == "" {
+			folderUID = queryFolderUID
+		}
 		if folderUID == "" {
 			writeProblem(w, http.StatusForbidden, "forbidden", "Folder permission is required")
 			return

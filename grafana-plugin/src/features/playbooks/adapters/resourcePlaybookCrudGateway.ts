@@ -16,18 +16,22 @@ type ContractArtifact = components['schemas']['Artifact'];
 type ContractArtifactPreview = components['schemas']['ArtifactPreview'];
 
 export function createResourcePlaybookCrudGateway(
-  options: { backendSrv?: BackendSrv; resourceClient?: ResourceClient } = {}
+  options: { backendSrv?: BackendSrv; resourceClient?: ResourceClient; folderUid?: string } = {}
 ): PlaybookCrudGateway {
   let resources: ResourceClient | undefined;
   const client = () =>
     (resources ??= options.resourceClient ?? new ResourceClient(options.backendSrv ?? getBackendSrv()));
+  const folderHeaders = () => ({ 'X-Aegis-Folder-UID': requireFolder(options.folderUid) });
   return {
+    withFolder(folderUid) {
+      return createResourcePlaybookCrudGateway({ ...options, resourceClient: client(), folderUid });
+    },
     async listPlaybooks(signal) {
       const items: PlaybookSummary[] = [];
       let cursor = '';
       do {
         const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
-        const page = await client().request(`/api/v1/playbooks${query}`, isPlaybookPage, { signal });
+        const page = await client().request(`/api/v1/playbooks${query}`, isPlaybookPage, { headers: folderHeaders(), signal });
         items.push(...page.items.map(toSummary));
         cursor = page.has_more ? page.next_cursor ?? '' : '';
         if (page.has_more && !cursor) {
@@ -37,7 +41,7 @@ export function createResourcePlaybookCrudGateway(
       return items;
     },
     async getPlaybook(id, signal) {
-      return toDocument(await client().request(playbookPath(id), isPlaybook, { signal }));
+      return toDocument(await client().request(playbookPath(id), isPlaybook, { headers: folderHeaders(), signal }));
     },
     async createPlaybook(input, signal) {
       requireNativeSource(input.source);
@@ -45,7 +49,7 @@ export function createResourcePlaybookCrudGateway(
         await client().request('/api/v1/playbooks', isPlaybook, {
           method: 'POST',
           data: input.source,
-          headers: { 'Content-Type': 'application/yaml', 'Idempotency-Key': input.idempotencyKey },
+          headers: { ...folderHeaders(), 'Content-Type': 'application/yaml', 'Idempotency-Key': input.idempotencyKey },
           signal,
         })
       );
@@ -56,20 +60,20 @@ export function createResourcePlaybookCrudGateway(
         await client().request(playbookPath(id), isPlaybook, {
           method: 'PUT',
           data: input.source,
-          headers: { 'Content-Type': 'application/yaml' },
+          headers: { ...folderHeaders(), 'Content-Type': 'application/yaml' },
           signal,
         })
       );
     },
     async deletePlaybook(id, signal) {
-      await client().requestVoid(playbookPath(id), { method: 'DELETE', signal });
+      await client().requestVoid(playbookPath(id), { method: 'DELETE', headers: folderHeaders(), signal });
     },
     async validatePlaybook(source, signal) {
       requireNativeSource(source);
       return client().request('/api/v1/playbooks/validate', isValidationResult, {
         method: 'POST',
         data: source,
-        headers: { 'Content-Type': 'application/yaml' },
+        headers: { ...folderHeaders(), 'Content-Type': 'application/yaml' },
         signal,
       });
     },
@@ -78,7 +82,7 @@ export function createResourcePlaybookCrudGateway(
       let cursor = '';
       do {
         const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
-        const page = await client().request(`${playbookPath(playbookId)}/runs${query}`, isRunPage, { signal });
+        const page = await client().request(`${playbookPath(playbookId)}/runs${query}`, isRunPage, { headers: folderHeaders(), signal });
         items.push(...page.items.map(toRun));
         cursor = page.has_more ? page.next_cursor ?? '' : '';
         if (page.has_more && !cursor) {
@@ -92,49 +96,49 @@ export function createResourcePlaybookCrudGateway(
         await client().request(`${playbookPath(playbookId)}/runs`, isRun, {
           method: 'POST',
           data: { parameters: input.parameters ?? {} },
-          headers: { 'Idempotency-Key': input.idempotencyKey },
+          headers: { ...folderHeaders(), 'Idempotency-Key': input.idempotencyKey },
           signal,
         })
       );
     },
     async getRun(runId, signal) {
-      return toRun(await client().request(runPath(runId), isRun, { signal }));
+      return toRun(await client().request(runPath(runId), isRun, { headers: folderHeaders(), signal }));
     },
     async cancelRun(runId, signal) {
-      await client().requestVoid(`${runPath(runId)}:cancel`, { method: 'POST', signal });
+      await client().requestVoid(`${runPath(runId)}:cancel`, { method: 'POST', headers: folderHeaders(), signal });
     },
     async retryRun(runId, idempotencyKey, signal) {
       return toRun(await client().request(`${runPath(runId)}:retry`, isRun, {
         method: 'POST',
-        headers: { 'Idempotency-Key': idempotencyKey },
+        headers: { ...folderHeaders(), 'Idempotency-Key': idempotencyKey },
         signal,
       }));
     },
     streamRun(runId, afterSequence, signal) {
-      return streamRunEvents(clientBackend(), runId, afterSequence, signal, async () =>
-        toRun(await client().request(runPath(runId), isRun, { signal }))
+      return streamRunEvents(clientBackend(), runId, afterSequence, signal, options.folderUid, async () =>
+        toRun(await client().request(runPath(runId), isRun, { headers: folderHeaders(), signal }))
       );
     },
     async completeHumanTask(runId, stepId, input, idempotencyKey, signal) {
       await client().requestVoid(`${runPath(runId)}/human-tasks/${encodeURIComponent(stepId)}:complete`, {
-        method: 'POST', data: input, headers: { 'Idempotency-Key': idempotencyKey }, signal,
+        method: 'POST', data: input, headers: { ...folderHeaders(), 'Idempotency-Key': idempotencyKey }, signal,
       });
     },
     async resolveApproval(runId, stepId, decision, inputs, idempotencyKey, signal) {
       await client().requestVoid(`${runPath(runId)}/approvals/${encodeURIComponent(stepId)}:resolve`, {
-        method: 'POST', data: { decision, inputs }, headers: { 'Idempotency-Key': idempotencyKey }, signal,
+        method: 'POST', data: { decision, inputs }, headers: { ...folderHeaders(), 'Idempotency-Key': idempotencyKey }, signal,
       });
     },
     async listArtifacts(runId, signal) {
-      const value = await client().request(`${runPath(runId)}/artifacts`, isArtifactPage, { signal });
+      const value = await client().request(`${runPath(runId)}/artifacts`, isArtifactPage, { headers: folderHeaders(), signal });
       return value.items.map(toArtifact);
     },
     async previewArtifact(runId, path, signal) {
       const query = `?path=${encodeURIComponent(path)}`;
-      return toArtifactPreview(await client().request(`${runPath(runId)}/artifacts/preview${query}`, isArtifactPreview, { signal }));
+      return toArtifactPreview(await client().request(`${runPath(runId)}/artifacts/preview${query}`, isArtifactPreview, { headers: folderHeaders(), signal }));
     },
     artifactDownloadUrl(runId, path) {
-      return `${PLUGIN_RESOURCE_BASE_URL}${runPath(runId)}/artifacts/download?path=${encodeURIComponent(path)}`;
+      return `${PLUGIN_RESOURCE_BASE_URL}${runPath(runId)}/artifacts/download?path=${encodeURIComponent(path)}&folder_uid=${encodeURIComponent(requireFolder(options.folderUid))}`;
     },
   };
 
@@ -147,6 +151,13 @@ function requireNativeSource(source: string) {
   if (!source.trim()) {
     throw new ResourceClientError(400, 'invalid_argument', '请输入原生 Dagu YAML。');
   }
+}
+
+function requireFolder(folderUid: string | undefined): string {
+  if (!folderUid?.trim()) {
+    throw new ResourceClientError(0, 'invalid_argument', '必须选择 Folder。');
+  }
+  return folderUid;
 }
 
 function toSummary(value: ContractSummary): PlaybookSummary {
@@ -288,11 +299,12 @@ async function* streamRunEvents(
   runId: string,
   afterSequence: number,
   signal: AbortSignal | undefined,
+  folderUid: string | undefined,
   readSnapshot: () => Promise<PlaybookRunRecord>
 ): AsyncGenerator<PlaybookRunRecord> {
   const request: BackendSrvRequest = {
     url: `${PLUGIN_RESOURCE_BASE_URL}/api/v1/runs/${encodeURIComponent(runId)}/events?after_sequence=${afterSequence}`,
-    method: 'GET', abortSignal: signal, showErrorAlert: false, validatePath: true,
+    method: 'GET', headers: { 'X-Aegis-Folder-UID': requireFolder(folderUid) }, abortSignal: signal, showErrorAlert: false, validatePath: true,
   };
   const decoder = new SSEDecoder();
   for await (const response of observableValues(backend.chunked(request), signal)) {
@@ -319,7 +331,7 @@ function observableValues<T>(observable: Observable<T>, signal?: AbortSignal): A
   let wake: (() => void) | undefined;
   const subscription = observable.subscribe({ next: (value) => { queue.push(value); wake?.(); wake = undefined; }, error: (error) => { failure = error; done = true; wake?.(); wake = undefined; }, complete: () => { done = true; wake?.(); wake = undefined; } });
   signal?.addEventListener('abort', () => subscription.unsubscribe(), { once: true });
-  return { [Symbol.asyncIterator]: async function* () { try { while (!done || queue.length) { if (!queue.length) await new Promise<void>((resolve) => { wake = resolve; }); while (queue.length) yield queue.shift()!; } if (failure) throw failure; } finally { subscription.unsubscribe(); } } };
+  return { [Symbol.asyncIterator]: async function* () { try { while (!done || queue.length) { if (!queue.length) {await new Promise<void>((resolve) => { wake = resolve; });} while (queue.length) {yield queue.shift()!;} } if (failure) {throw failure;} } finally { subscription.unsubscribe(); } } };
 }
 
 class SSEDecoder {
@@ -333,10 +345,10 @@ class SSEDecoder {
       const block = this.buffer.slice(0, boundary);
       this.buffer = this.buffer.slice(boundary + 2);
       const data = block.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
-      if (data) events.push(data);
+      if (data) {events.push(data);}
       boundary = this.buffer.indexOf('\n\n');
     }
     return events;
   }
-  finish() { this.push(); if (this.buffer.trim()) throw new ResourceClientError(502, 'provider_unavailable', 'Playbook 事件流以不完整事件结束。'); }
+  finish() { this.push(); if (this.buffer.trim()) {throw new ResourceClientError(502, 'provider_unavailable', 'Playbook 事件流以不完整事件结束。');} }
 }

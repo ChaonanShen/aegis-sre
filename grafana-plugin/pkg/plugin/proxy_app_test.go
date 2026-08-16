@@ -253,6 +253,31 @@ func TestFolderAuthorizationRejectsUnknownRouteBeforeProxy(t *testing.T) {
 	}
 }
 
+func TestFolderAuthorizationAcceptsDownloadQueryScopeAndRejectsAmbiguity(t *testing.T) {
+	app := testProxyApp(t, "http://control-plane.invalid", "")
+	var checkedFolder string
+	app.folderAccess = func(_ *http.Request, _ string, folder string) (bool, error) {
+		checkedFolder = folder
+		return false, nil
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/runs/run-1/artifacts/download?path=report.md&folder_uid=folder-a", nil)
+	request.Header.Set(headerGrafanaID, "signed-token")
+	response := httptest.NewRecorder()
+	app.requireFolderAuthorization(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("denied request reached upstream") })).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || checkedFolder != "folder-a" {
+		t.Fatalf("status=%d folder=%q body=%s", response.Code, checkedFolder, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/v1/runs/run-1/artifacts/download?path=report.md&folder_uid=folder-b", nil)
+	request.Header.Set(headerGrafanaID, "signed-token")
+	request.Header.Set(headerFolderUID, "folder-a")
+	response = httptest.NewRecorder()
+	app.requireFolderAuthorization(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("ambiguous request reached upstream") })).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func testProxyApp(t *testing.T, rawURL, token string) *App {
 	t.Helper()
 	target, err := url.Parse(rawURL)

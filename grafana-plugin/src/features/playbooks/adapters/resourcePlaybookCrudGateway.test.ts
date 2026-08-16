@@ -18,9 +18,24 @@ const run = {
 };
 
 describe('Control Plane Playbook CRUD gateway', () => {
+  test('requires an explicit Folder binding before any real request', async () => {
+    const backend = fakeBackend([]);
+    const root = createResourcePlaybookCrudGateway({ backendSrv: backend });
+
+    await expect(root.listPlaybooks()).rejects.toMatchObject({ code: 'invalid_argument' });
+    expect(backend.fetch).not.toHaveBeenCalled();
+
+    const scoped = root.withFolder!('ops');
+    (backend.fetch as jest.Mock).mockReturnValueOnce(of(response({ items: [], has_more: false })));
+    await expect(scoped.listPlaybooks()).resolves.toEqual([]);
+    expect((backend.fetch as jest.Mock).mock.calls[0][0]).toEqual(
+      expect.objectContaining({ headers: { 'X-Aegis-Folder-UID': 'ops' } })
+    );
+  });
+
   test('lists summaries without N+1 detail requests', async () => {
     const backend = fakeBackend([{ items: [{ id: 'pbk_scope_abcdefgh', name: 'diagnose', description: 'Diagnose service', status: 'active' }], has_more: false }]);
-    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
     await expect(gateway.listPlaybooks()).resolves.toEqual([
       { id: 'pbk_scope_abcdefgh', name: 'diagnose', description: 'Diagnose service', status: 'active' },
     ]);
@@ -29,18 +44,18 @@ describe('Control Plane Playbook CRUD gateway', () => {
 
   test('loads detail source directly', async () => {
     const backend = fakeBackend([{ id: 'pbk_scope_abcdefgh', name: 'diagnose', description: 'Diagnose service', status: 'active', source }]);
-    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
     await expect(gateway.getPlaybook('pbk_scope_abcdefgh')).resolves.toMatchObject({ source });
     expect((backend.fetch as jest.Mock).mock.calls[0][0]).toMatchObject({ url: expect.stringContaining('/pbk_scope_abcdefgh') });
   });
 
   test('uses the operation idempotency key supplied by the editor', async () => {
     const backend = fakeBackend([{ id: 'pbk_scope_abcdefgh', name: 'diagnose', description: 'Diagnose service', status: 'active', source }]);
-    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
     await gateway.createPlaybook({ source, idempotencyKey: 'playbook-operation-123' });
     expect((backend.fetch as jest.Mock).mock.calls[0][0]).toEqual(expect.objectContaining({
       method: 'POST', data: source,
-      headers: { 'Content-Type': 'application/yaml', 'Idempotency-Key': 'playbook-operation-123' },
+      headers: expect.objectContaining({ 'Content-Type': 'application/yaml', 'Idempotency-Key': 'playbook-operation-123', 'X-Aegis-Folder-UID': 'ops' }),
     }));
   });
 
@@ -50,7 +65,7 @@ describe('Control Plane Playbook CRUD gateway', () => {
       { id: 'pbk_scope_abcdefgh', name: 'diagnose', description: 'Diagnose service', status: 'active', source },
       undefined,
     ]);
-    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
     await expect(gateway.validatePlaybook(source)).resolves.toEqual({ valid: true, errors: [] });
     await gateway.updatePlaybook('pbk_scope_abcdefgh', { source });
     await gateway.deletePlaybook('pbk_scope_abcdefgh');
@@ -65,14 +80,14 @@ describe('Control Plane Playbook CRUD gateway', () => {
       { valid: true, errors: [] },
       { id: 'pbk_scope_abcdefgh', name: 'controller', description: '', status: 'active', source: controllerSource },
     ]);
-    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
     await expect(gateway.validatePlaybook(controllerSource)).resolves.toEqual({ valid: true, errors: [] });
     await expect(gateway.getPlaybook('pbk_scope_abcdefgh')).resolves.toMatchObject({ source: controllerSource });
   });
 
   test('starts, polls, lists and cancels real Dagu runs', async () => {
     const backend = fakeBackend([{ ...run, status: 'queued' }, run, { items: [run], has_more: false }, undefined, { ...run, status: 'queued' }]);
-    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
 
     await expect(
       gateway.startRun('pbk_scope_abcdefgh', { parameters: { service: 'api' }, idempotencyKey: 'run-operation-123' })
@@ -87,13 +102,13 @@ describe('Control Plane Playbook CRUD gateway', () => {
       expect.objectContaining({
         method: 'POST',
         data: { parameters: { service: 'api' } },
-        headers: { 'Idempotency-Key': 'run-operation-123' },
+        headers: expect.objectContaining({ 'Idempotency-Key': 'run-operation-123', 'X-Aegis-Folder-UID': 'ops' }),
         url: expect.stringContaining('/playbooks/pbk_scope_abcdefgh/runs'),
       }),
       expect.objectContaining({ method: 'GET', url: expect.stringContaining('/runs/run_abcdefgh') }),
       expect.objectContaining({ method: 'GET', url: expect.stringContaining('/playbooks/pbk_scope_abcdefgh/runs') }),
       expect.objectContaining({ method: 'POST', url: expect.stringContaining('/runs/run_abcdefgh:cancel') }),
-      expect.objectContaining({ method: 'POST', headers: { 'Idempotency-Key': 'retry-operation-123' }, url: expect.stringContaining('/runs/run_abcdefgh:retry') }),
+      expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'Idempotency-Key': 'retry-operation-123', 'X-Aegis-Folder-UID': 'ops' }), url: expect.stringContaining('/runs/run_abcdefgh:retry') }),
     ]);
   });
 
@@ -104,10 +119,10 @@ describe('Control Plane Playbook CRUD gateway', () => {
       fetch: jest.fn(() => of(response(terminal))),
       chunked: jest.fn(() => of(response(event))),
     } as unknown as BackendSrv;
-    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
 
     const snapshots = [];
-    for await (const snapshot of gateway.streamRun!('run_abcdefgh', 0)) snapshots.push(snapshot);
+    for await (const snapshot of gateway.streamRun!('run_abcdefgh', 0)) {snapshots.push(snapshot);}
 
     expect(snapshots).toEqual([expect.objectContaining({ id: 'run_abcdefgh', status: 'succeeded' })]);
     expect(backend.fetch).toHaveBeenCalledWith(expect.objectContaining({ url: expect.stringContaining('/runs/run_abcdefgh') }));
@@ -120,16 +135,16 @@ describe('Control Plane Playbook CRUD gateway', () => {
       { items: [{ name: 'report.md', path: 'reports/report.md', media_type: 'text/markdown', size: 12 }] },
       { name: 'report.md', path: 'reports/report.md', media_type: 'text/markdown', size: 12, text: 'done', truncated: false },
     ]);
-    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend });
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
     await gateway.completeHumanTask!('run_abcdefgh', 'approve', { answer: 'yes' }, 'human-operation-123');
     await gateway.resolveApproval!('run_abcdefgh', 'approve', 'approve', { reason: 'ok' }, 'approval-operation-123');
     await expect(gateway.listArtifacts!('run_abcdefgh')).resolves.toEqual([{ name: 'report.md', path: 'reports/report.md', mediaType: 'text/markdown', size: 12 }]);
     await expect(gateway.previewArtifact!('run_abcdefgh', 'reports/report.md')).resolves.toMatchObject({ text: 'done', truncated: false });
     expect(gateway.artifactDownloadUrl!('run_abcdefgh', 'reports/report.md')).toBe(
-      '/api/plugins/grafana-plugin-app/resources/api/v1/runs/run_abcdefgh/artifacts/download?path=reports%2Freport.md'
+      '/api/plugins/grafana-plugin-app/resources/api/v1/runs/run_abcdefgh/artifacts/download?path=reports%2Freport.md&folder_uid=ops'
     );
     const requests = (backend.fetch as jest.Mock).mock.calls.map(([request]) => request as BackendSrvRequest);
-    expect(requests[0]).toEqual(expect.objectContaining({ method: 'POST', headers: { 'Idempotency-Key': 'human-operation-123' } }));
+    expect(requests[0]).toEqual(expect.objectContaining({ method: 'POST', headers: expect.objectContaining({ 'Idempotency-Key': 'human-operation-123', 'X-Aegis-Folder-UID': 'ops' }) }));
     expect(requests[1]).toEqual(expect.objectContaining({ method: 'POST', data: { decision: 'approve', inputs: { reason: 'ok' } } }));
   });
 });

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, Plus, Search } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppServices } from '../../app/AppServices';
+import { useAppShell } from '../../app/AppShellContext';
 import { ROUTES } from '../../constants';
 import { prefixRoute } from '../../utils/utils.routing';
 import { usePlaybooksController } from './application/usePlaybooksController';
@@ -16,17 +17,30 @@ import './playbooks.css';
 export default function PlaybooksPage() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { playbookGateway } = useAppServices();
+  const { playbookGateway, runtimeMode } = useAppServices();
+  const { activeFolder } = useAppShell();
+  const gateway = useMemo(
+    () =>
+      activeFolder && playbookGateway.withFolder
+        ? playbookGateway.withFolder(activeFolder.uid)
+        : runtimeMode === 'fixture'
+          ? playbookGateway
+          : undefined,
+    [activeFolder, playbookGateway, runtimeMode]
+  );
   const tail = location.pathname.split(`/${ROUTES.Playbooks}/`)[1] ?? '';
   const [resourceId, action] = tail.split('/');
 
+  if (!gateway) {
+    return <div className="playbook-loading">当前没有可访问的 Grafana Folder。</div>;
+  }
   if (!resourceId) {
-    return <PlaybookListRoute gateway={playbookGateway} />;
+    return <PlaybookListRoute gateway={gateway} />;
   }
   if (resourceId === 'new') {
-    return <PlaybookEditor gateway={playbookGateway} onSaved={(saved) => navigate(prefixRoute(`${ROUTES.Playbooks}/${saved.id}`))} />;
+    return <PlaybookEditor gateway={gateway} onSaved={(saved) => navigate(prefixRoute(`${ROUTES.Playbooks}/${saved.id}`))} />;
   }
-  return <PlaybookResourceRoute edit={action === 'edit'} gateway={playbookGateway} id={resourceId} key={`${resourceId}:${action}`} />;
+  return <PlaybookResourceRoute edit={action === 'edit'} gateway={gateway} id={resourceId} key={`${activeFolder?.uid}:${resourceId}:${action}`} />;
 }
 
 function PlaybookListRoute({ gateway }: { gateway: PlaybookCrudGateway }) {
