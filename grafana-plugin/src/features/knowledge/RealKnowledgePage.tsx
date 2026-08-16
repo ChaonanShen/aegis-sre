@@ -17,6 +17,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
   const { activeFolder } = useAppShell();
   const folderUid = activeFolder?.uid;
   const writable = activeFolder?.permission === 'Edit' || activeFolder?.permission === 'Admin';
+  const admin = activeFolder?.permission === 'Admin';
   const [bases, setBases] = useState<Loadable<KnowledgeBaseRecord[]>>({ status: 'loading' });
   const [selectedBaseId, setSelectedBaseId] = useState<string>();
   const [documents, setDocuments] = useState<Loadable<KnowledgeDocumentRecord[]>>({ status: 'loading' });
@@ -173,6 +174,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
                 <KnowledgeBaseActions
                   base={selectedBase}
                   busy={busy}
+                  canDelete={admin}
                   onMutate={mutate}
                   gateway={gateway}
                   folderUid={folderUid}
@@ -228,6 +230,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
 function KnowledgeBaseActions({
   base,
   busy,
+  canDelete,
   folderUid,
   gateway,
   onMutate,
@@ -235,6 +238,7 @@ function KnowledgeBaseActions({
 }: {
   base: KnowledgeBaseRecord;
   busy: boolean;
+  canDelete: boolean;
   folderUid: string;
   gateway: KnowledgeManagementGateway;
   onMutate: (operation: () => Promise<void>, success: string) => Promise<void>;
@@ -280,9 +284,11 @@ function KnowledgeBaseActions({
       <button className="knowledge-button secondary" disabled={busy} onClick={() => void toggle()} type="button">
         {base.status === 'active' ? '停用' : '启用'}
       </button>
-      <button className="knowledge-button danger" disabled={busy} onClick={remove} type="button">
-        <Trash2 size={13} /> 删除
-      </button>
+      {canDelete && (
+        <button className="knowledge-button danger" disabled={busy} onClick={remove} type="button">
+          <Trash2 size={13} /> 删除
+        </button>
+      )}
     </div>
   );
 }

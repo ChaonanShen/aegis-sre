@@ -87,7 +87,7 @@ describe('Control Plane Knowledge management gateway', () => {
       expect.stringContaining(`${document.id}:index`),
       expect.stringContaining(`${document.id}:stop`),
       expect.stringContaining(document.id),
-      expect.stringContaining('/knowledge/search'),
+      expect.stringContaining('/knowledge:search'),
     ]);
     expect(requests[3].data).toEqual({ query: 'restart', knowledge_base_ids: [kb.id], limit: 5, threshold: 0.2 });
   });

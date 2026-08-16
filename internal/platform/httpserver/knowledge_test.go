@@ -167,6 +167,24 @@ func TestDocumentMetadataUpdateUsesFrozenPutContract(t *testing.T) {
 	}
 }
 
+func TestDeleteKnowledgeBaseRequiresFolderAdmin(t *testing.T) {
+	server, _ := newKnowledgeHTTPServer(t)
+	request := knowledgeRequest(http.MethodDelete, "/api/v1/knowledge-bases/kbs_abcdefgh", "")
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("write status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	request = knowledgeRequest(http.MethodDelete, "/api/v1/knowledge-bases/kbs_abcdefgh", "")
+	request.Header.Set("X-Aegis-Folder-Access", "admin")
+	response = httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("admin status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func newKnowledgeHTTPServer(t *testing.T) (*http.Server, *knowledgeHTTPFake) {
 	t.Helper()
 	ids, err := knowledgeid.New([]byte("01234567890123456789012345678901"))

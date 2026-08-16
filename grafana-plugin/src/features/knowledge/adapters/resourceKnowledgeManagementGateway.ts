@@ -128,7 +128,7 @@ export function createResourceKnowledgeManagementGateway(
       });
     },
     async search(folderUid, input, signal) {
-      const response = await client().request('/api/v1/knowledge/search', isSearchResponse, {
+      const response = await client().request('/api/v1/knowledge:search', isSearchResponse, {
         method: 'POST',
         data: {
           query: input.query,

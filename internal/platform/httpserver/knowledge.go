@@ -123,7 +123,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		writeJSON(w, http.StatusOK, knowledgeCollectionJSON(collection))
 	})
 	mux.HandleFunc("DELETE /api/v1/knowledge-bases/{knowledge_base_id}", func(w http.ResponseWriter, request *http.Request) {
-		actor, ref, ok := knowledgeCollectionRequest(w, request, true)
+		actor, ref, ok := knowledgeCollectionRequestWithAccess(w, request, folderAccessAdmin)
 		if !ok {
 			return
 		}
@@ -329,7 +329,15 @@ func requireKnowledgeActor(w http.ResponseWriter, request *http.Request, write b
 }
 
 func knowledgeCollectionRequest(w http.ResponseWriter, request *http.Request, write bool) (domain.ActorContext, ports.KnowledgeCollectionRef, bool) {
-	actor, ok := requireKnowledgeActor(w, request, write)
+	required := folderAccessRead
+	if write {
+		required = folderAccessWrite
+	}
+	return knowledgeCollectionRequestWithAccess(w, request, required)
+}
+
+func knowledgeCollectionRequestWithAccess(w http.ResponseWriter, request *http.Request, required folderAccess) (domain.ActorContext, ports.KnowledgeCollectionRef, bool) {
+	actor, ok := requireFolderAccess(w, request, required)
 	if !ok {
 		return domain.ActorContext{}, ports.KnowledgeCollectionRef{}, false
 	}

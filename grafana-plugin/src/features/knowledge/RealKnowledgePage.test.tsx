@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { AppServicesProvider } from '../../app/AppServices';
 import { AppShellProvider } from '../../app/AppShellContext';
 import { FolderGateway } from '../../app/ports/FolderGateway';
+import { FolderPermission } from '../../app/model';
 import RealKnowledgePage from './RealKnowledgePage';
 import { KnowledgeBaseRecord, KnowledgeDocumentRecord } from './managementModel';
 import { KnowledgeManagementGateway } from './ports/KnowledgeManagementGateway';
@@ -111,11 +112,23 @@ describe('real Knowledge management page', () => {
       })
     );
   });
+
+  test('shows root deletion only to Folder admins while editors retain ordinary writes', async () => {
+    const editor = renderPage(fakeGateway(), 'Edit');
+    await screen.findByRole('heading', { name: 'Operations' });
+    expect(screen.getByRole('button', { name: '保存名称' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /删除$/ })).not.toBeInTheDocument();
+    editor.unmount();
+
+    renderPage(fakeGateway(), 'Admin');
+    await screen.findByRole('heading', { name: 'Operations' });
+    expect(screen.getByRole('button', { name: /删除$/ })).toBeInTheDocument();
+  });
 });
 
-function renderPage(gateway: KnowledgeManagementGateway) {
+function renderPage(gateway: KnowledgeManagementGateway, permission: FolderPermission = 'Edit') {
   const folderGateway: FolderGateway = {
-    listFolders: async () => [{ uid: 'ops', title: 'Operations', permission: 'Edit', serviceCount: 0 }],
+    listFolders: async () => [{ uid: 'ops', title: 'Operations', permission, serviceCount: 0 }],
   };
   return render(
     <AppServicesProvider runtimeMode="real" services={{ folderGateway, knowledgeManagementGateway: gateway }}>
