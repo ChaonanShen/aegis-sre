@@ -99,7 +99,9 @@ export function createFixtureWorkbenchGateway(options: FixtureWorkbenchGatewayOp
       await delay(latencyMs, signal);
       const sessions = readSessions();
       const found = sessions.find(({ session }) => session.id === sessionId);
-      if (!found) throw new SessionNotFoundError(sessionId);
+      if (!found) {
+        throw new SessionNotFoundError(sessionId);
+      }
       found.session.title = title.trim();
       found.session.updatedAt = now().toISOString();
       writeSessions(sessions);
