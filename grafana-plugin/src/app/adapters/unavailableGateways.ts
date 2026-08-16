@@ -24,6 +24,6 @@ function unavailable<T extends object>(capability: string): T {
 export const unavailableAlertGateway = unavailable<AlertGateway>('Grafana Alerts');
 export const unavailableApprovalGateway = unavailable<ApprovalGateway>('Approvals');
 export const unavailableAuditGateway = unavailable<AuditGateway>('跨 Provider Audit');
-export const unavailableKnowledgeGateway = unavailable<KnowledgeGateway>('Knowledge / RAGFlow');
+export const unavailableKnowledgeGateway = unavailable<KnowledgeGateway>('Knowledge');
 export const unavailableSkillGateway = unavailable<SkillGateway>('Agent Skills');
 export const unavailableFolderGateway = unavailable<FolderGateway>('Grafana Folder');
