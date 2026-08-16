@@ -604,10 +604,13 @@ type DocumentUpload struct {
 
 // KnowledgeBase defines model for KnowledgeBase.
 type KnowledgeBase struct {
-	CreatedAt time.Time           `json:"created_at"`
-	FolderUid string              `json:"folder_uid"`
-	Id        BusinessID          `json:"id"`
-	Name      string              `json:"name"`
+	CreatedAt time.Time  `json:"created_at"`
+	FolderUid string     `json:"folder_uid"`
+	Id        BusinessID `json:"id"`
+	Name      string     `json:"name"`
+
+	// ReadOnly True for legacy user-scoped resources that require an Admin migration before mutation.
+	ReadOnly  bool                `json:"read_only"`
 	Status    KnowledgeBaseStatus `json:"status"`
 	UpdatedAt time.Time           `json:"updated_at"`
 }

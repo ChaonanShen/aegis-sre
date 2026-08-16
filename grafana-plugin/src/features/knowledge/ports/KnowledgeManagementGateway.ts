@@ -22,6 +22,7 @@ export interface KnowledgeManagementGateway {
     signal?: AbortSignal
   ): Promise<KnowledgeBaseRecord>;
   deleteKnowledgeBase(folderUid: string, id: string, signal?: AbortSignal): Promise<void>;
+  migrateLegacyKnowledgeBase(folderUid: string, id: string, signal?: AbortSignal): Promise<KnowledgeBaseRecord>;
   listDocuments(folderUid: string, knowledgeBaseId: string, signal?: AbortSignal): Promise<KnowledgeDocumentRecord[]>;
   getDocument(
     folderUid: string,

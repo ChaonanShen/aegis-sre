@@ -13,6 +13,7 @@ const kb: KnowledgeBaseRecord = {
   name: 'Operations',
   folder_uid: 'ops',
   status: 'active',
+  read_only: false,
   created_at: '2026-08-14T00:00:00Z',
   updated_at: '2026-08-14T00:00:00Z',
 };
@@ -124,6 +125,18 @@ describe('real Knowledge management page', () => {
     await screen.findByRole('heading', { name: 'Operations' });
     expect(screen.getByRole('button', { name: /删除$/ })).toBeInTheDocument();
   });
+
+  test('keeps legacy knowledge bases read-only and exposes provider-native migration only to admins', async () => {
+    const gateway = fakeGateway();
+    gateway.listKnowledgeBases = jest.fn(async () => [{ ...kb, read_only: true }]);
+    renderPage(gateway, 'Admin');
+
+    expect(await screen.findByText(/legacy 用户作用域知识库/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '保存名称' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /上传/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '迁移到当前 Folder' }));
+    await waitFor(() => expect(gateway.migrateLegacyKnowledgeBase).toHaveBeenCalledWith('ops', kb.id));
+  });
 });
 
 function renderPage(gateway: KnowledgeManagementGateway, permission: FolderPermission = 'Edit') {
@@ -145,6 +158,7 @@ function fakeGateway(): KnowledgeManagementGateway {
     createKnowledgeBase: jest.fn(async () => kb),
     updateKnowledgeBase: jest.fn(async () => kb),
     deleteKnowledgeBase: jest.fn(async () => undefined),
+    migrateLegacyKnowledgeBase: jest.fn(async () => kb),
     listDocuments: jest.fn(async () => [document]),
     getDocument: jest.fn(async () => document),
     uploadDocument: jest.fn(async () => document),

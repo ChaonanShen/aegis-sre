@@ -143,6 +143,23 @@ class Repository:
                 raise NotFoundError("collection not found")
         return self.get_collection(collection_id, scope)
 
+    def migrate_collection_scope(
+        self, collection_id: str, source_scope: str, target_scope: str
+    ) -> Collection:
+        timestamp = now_iso()
+        with self._lock, self._connect() as connection:
+            try:
+                cursor = connection.execute(
+                    """UPDATE collections SET scope = ?, updated_at = ?
+                       WHERE id = ? AND scope = ?""",
+                    (target_scope, timestamp, collection_id, source_scope),
+                )
+            except sqlite3.IntegrityError as error:
+                raise ConflictError("target collection scope conflicts") from error
+            if cursor.rowcount != 1:
+                raise NotFoundError("collection not found")
+        return self.get_collection(collection_id, target_scope)
+
     def delete_collection(self, collection_id: str, scope: str) -> None:
         with self._lock, self._connect() as connection:
             try:

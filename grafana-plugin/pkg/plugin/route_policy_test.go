@@ -26,6 +26,7 @@ func TestRoutePolicyFor(t *testing.T) {
 		{name: "knowledge list", method: http.MethodGet, path: "/api/v1/knowledge-bases", access: folderAccessRead},
 		{name: "knowledge create", method: http.MethodPost, path: "/api/v1/knowledge-bases", access: folderAccessWrite},
 		{name: "knowledge delete", method: http.MethodDelete, path: "/api/v1/knowledge-bases/kb-1", access: folderAccessAdmin},
+		{name: "knowledge migration", method: http.MethodPost, path: "/api/v1/knowledge-bases/kb-1/scope-migrations", access: folderAccessAdmin},
 		{name: "document list", method: http.MethodGet, path: "/api/v1/knowledge-bases/kb-1/documents", access: folderAccessRead},
 		{name: "document update", method: http.MethodPatch, path: "/api/v1/knowledge-bases/kb-1/documents/doc-1", access: folderAccessWrite},
 		{name: "document index", method: http.MethodPost, path: "/api/v1/knowledge-bases/kb-1/documents/doc-1:index", access: folderAccessWrite},

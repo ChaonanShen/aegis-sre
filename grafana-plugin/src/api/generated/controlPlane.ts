@@ -184,6 +184,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/knowledge-bases/{knowledge_base_id}/scope-migrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["migrateLegacyKnowledgeBaseScope"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/knowledge-bases/{knowledge_base_id}/documents": {
         parameters: {
             query?: never;
@@ -752,6 +770,8 @@ export interface components {
             folder_uid: string;
             /** @enum {string} */
             status: "active" | "disabled";
+            /** @description True for legacy user-scoped resources that require an Admin migration before mutation. */
+            read_only: boolean;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -1394,6 +1414,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            default: components["responses"]["Problem"];
+        };
+    };
+    migrateLegacyKnowledgeBaseScope: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Folder-owned knowledge base after an idempotent provider-native scope migration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KnowledgeBase"];
+                };
             };
             default: components["responses"]["Problem"];
         };

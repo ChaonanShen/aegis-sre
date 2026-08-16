@@ -272,6 +272,20 @@ paths:
           description: Knowledge base deleted
         default:
           $ref: '#/components/responses/Problem'
+  /knowledge-bases/{knowledge_base_id}/scope-migrations:
+    parameters:
+      - $ref: '#/components/parameters/KnowledgeBaseID'
+    post:
+      operationId: migrateLegacyKnowledgeBaseScope
+      responses:
+        '200':
+          description: Folder-owned knowledge base after an idempotent provider-native scope migration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/KnowledgeBase'
+        default:
+          $ref: '#/components/responses/Problem'
   /knowledge-bases/{knowledge_base_id}/documents:
     parameters:
       - $ref: '#/components/parameters/KnowledgeBaseID'
@@ -1181,7 +1195,7 @@ components:
     KnowledgeBase:
       type: object
       additionalProperties: false
-      required: [id, name, folder_uid, status, created_at, updated_at]
+      required: [id, name, folder_uid, status, read_only, created_at, updated_at]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
@@ -1192,6 +1206,9 @@ components:
         status:
           type: string
           enum: [active, disabled]
+        read_only:
+          type: boolean
+          description: True for legacy user-scoped resources that require an Admin migration before mutation.
         created_at:
           type: string
           format: date-time

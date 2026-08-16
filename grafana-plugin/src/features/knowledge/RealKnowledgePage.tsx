@@ -170,7 +170,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
                   Folder: {activeFolder?.title} · {selectedBase.status}
                 </p>
               </div>
-              {writable && (
+              {writable && !selectedBase.read_only && (
                 <KnowledgeBaseActions
                   base={selectedBase}
                   busy={busy}
@@ -181,6 +181,21 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
                   refresh={() => setRefreshBases((value) => value + 1)}
                 />
               )}
+              {admin && selectedBase.read_only && (
+                <button
+                  className="knowledge-button secondary"
+                  disabled={busy}
+                  onClick={() =>
+                    void mutate(async () => {
+                      await gateway.migrateLegacyKnowledgeBase(folderUid, selectedBase.id);
+                      setRefreshBases((value) => value + 1);
+                    }, '知识库已迁移为当前 Folder 原生资源。')
+                  }
+                  type="button"
+                >
+                  迁移到当前 Folder
+                </button>
+              )}
             </header>
             {notice && (
               <div className="knowledge-management-notice" role="status">
@@ -190,6 +205,11 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
             {!writable && (
               <div className="knowledge-permission-banner">
                 当前 Folder 仅有查看权限；服务端会继续执行最终权限校验。
+              </div>
+            )}
+            {selectedBase.read_only && (
+              <div className="knowledge-permission-banner">
+                这是 legacy 用户作用域知识库，只能读取；Folder Admin 可执行原生 scope 迁移，原文档不会重新上传。
               </div>
             )}
             <nav className="knowledge-management-tabs" aria-label="知识库功能">
@@ -208,7 +228,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
                 knowledgeBaseId={selectedBase.id}
                 mutate={mutate}
                 refresh={() => setRefreshDocuments((value) => value + 1)}
-                writable={writable}
+                writable={writable && !selectedBase.read_only}
               />
             )}
             {tab === 'search' && (

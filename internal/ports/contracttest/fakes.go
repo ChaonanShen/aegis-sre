@@ -85,6 +85,9 @@ func (*KnowledgeProvider) CreateCollection(context.Context, domain.ActorContext,
 func (*KnowledgeProvider) UpdateCollection(context.Context, domain.ActorContext, ports.KnowledgeCollectionRef, ports.UpdateKnowledgeCollectionInput) (ports.KnowledgeCollection, error) {
 	return ports.KnowledgeCollection{}, ErrNotConfigured
 }
+func (*KnowledgeProvider) MigrateCollectionScope(context.Context, domain.ActorContext, ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
+	return ports.KnowledgeCollection{}, ErrNotConfigured
+}
 func (fake *KnowledgeProvider) DeleteCollection(context.Context, domain.ActorContext, ports.KnowledgeCollectionRef) error {
 	return fake.Err
 }

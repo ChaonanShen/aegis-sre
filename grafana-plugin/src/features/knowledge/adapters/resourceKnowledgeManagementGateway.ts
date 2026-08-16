@@ -49,6 +49,13 @@ export function createResourceKnowledgeManagementGateway(
     deleteKnowledgeBase(folderUid, id, signal) {
       return client().requestVoid(kbPath(id), { method: 'DELETE', headers: headers(folderUid), signal });
     },
+    migrateLegacyKnowledgeBase(folderUid, id, signal) {
+      return client().request(`${kbPath(id)}/scope-migrations`, isKnowledgeBase, {
+        method: 'POST',
+        headers: headers(folderUid),
+        signal,
+      });
+    },
     async listDocuments(folderUid, knowledgeBaseId, signal) {
       return collectPages(
         async (cursor) =>
@@ -205,6 +212,7 @@ function isKnowledgeBase(value: unknown): value is KnowledgeBase {
     typeof value.name === 'string' &&
     typeof value.folder_uid === 'string' &&
     (value.status === 'active' || value.status === 'disabled') &&
+    typeof value.read_only === 'boolean' &&
     typeof value.created_at === 'string' &&
     typeof value.updated_at === 'string'
   );

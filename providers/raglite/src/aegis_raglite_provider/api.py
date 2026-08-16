@@ -29,6 +29,10 @@ class CollectionUpdate(BaseModel):
     status: str
 
 
+class CollectionScopeMigration(BaseModel):
+    target_scope: str
+
+
 class DocumentUpdate(BaseModel):
     service: str = ""
     tags: list[str] = Field(default_factory=list)
@@ -122,6 +126,18 @@ def create_app(
     @app.get("/v1/collections/{collection_id}")
     def get_collection(collection_id: str, actor_scope: str = Depends(scope)):
         return asdict(service.get_collection(collection_id, actor_scope))
+
+    @app.post("/v1/collections/{collection_id}/scope-migrations")
+    def migrate_collection_scope(
+        collection_id: str,
+        body: CollectionScopeMigration,
+        actor_scope: str = Depends(scope),
+    ):
+        return asdict(
+            service.migrate_collection_scope(
+                collection_id, actor_scope, body.target_scope
+            )
+        )
 
     @app.patch("/v1/collections/{collection_id}")
     def update_collection(

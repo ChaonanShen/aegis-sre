@@ -60,6 +60,21 @@ def test_collection_name_is_unique_only_inside_scope_and_folder(tmp_path: Path) 
     )
 
 
+def test_collection_scope_migration_is_atomic_for_collection_and_documents(tmp_path: Path) -> None:
+    repository = new_repository(tmp_path)
+    repository.create_collection(collection("scp_legacy"))
+    repository.create_document(document(), "scp_legacy")
+
+    migrated = repository.migrate_collection_scope(
+        "kbs_abcdefgh", "scp_legacy", "scp_folder"
+    )
+
+    assert migrated.scope == "scp_folder"
+    assert repository.get_document("doc_abcdefgh", "scp_folder").id == "doc_abcdefgh"
+    with pytest.raises(NotFoundError):
+        repository.get_collection("kbs_abcdefgh", "scp_legacy")
+
+
 def test_document_cannot_cross_collection_scope(tmp_path: Path) -> None:
     repository = new_repository(tmp_path)
     repository.create_collection(collection())

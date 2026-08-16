@@ -111,6 +111,9 @@ func policyForKnowledge(method string, segments []string) (routePolicy, bool) {
 			return routePolicy{access: folderAccessAdmin}, true
 		}
 	case 3:
+		if segments[2] == "scope-migrations" {
+			return routePolicy{access: folderAccessAdmin}, method == http.MethodPost
+		}
 		if segments[2] != "documents" {
 			break
 		}

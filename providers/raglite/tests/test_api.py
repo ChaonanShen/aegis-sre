@@ -99,6 +99,32 @@ def test_cross_scope_resources_are_not_disclosed(tmp_path: Path) -> None:
     assert response.json()["code"] == "not_found"
 
 
+def test_scope_migration_moves_collection_without_reuploading_documents(tmp_path: Path) -> None:
+    client, _, backend = new_client(tmp_path)
+    client.post(
+        "/v1/collections",
+        headers=headers("scp_legacy"),
+        json={"id": "kbs_abcdefgh", "name": "Operations", "folder_uid": "folder-a"},
+    )
+    client.post(
+        "/v1/collections/kbs_abcdefgh/documents",
+        headers=headers("scp_legacy"),
+        data={"id": "doc_abcdefgh"},
+        files={"file": ("runbook.md", b"# Restart", "text/markdown")},
+    )
+
+    response = client.post(
+        "/v1/collections/kbs_abcdefgh/scope-migrations",
+        headers=headers("scp_legacy"),
+        json={"target_scope": "scp_folder"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["scope"] == "scp_folder"
+    assert client.get("/v1/documents/doc_abcdefgh", headers=headers("scp_folder")).status_code == 200
+    assert backend.indexed == []
+
+
 def test_invalid_threshold_returns_stable_capability_error(tmp_path: Path) -> None:
     client, _, _ = new_client(tmp_path)
     client.post(

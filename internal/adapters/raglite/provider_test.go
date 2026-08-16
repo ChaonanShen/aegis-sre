@@ -152,6 +152,27 @@ func TestProviderReadsLegacyUserScopeButRejectsWritesAndOtherUsers(t *testing.T)
 	}
 }
 
+func TestProviderMigratesLegacyScopeAndMakesRetriesIdempotent(t *testing.T) {
+	provider, fake, _, actor := testProvider(t)
+	legacy := fake.collection()
+	legacy.ID = "kbs_legacy12345"
+	legacy.Scope = fake.legacyScope
+	fake.legacyCollection = &legacy
+	ref := ports.KnowledgeCollectionRef{ID: domain.ID(legacy.ID)}
+
+	migrated, err := provider.MigrateCollectionScope(context.Background(), actor, ref)
+	if err != nil || migrated.ReadOnly || migrated.FolderUID != actor.FolderUID || fake.mutations != 1 {
+		t.Fatalf("migrated=%+v mutations=%d err=%v", migrated, fake.mutations, err)
+	}
+	current := fake.collection()
+	current.ID = string(migrated.Ref.ID)
+	current.Name = migrated.Name
+	fake.getCollection = &current
+	if _, err := provider.MigrateCollectionScope(context.Background(), actor, ref); err != nil || fake.mutations != 1 {
+		t.Fatalf("idempotent retry mutations=%d err=%v", fake.mutations, err)
+	}
+}
+
 func appErrorCode(err error) domain.ErrorCode {
 	var appErr *domain.AppError
 	if errors.As(err, &appErr) {
@@ -265,6 +286,14 @@ func (f *fakeClient) UpdateCollection(_ context.Context, scope, _, name, status 
 	value.Name = name
 	value.Status = status
 	f.lastScope = scope
+	return value, f.err
+}
+func (f *fakeClient) MigrateCollectionScope(_ context.Context, sourceScope, _ string, targetScope string) (Collection, error) {
+	f.mutations++
+	f.lastScope = sourceScope
+	value := f.collection()
+	value.Scope = targetScope
+	f.legacyCollection = nil
 	return value, f.err
 }
 func (f *fakeClient) DeleteCollection(_ context.Context, scope, _ string) error {

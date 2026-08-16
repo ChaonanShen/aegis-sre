@@ -21,6 +21,7 @@ type ragliteClient interface {
 	GetCollection(context.Context, string, string) (Collection, error)
 	CreateCollection(context.Context, string, Collection) (Collection, error)
 	UpdateCollection(context.Context, string, string, string, string) (Collection, error)
+	MigrateCollectionScope(context.Context, string, string, string) (Collection, error)
 	DeleteCollection(context.Context, string, string) error
 	ListDocuments(context.Context, string, string) ([]Document, error)
 	GetDocument(context.Context, string, string) (Document, error)
@@ -79,12 +80,15 @@ func (p *Provider) ListCollections(ctx context.Context, actor domain.ActorContex
 		if _, exists := seen[value.Ref.ID]; exists {
 			return domain.Page[ports.KnowledgeCollection]{}, resultUnknown(errors.New("duplicate collection across current and legacy scopes"))
 		}
+		value.ReadOnly = true
 		mapped = append(mapped, value)
 	}
 	return paginate(mapped, page)
 }
 func (p *Provider) GetCollection(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
-	collection, _, err := p.readableCollection(ctx, actor, ref)
+	collection, scope, err := p.readableCollection(ctx, actor, ref)
+	legacyScope, _ := p.ids.LegacyScopeFingerprint(actor)
+	collection.ReadOnly = err == nil && scope == legacyScope
 	return collection, err
 }
 func (p *Provider) CreateCollection(ctx context.Context, actor domain.ActorContext, input ports.CreateKnowledgeCollectionInput) (ports.KnowledgeCollection, error) {
@@ -114,6 +118,29 @@ func (p *Provider) UpdateCollection(ctx context.Context, actor domain.ActorConte
 		return ports.KnowledgeCollection{}, mapProviderError(err)
 	}
 	return mapCollection(item, scope, actor.FolderUID)
+}
+
+func (p *Provider) MigrateCollectionScope(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
+	collection, sourceScope, err := p.readableCollection(ctx, actor, ref)
+	if err != nil {
+		return ports.KnowledgeCollection{}, err
+	}
+	legacyScope, _ := p.ids.LegacyScopeFingerprint(actor)
+	if sourceScope != legacyScope {
+		// Provider 迁移已完成但响应丢失时，重试返回当前资源，保持操作幂等。
+		return collection, nil
+	}
+	targetScope, _ := p.ids.ScopeFingerprint(actor)
+	item, err := p.client.MigrateCollectionScope(ctx, sourceScope, string(ref.ID), targetScope)
+	if err != nil {
+		return ports.KnowledgeCollection{}, mapProviderError(err)
+	}
+	migrated, err := mapCollection(item, targetScope, actor.FolderUID)
+	if err != nil {
+		return ports.KnowledgeCollection{}, err
+	}
+	migrated.Name = collection.Name
+	return migrated, nil
 }
 func (p *Provider) DeleteCollection(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) error {
 	scope, err := p.scope(actor)

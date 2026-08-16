@@ -152,7 +152,9 @@ Playbook UI 管理的 `pbk_` 命名空间和 GitOps DAG 分离，同一个 DAG �
 5. Knowledge 未配置时不注册 endpoint，也不阻止基础 Agent + Playbook 栈启动；已配置但不可达时 readiness 明确失败。
 
 Knowledge 公共 ID 由 Actor/Folder 范围和幂等键确定性生成，Provider 内部 ID 不进入前端契约。Folder
-授权和身份边界见 [ADR 0004](adr/0004-knowledge-identity-and-folder-authorization.md)。
+授权和身份边界见 [ADR 0004](adr/0004-knowledge-identity-and-folder-authorization.md)。legacy v1 Collection
+只允许原创建者读取；Folder Admin 通过 Provider 原生 metadata/scope 迁移升级到 v2，不下载或重传文档，
+也不建立迁移映射表。
 
 ## 6. Canvas 与二进制 Artifact
 

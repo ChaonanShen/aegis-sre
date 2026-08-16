@@ -74,6 +74,11 @@ func (c *Client) UpdateCollection(ctx context.Context, scope, id, name, state st
 	err := c.doJSON(ctx, http.MethodPatch, "/v1/collections/"+url.PathEscape(id), scope, map[string]any{"name": name, "status": state}, &out, true)
 	return out, err
 }
+func (c *Client) MigrateCollectionScope(ctx context.Context, sourceScope, id, targetScope string) (Collection, error) {
+	var out Collection
+	err := c.doJSON(ctx, http.MethodPost, "/v1/collections/"+url.PathEscape(id)+"/scope-migrations", sourceScope, map[string]any{"target_scope": targetScope}, &out, true)
+	return out, err
+}
 func (c *Client) DeleteCollection(ctx context.Context, scope, id string) error {
 	return c.doJSON(ctx, http.MethodDelete, "/v1/collections/"+url.PathEscape(id), scope, nil, nil, true)
 }

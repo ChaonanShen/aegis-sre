@@ -314,6 +314,32 @@ func TestLegacyUserScopedKnowledgeIsCreatorReadOnly(t *testing.T) {
 	}
 }
 
+func TestLegacyScopeMigrationUpdatesDocumentsBeforeDatasetCommit(t *testing.T) {
+	provider, fake, codec, actor := newTestProvider(t)
+	collectionID := domain.ID("kbs_legacy12345")
+	documentID := domain.ID("doc_legacy12345")
+	legacyScope, _ := codec.LegacyScopeFingerprint(actor)
+	targetScope, _ := codec.ScopeFingerprint(actor)
+	dataset := testDataset(t, collectionID, "Legacy", legacyScope)
+	var metadata datasetMetadata
+	_ = json.Unmarshal([]byte(dataset.Description), &metadata)
+	metadata.Version = legacyMetadataVersion
+	dataset.Description = mustJSON(metadata)
+	fake.datasets = []Dataset{dataset}
+	fake.documents = []Document{{ID: "internal-doc", Name: "legacy.md", MetaFields: testDocumentMetadata(documentID, "legacy.md", "text/markdown", "", legacyScope, "sha")}}
+
+	migrated, err := provider.MigrateCollectionScope(context.Background(), actor, ports.KnowledgeCollectionRef{ID: collectionID})
+	if err != nil || migrated.ReadOnly || fake.updateDocumentCalls != 1 || fake.updateDatasetCalls != 1 {
+		t.Fatalf("migrated=%+v document updates=%d dataset updates=%d err=%v", migrated, fake.updateDocumentCalls, fake.updateDatasetCalls, err)
+	}
+	if metadataString(fake.documents[0].MetaFields, metaScope) != targetScope {
+		t.Fatalf("document scope=%q", metadataString(fake.documents[0].MetaFields, metaScope))
+	}
+	if _, err := provider.MigrateCollectionScope(context.Background(), actor, ports.KnowledgeCollectionRef{ID: collectionID}); err != nil || fake.updateDocumentCalls != 1 {
+		t.Fatalf("retry document updates=%d err=%v", fake.updateDocumentCalls, err)
+	}
+}
+
 func mustJSON(value any) string {
 	encoded, err := json.Marshal(value)
 	if err != nil {
@@ -422,8 +448,13 @@ func (fake *fakeRAGFlowClient) CreateDataset(_ context.Context, name, descriptio
 	fake.datasets = append(fake.datasets, dataset)
 	return dataset, nil
 }
-func (fake *fakeRAGFlowClient) UpdateDataset(context.Context, string, string) error {
+func (fake *fakeRAGFlowClient) UpdateDataset(_ context.Context, id, description string) error {
 	fake.updateDatasetCalls++
+	for index := range fake.datasets {
+		if fake.datasets[index].ID == id {
+			fake.datasets[index].Description = description
+		}
+	}
 	return nil
 }
 func (*fakeRAGFlowClient) DeleteDataset(context.Context, string) error { return nil }
@@ -436,10 +467,15 @@ func (fake *fakeRAGFlowClient) UploadDocument(_ context.Context, _ string, name,
 	fake.uploadedDocument = Document{ID: "internal-upload", Name: name, Size: 5, Run: "UNSTART"}
 	return []Document{fake.uploadedDocument}, nil
 }
-func (fake *fakeRAGFlowClient) UpdateDocument(_ context.Context, _, _ string, metadata map[string]any) error {
+func (fake *fakeRAGFlowClient) UpdateDocument(_ context.Context, _, id string, metadata map[string]any) error {
 	fake.updateDocumentCalls++
 	fake.updatedMetadata = cloneMetadata(metadata)
 	fake.uploadedDocument.MetaFields = cloneMetadata(metadata)
+	for index := range fake.documents {
+		if fake.documents[index].ID == id {
+			fake.documents[index].MetaFields = cloneMetadata(metadata)
+		}
+	}
 	return fake.updateDocumentErr
 }
 func (*fakeRAGFlowClient) DeleteDocument(context.Context, string, string) error { return nil }

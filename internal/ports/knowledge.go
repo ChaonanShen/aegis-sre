@@ -21,6 +21,7 @@ type KnowledgeCollection struct {
 	Status    domain.KnowledgeBaseStatus
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	ReadOnly  bool
 }
 
 type CreateKnowledgeCollectionInput struct {
@@ -107,6 +108,7 @@ type KnowledgeProvider interface {
 	GetCollection(context.Context, domain.ActorContext, KnowledgeCollectionRef) (KnowledgeCollection, error)
 	CreateCollection(context.Context, domain.ActorContext, CreateKnowledgeCollectionInput) (KnowledgeCollection, error)
 	UpdateCollection(context.Context, domain.ActorContext, KnowledgeCollectionRef, UpdateKnowledgeCollectionInput) (KnowledgeCollection, error)
+	MigrateCollectionScope(context.Context, domain.ActorContext, KnowledgeCollectionRef) (KnowledgeCollection, error)
 	DeleteCollection(context.Context, domain.ActorContext, KnowledgeCollectionRef) error
 	ListDocuments(context.Context, domain.ActorContext, KnowledgeCollectionRef, domain.PageRequest) (domain.Page[KnowledgeDocument], error)
 	GetDocument(context.Context, domain.ActorContext, KnowledgeDocumentRef) (KnowledgeDocument, error)

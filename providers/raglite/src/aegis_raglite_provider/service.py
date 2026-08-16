@@ -81,6 +81,20 @@ class KnowledgeService:
             collection_id, scope, name=name.strip(), status=status
         )
 
+    def migrate_collection_scope(
+        self, collection_id: str, source_scope: str, target_scope: str
+    ) -> Collection:
+        self._validate_id(collection_id, "kbs_")
+        if (
+            not source_scope.startswith("scp_")
+            or not target_scope.startswith("scp_")
+            or source_scope == target_scope
+        ):
+            raise ValidationError("distinct valid source and target scopes are required")
+        return self.repository.migrate_collection_scope(
+            collection_id, source_scope, target_scope
+        )
+
     def delete_collection(self, collection_id: str, scope: str) -> None:
         documents = self.repository.list_documents(collection_id, scope)
         for document in documents:

@@ -145,6 +145,9 @@ func (fake *knowledgeFake) CreateCollection(context.Context, domain.ActorContext
 func (fake *knowledgeFake) UpdateCollection(context.Context, domain.ActorContext, ports.KnowledgeCollectionRef, ports.UpdateKnowledgeCollectionInput) (ports.KnowledgeCollection, error) {
 	panic("unexpected mutation")
 }
+func (fake *knowledgeFake) MigrateCollectionScope(context.Context, domain.ActorContext, ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
+	panic("unexpected mutation")
+}
 func (fake *knowledgeFake) DeleteCollection(context.Context, domain.ActorContext, ports.KnowledgeCollectionRef) error {
 	panic("unexpected mutation")
 }

@@ -7,6 +7,7 @@ const kb = {
   name: 'Operations',
   folder_uid: 'ops',
   status: 'active',
+  read_only: false,
   created_at: '2026-08-14T00:00:00Z',
   updated_at: '2026-08-14T00:00:00Z',
 } as const;
@@ -90,6 +91,19 @@ describe('Control Plane Knowledge management gateway', () => {
       expect.stringContaining('/knowledge:search'),
     ]);
     expect(requests[3].data).toEqual({ query: 'restart', knowledge_base_ids: [kb.id], limit: 5, threshold: 0.2 });
+  });
+
+  test('uses the explicit Admin scope-migration endpoint without copying document content', async () => {
+    const backend = fakeBackend([kb]);
+    const gateway = createResourceKnowledgeManagementGateway({ backendSrv: backend });
+    await expect(gateway.migrateLegacyKnowledgeBase('ops', kb.id)).resolves.toEqual(kb);
+    expect(calls(backend)[0]).toEqual(
+      expect.objectContaining({
+        method: 'POST',
+        url: expect.stringContaining(`/api/v1/knowledge-bases/${kb.id}/scope-migrations`),
+        headers: { 'X-Aegis-Folder-UID': 'ops' },
+      })
+    );
   });
 
   test('rejects missing folder scope before any network request', async () => {

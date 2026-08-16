@@ -132,6 +132,17 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
+	mux.HandleFunc("POST /api/v1/knowledge-bases/{knowledge_base_id}/scope-migrations", func(w http.ResponseWriter, request *http.Request) {
+		actor, ref, ok := knowledgeCollectionRequestWithAccess(w, request, folderAccessAdmin)
+		if !ok {
+			return
+		}
+		collection, err := provider.MigrateCollectionScope(request.Context(), actor, ref)
+		if handleProviderError(w, request, err) {
+			return
+		}
+		writeJSON(w, http.StatusOK, knowledgeCollectionJSON(collection))
+	})
 
 	mux.HandleFunc("GET /api/v1/knowledge-bases/{knowledge_base_id}/documents", func(w http.ResponseWriter, request *http.Request) {
 		actor, ref, ok := knowledgeCollectionRequest(w, request, false)
@@ -443,7 +454,7 @@ func validKnowledgeTextOrEmpty(value string, max int) bool {
 }
 
 func knowledgeCollectionJSON(collection ports.KnowledgeCollection) map[string]any {
-	return map[string]any{"id": collection.Ref.ID, "name": collection.Name, "folder_uid": collection.FolderUID, "status": collection.Status, "created_at": collection.CreatedAt, "updated_at": collection.UpdatedAt}
+	return map[string]any{"id": collection.Ref.ID, "name": collection.Name, "folder_uid": collection.FolderUID, "status": collection.Status, "read_only": collection.ReadOnly, "created_at": collection.CreatedAt, "updated_at": collection.UpdatedAt}
 }
 
 func knowledgeDocumentJSON(document ports.KnowledgeDocument) map[string]any {

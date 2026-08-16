@@ -168,6 +168,48 @@ func (provider *Provider) UpdateCollection(ctx context.Context, actor domain.Act
 	return provider.GetCollection(ctx, actor, ref)
 }
 
+func (provider *Provider) MigrateCollectionScope(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
+	dataset, metadata, err := provider.resolveDataset(ctx, actor, ref, true)
+	if err != nil {
+		return ports.KnowledgeCollection{}, err
+	}
+	if metadata.Version != legacyMetadataVersion {
+		// 数据集元数据最后提交；请求丢失后的重试在这里直接返回成功结果。
+		return mapDataset(dataset, metadata, actor.FolderUID)
+	}
+	targetScope, _ := provider.ids.ScopeFingerprint(actor)
+	documents, err := provider.listAllDocuments(ctx, dataset.ID)
+	if err != nil {
+		return ports.KnowledgeCollection{}, err
+	}
+	for _, document := range documents {
+		publicID := domain.ID(metadataString(document.MetaFields, metaPublicID))
+		if !publicID.Valid() || !strings.HasPrefix(string(publicID), "doc_") {
+			continue
+		}
+		documentScope := metadataString(document.MetaFields, metaScope)
+		if documentScope == targetScope {
+			continue
+		}
+		if documentScope != metadata.Scope {
+			return ports.KnowledgeCollection{}, resultUnknown(errors.New("managed document scope is inconsistent"))
+		}
+		fields := cloneMetadata(document.MetaFields)
+		fields[metaScope] = targetScope
+		if err := provider.client.UpdateDocument(ctx, dataset.ID, document.ID, fields); err != nil {
+			// 数据集仍保留 legacy scope，管理员可安全重试并继续迁移剩余文档。
+			return ports.KnowledgeCollection{}, resultUnknown(err)
+		}
+	}
+	metadata.Version = metadataVersion
+	metadata.Scope = targetScope
+	description, _ := json.Marshal(metadata)
+	if err := provider.client.UpdateDataset(ctx, dataset.ID, string(description)); err != nil {
+		return ports.KnowledgeCollection{}, mapProviderError(err)
+	}
+	return provider.GetCollection(ctx, actor, ref)
+}
+
 func (provider *Provider) DeleteCollection(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) error {
 	dataset, _, err := provider.resolveDataset(ctx, actor, ref, false)
 	if err != nil {
@@ -400,7 +442,7 @@ func mapDataset(dataset Dataset, metadata datasetMetadata, folderUID string) (po
 	if dataset.Status == "0" {
 		status = domain.KnowledgeBaseDisabled
 	}
-	return ports.KnowledgeCollection{Ref: ports.KnowledgeCollectionRef{ID: publicID}, Name: metadata.DisplayName, FolderUID: folderUID, Status: status, CreatedAt: millis(dataset.CreateTime), UpdatedAt: millis(dataset.UpdateTime)}, nil
+	return ports.KnowledgeCollection{Ref: ports.KnowledgeCollectionRef{ID: publicID}, Name: metadata.DisplayName, FolderUID: folderUID, Status: status, CreatedAt: millis(dataset.CreateTime), UpdatedAt: millis(dataset.UpdateTime), ReadOnly: metadata.Version == legacyMetadataVersion}, nil
 }
 
 func mapDocument(document Document, collectionID domain.ID, scope string) (ports.KnowledgeDocument, bool) {

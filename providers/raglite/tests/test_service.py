@@ -9,7 +9,7 @@ from fakes import FakeBackend
 from aegis_raglite_provider.backend import Chunk
 from aegis_raglite_provider.original_store import OriginalStore
 from aegis_raglite_provider.repository import NotFoundError, Repository
-from aegis_raglite_provider.service import CapabilityError, KnowledgeService
+from aegis_raglite_provider.service import CapabilityError, KnowledgeService, ValidationError
 
 
 def new_service(tmp_path: Path) -> tuple[KnowledgeService, FakeBackend]:
@@ -174,3 +174,9 @@ def test_delete_collection_cleans_all_documents_before_collection(tmp_path: Path
     assert backend.deleted == ["doc_abcdefgh"]
     with pytest.raises(NotFoundError):
         service.get_collection("kbs_abcdefgh", "scope-a")
+
+
+def test_scope_migration_requires_distinct_provider_scopes(tmp_path: Path) -> None:
+    service, _ = new_service(tmp_path)
+    with pytest.raises(ValidationError, match="distinct valid source and target scopes"):
+        service.migrate_collection_scope("kbs_abcdefgh", "scope-a", "scope-a")

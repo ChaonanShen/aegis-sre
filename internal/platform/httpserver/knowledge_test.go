@@ -185,6 +185,24 @@ func TestDeleteKnowledgeBaseRequiresFolderAdmin(t *testing.T) {
 	}
 }
 
+func TestLegacyKnowledgeMigrationRequiresFolderAdminAndReturnsMutableResource(t *testing.T) {
+	server, fake := newKnowledgeHTTPServer(t)
+	request := knowledgeRequest(http.MethodPost, "/api/v1/knowledge-bases/kbs_abcdefgh/scope-migrations", "")
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || fake.migrateCalls != 0 {
+		t.Fatalf("write status=%d calls=%d body=%s", response.Code, fake.migrateCalls, response.Body.String())
+	}
+
+	request = knowledgeRequest(http.MethodPost, "/api/v1/knowledge-bases/kbs_abcdefgh/scope-migrations", "")
+	request.Header.Set("X-Aegis-Folder-Access", "admin")
+	response = httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || fake.migrateCalls != 1 || fake.migrateActor.FolderUID != "folder-a" || !strings.Contains(response.Body.String(), `"read_only":false`) {
+		t.Fatalf("admin status=%d calls=%d actor=%+v body=%s", response.Code, fake.migrateCalls, fake.migrateActor, response.Body.String())
+	}
+}
+
 func newKnowledgeHTTPServer(t *testing.T) (*http.Server, *knowledgeHTTPFake) {
 	t.Helper()
 	ids, err := knowledgeid.New([]byte("01234567890123456789012345678901"))
@@ -223,6 +241,8 @@ type knowledgeHTTPFake struct {
 	startRef      ports.KnowledgeDocumentRef
 	updateRef     ports.KnowledgeDocumentRef
 	updateInput   ports.UpdateKnowledgeDocumentInput
+	migrateCalls  int
+	migrateActor  domain.ActorContext
 }
 
 func (fake *knowledgeHTTPFake) ListCollections(context.Context, domain.ActorContext, string, domain.PageRequest) (domain.Page[ports.KnowledgeCollection], error) {
@@ -232,6 +252,11 @@ func (fake *knowledgeHTTPFake) CreateCollection(_ context.Context, actor domain.
 	fake.createCalls++
 	fake.createActor, fake.createInput = actor, input
 	return ports.KnowledgeCollection{Ref: ports.KnowledgeCollectionRef{ID: input.ID}, Name: input.Name, FolderUID: input.FolderUID, Status: domain.KnowledgeBaseActive}, nil
+}
+func (fake *knowledgeHTTPFake) MigrateCollectionScope(_ context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
+	fake.migrateCalls++
+	fake.migrateActor = actor
+	return ports.KnowledgeCollection{Ref: ref, Name: "Operations", FolderUID: actor.FolderUID, Status: domain.KnowledgeBaseActive}, nil
 }
 func (fake *knowledgeHTTPFake) UploadDocument(_ context.Context, _ domain.ActorContext, collection ports.KnowledgeCollectionRef, file ports.DocumentFile) (ports.KnowledgeDocument, error) {
 	fake.uploadCalls++

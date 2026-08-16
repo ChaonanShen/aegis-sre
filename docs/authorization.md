@@ -308,7 +308,8 @@ Knowledge Base 是 Folder-owned 根资源，Document、Chunk、检索引用继�
 | 列表、详情、检索、Chunk、下载 | `read` |
 | 创建 Knowledge Base、上传文档、更新元数据、开始/停止索引 | `write` |
 | 删除 Document | `write` |
-| 删除整个 Knowledge Base、跨 Folder 迁移 | `admin`（目标设计） |
+| 删除整个 Knowledge Base、legacy scope 迁移 | `admin` |
+| 当前 Folder-owned Knowledge Base 跨 Folder 迁移 | `admin`（目标设计） |
 
 ### 7.2 当前代码状态
 
@@ -319,11 +320,13 @@ Knowledge 已形成首版完整参考链路：
 - Control Plane 要求可信 `X-Aegis-Folder-Access`；
 - Knowledge v2 公共 ID 和 Provider metadata 绑定 Tenant/Org/Folder scope，不再绑定创建用户；
 - RAGLite/RAGFlow adapter 在读取和变更时重新校验 scope；
+- Folder Admin 可显式把本人可读的 v1 Knowledge Base 原地迁移到当前 Folder v2 scope；RAGLite 在 SQLite
+  事务中迁移，RAGFlow 先更新文档原生 metadata、最后提交 Dataset metadata，失败后可幂等重试且不重新上传原文；
 - Knowledge MCP 使用服务端 Token 绑定固定 Actor 和 Folder allowlist。
 
 兼容和验收边界：
 
-- 旧 v1 scope 仍绑定 User，仅允许原创建者在同 Folder 只读；所有写操作要求迁移到 v2；
+- 旧 v1 scope 仍绑定 User，仅允许原创建者在同 Folder 只读；所有写操作要求 Folder Admin 先显式迁移到 v2；
 - Knowledge Base 删除要求 Folder admin，Document 删除要求 write；
 - real 模式 Folder 选择器和 View/Edit/Admin 按钮控制已接入；
 - 真实浏览器到 Provider 的跨 Folder E2E 尚未成为发布门禁。
