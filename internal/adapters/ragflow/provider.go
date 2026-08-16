@@ -18,10 +18,11 @@ import (
 )
 
 const (
-	metadataVersion  = 1
-	providerPageSize = 100
-	maxProviderItems = 1000
-	maxReconcileSize = 20 << 20
+	metadataVersion       = 2
+	legacyMetadataVersion = 1
+	providerPageSize      = 100
+	maxProviderItems      = 1000
+	maxReconcileSize      = 20 << 20
 )
 
 const (
@@ -76,6 +77,7 @@ func (provider *Provider) ListCollections(ctx context.Context, actor domain.Acto
 	if err != nil {
 		return domain.Page[ports.KnowledgeCollection]{}, invalidArgument(err)
 	}
+	legacyScope, _ := provider.ids.LegacyScopeFingerprint(actor)
 	datasets, err := provider.listAllDatasets(ctx)
 	if err != nil {
 		return domain.Page[ports.KnowledgeCollection]{}, err
@@ -89,7 +91,9 @@ func (provider *Provider) ListCollections(ctx context.Context, actor domain.Acto
 			}
 			continue
 		}
-		if metadata.Scope != scope {
+		current := metadata.Version == metadataVersion && metadata.Scope == scope
+		legacy := metadata.Version == legacyMetadataVersion && metadata.Scope == legacyScope
+		if !current && !legacy {
 			continue
 		}
 		collection, mapErr := mapDataset(dataset, metadata, folderUID)
@@ -102,7 +106,7 @@ func (provider *Provider) ListCollections(ctx context.Context, actor domain.Acto
 }
 
 func (provider *Provider) GetCollection(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
-	dataset, metadata, err := provider.resolveDataset(ctx, actor, ref)
+	dataset, metadata, err := provider.resolveDataset(ctx, actor, ref, true)
 	if err != nil {
 		return ports.KnowledgeCollection{}, err
 	}
@@ -148,7 +152,7 @@ func (provider *Provider) CreateCollection(ctx context.Context, actor domain.Act
 }
 
 func (provider *Provider) UpdateCollection(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef, input ports.UpdateKnowledgeCollectionInput) (ports.KnowledgeCollection, error) {
-	dataset, metadata, err := provider.resolveDataset(ctx, actor, ref)
+	dataset, metadata, err := provider.resolveDataset(ctx, actor, ref, false)
 	if err != nil {
 		return ports.KnowledgeCollection{}, err
 	}
@@ -165,7 +169,7 @@ func (provider *Provider) UpdateCollection(ctx context.Context, actor domain.Act
 }
 
 func (provider *Provider) DeleteCollection(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) error {
-	dataset, _, err := provider.resolveDataset(ctx, actor, ref)
+	dataset, _, err := provider.resolveDataset(ctx, actor, ref, false)
 	if err != nil {
 		return err
 	}
@@ -173,7 +177,7 @@ func (provider *Provider) DeleteCollection(ctx context.Context, actor domain.Act
 }
 
 func (provider *Provider) ListDocuments(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef, page domain.PageRequest) (domain.Page[ports.KnowledgeDocument], error) {
-	dataset, _, err := provider.resolveDataset(ctx, actor, ref)
+	dataset, metadata, err := provider.resolveDataset(ctx, actor, ref, true)
 	if err != nil {
 		return domain.Page[ports.KnowledgeDocument]{}, err
 	}
@@ -181,7 +185,7 @@ func (provider *Provider) ListDocuments(ctx context.Context, actor domain.ActorC
 	if err != nil {
 		return domain.Page[ports.KnowledgeDocument]{}, err
 	}
-	scope, _ := provider.ids.ScopeFingerprint(actor)
+	scope := metadata.Scope
 	items := make([]ports.KnowledgeDocument, 0, len(documents))
 	for _, document := range documents {
 		mapped, ok := mapDocument(document, ref.ID, scope)
@@ -193,12 +197,12 @@ func (provider *Provider) ListDocuments(ctx context.Context, actor domain.ActorC
 }
 
 func (provider *Provider) GetDocument(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef) (ports.KnowledgeDocument, error) {
-	_, _, mapped, err := provider.resolveDocument(ctx, actor, ref)
+	_, _, mapped, err := provider.resolveDocument(ctx, actor, ref, true)
 	return mapped, err
 }
 
 func (provider *Provider) UploadDocument(ctx context.Context, actor domain.ActorContext, collectionRef ports.KnowledgeCollectionRef, file ports.DocumentFile) (ports.KnowledgeDocument, error) {
-	dataset, _, err := provider.resolveDataset(ctx, actor, collectionRef)
+	dataset, _, err := provider.resolveDataset(ctx, actor, collectionRef, false)
 	if err != nil {
 		return ports.KnowledgeDocument{}, err
 	}
@@ -236,7 +240,7 @@ func (provider *Provider) UploadDocument(ctx context.Context, actor domain.Actor
 }
 
 func (provider *Provider) UpdateDocument(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef, input ports.UpdateKnowledgeDocumentInput) (ports.KnowledgeDocument, error) {
-	dataset, document, _, err := provider.resolveDocument(ctx, actor, ref)
+	dataset, document, _, err := provider.resolveDocument(ctx, actor, ref, false)
 	if err != nil {
 		return ports.KnowledgeDocument{}, err
 	}
@@ -250,7 +254,7 @@ func (provider *Provider) UpdateDocument(ctx context.Context, actor domain.Actor
 }
 
 func (provider *Provider) StartIndexing(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef) error {
-	dataset, document, _, err := provider.resolveDocument(ctx, actor, ref)
+	dataset, document, _, err := provider.resolveDocument(ctx, actor, ref, false)
 	if err != nil {
 		return err
 	}
@@ -258,7 +262,7 @@ func (provider *Provider) StartIndexing(ctx context.Context, actor domain.ActorC
 }
 
 func (provider *Provider) StopIndexing(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef) error {
-	dataset, document, _, err := provider.resolveDocument(ctx, actor, ref)
+	dataset, document, _, err := provider.resolveDocument(ctx, actor, ref, false)
 	if err != nil {
 		return err
 	}
@@ -266,7 +270,7 @@ func (provider *Provider) StopIndexing(ctx context.Context, actor domain.ActorCo
 }
 
 func (provider *Provider) DeleteDocument(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef) error {
-	dataset, document, _, err := provider.resolveDocument(ctx, actor, ref)
+	dataset, document, _, err := provider.resolveDocument(ctx, actor, ref, false)
 	if err != nil {
 		return err
 	}
@@ -274,7 +278,7 @@ func (provider *Provider) DeleteDocument(ctx context.Context, actor domain.Actor
 }
 
 func (provider *Provider) ListChunks(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef, page domain.PageRequest) (domain.Page[ports.KnowledgeChunk], error) {
-	dataset, document, _, err := provider.resolveDocument(ctx, actor, ref)
+	dataset, document, _, err := provider.resolveDocument(ctx, actor, ref, true)
 	if err != nil {
 		return domain.Page[ports.KnowledgeChunk]{}, err
 	}
@@ -304,7 +308,7 @@ func (provider *Provider) ListChunks(ctx context.Context, actor domain.ActorCont
 }
 
 func (provider *Provider) DownloadDocument(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef) (ports.KnowledgeDocumentDownload, error) {
-	dataset, document, mapped, err := provider.resolveDocument(ctx, actor, ref)
+	dataset, document, mapped, err := provider.resolveDocument(ctx, actor, ref, true)
 	if err != nil {
 		return ports.KnowledgeDocumentDownload{}, err
 	}
@@ -321,12 +325,11 @@ func (provider *Provider) Retrieve(ctx context.Context, actor domain.ActorContex
 	}
 	datasetIDs := make([]string, 0, len(input.Collections))
 	documentIndex := make(map[string]ports.KnowledgeDocument)
-	scope, err := provider.ids.ScopeFingerprint(actor)
-	if err != nil {
+	if _, err := provider.ids.ScopeFingerprint(actor); err != nil {
 		return nil, invalidArgument(err)
 	}
 	for _, collection := range input.Collections {
-		dataset, collectionMetadata, resolveErr := provider.resolveDataset(ctx, actor, collection)
+		dataset, collectionMetadata, resolveErr := provider.resolveDataset(ctx, actor, collection, true)
 		if resolveErr != nil {
 			return nil, resolveErr
 		}
@@ -339,7 +342,7 @@ func (provider *Provider) Retrieve(ctx context.Context, actor domain.ActorContex
 			return nil, listErr
 		}
 		for _, document := range documents {
-			if mapped, ok := mapDocument(document, collection.ID, scope); ok {
+			if mapped, ok := mapDocument(document, collection.ID, collectionMetadata.Scope); ok {
 				documentIndex[dataset.ID+"\x00"+document.ID] = mapped
 			}
 		}
@@ -376,7 +379,7 @@ type datasetMetadata struct {
 
 func parseDatasetMetadata(value string) (datasetMetadata, bool) {
 	var metadata datasetMetadata
-	if err := json.Unmarshal([]byte(value), &metadata); err != nil || metadata.Version != metadataVersion || metadata.DisplayName == "" || metadata.Scope == "" {
+	if err := json.Unmarshal([]byte(value), &metadata); err != nil || (metadata.Version != metadataVersion && metadata.Version != legacyMetadataVersion) || metadata.DisplayName == "" || metadata.Scope == "" {
 		return datasetMetadata{}, false
 	}
 	return metadata, true
@@ -436,7 +439,7 @@ func mapDocumentStatus(run string) domain.DocumentStatus {
 	}
 }
 
-func (provider *Provider) resolveDataset(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) (Dataset, datasetMetadata, error) {
+func (provider *Provider) resolveDataset(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef, allowLegacy bool) (Dataset, datasetMetadata, error) {
 	if err := requireScope(actor, actor.FolderUID); err != nil {
 		return Dataset{}, datasetMetadata{}, err
 	}
@@ -453,7 +456,10 @@ func (provider *Provider) resolveDataset(ctx context.Context, actor domain.Actor
 		return Dataset{}, datasetMetadata{}, notFound("knowledge base not found")
 	}
 	scope, _ := provider.ids.ScopeFingerprint(actor)
-	if metadata.Scope != scope {
+	current := metadata.Version == metadataVersion && metadata.Scope == scope
+	legacyScope, _ := provider.ids.LegacyScopeFingerprint(actor)
+	legacy := allowLegacy && metadata.Version == legacyMetadataVersion && metadata.Scope == legacyScope
+	if !current && !legacy {
 		return Dataset{}, datasetMetadata{}, forbidden("knowledge base scope does not match")
 	}
 	return dataset, metadata, nil
@@ -481,15 +487,15 @@ func (provider *Provider) findDatasetByName(ctx context.Context, name string) (D
 	return *found, nil
 }
 
-func (provider *Provider) resolveDocument(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef) (Dataset, Document, ports.KnowledgeDocument, error) {
-	dataset, _, err := provider.resolveDataset(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID})
+func (provider *Provider) resolveDocument(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef, allowLegacy bool) (Dataset, Document, ports.KnowledgeDocument, error) {
+	dataset, metadata, err := provider.resolveDataset(ctx, actor, ports.KnowledgeCollectionRef{ID: ref.CollectionID}, allowLegacy)
 	if err != nil {
 		return Dataset{}, Document{}, ports.KnowledgeDocument{}, err
 	}
-	return provider.resolveDocumentInDataset(ctx, actor, dataset, ref)
+	return provider.resolveDocumentInDataset(ctx, dataset, ref, metadata.Scope)
 }
 
-func (provider *Provider) resolveDocumentInDataset(ctx context.Context, actor domain.ActorContext, dataset Dataset, ref ports.KnowledgeDocumentRef) (Dataset, Document, ports.KnowledgeDocument, error) {
+func (provider *Provider) resolveDocumentInDataset(ctx context.Context, dataset Dataset, ref ports.KnowledgeDocumentRef, scope string) (Dataset, Document, ports.KnowledgeDocument, error) {
 	if !ref.ID.Valid() || !strings.HasPrefix(string(ref.ID), "doc_") {
 		return Dataset{}, Document{}, ports.KnowledgeDocument{}, invalidArgument(errors.New("invalid document ID"))
 	}
@@ -497,7 +503,6 @@ func (provider *Provider) resolveDocumentInDataset(ctx context.Context, actor do
 	if err != nil {
 		return Dataset{}, Document{}, ports.KnowledgeDocument{}, err
 	}
-	scope, _ := provider.ids.ScopeFingerprint(actor)
 	for _, document := range documents {
 		if metadataString(document.MetaFields, metaPublicID) != string(ref.ID) {
 			continue

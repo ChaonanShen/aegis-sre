@@ -263,6 +263,65 @@ func TestCrossFolderScopeRejectsEveryCollectionAndDocumentOperation(t *testing.T
 	}
 }
 
+func TestFolderScopedKnowledgeIsSharedAcrossUsers(t *testing.T) {
+	provider, fake, codec, owner := newTestProvider(t)
+	collectionID, _ := codec.CollectionID(owner, "kb")
+	scope, _ := codec.ScopeFingerprint(owner)
+	fake.datasets = []Dataset{testDataset(t, collectionID, "Shared", scope)}
+	otherUser := owner
+	otherUser.UserID = "other-user"
+
+	collection, err := provider.GetCollection(context.Background(), otherUser, ports.KnowledgeCollectionRef{ID: collectionID})
+	if err != nil || collection.Name != "Shared" || collection.FolderUID != owner.FolderUID {
+		t.Fatalf("shared collection = %#v, err = %v", collection, err)
+	}
+}
+
+func TestLegacyUserScopedKnowledgeIsCreatorReadOnly(t *testing.T) {
+	provider, fake, codec, owner := newTestProvider(t)
+	collectionID := domain.ID("kbs_legacy12345")
+	documentID := domain.ID("doc_legacy12345")
+	legacyScope, _ := codec.LegacyScopeFingerprint(owner)
+	dataset := testDataset(t, collectionID, "Legacy", legacyScope)
+	var metadata datasetMetadata
+	_ = json.Unmarshal([]byte(dataset.Description), &metadata)
+	metadata.Version = legacyMetadataVersion
+	dataset.Description = mustJSON(metadata)
+	fake.datasets = []Dataset{dataset}
+	fake.documents = []Document{{ID: "internal-doc", Name: "legacy.md", Size: 4, MetaFields: testDocumentMetadata(documentID, "legacy.md", "text/markdown", "", legacyScope, "sha")}}
+	collectionRef := ports.KnowledgeCollectionRef{ID: collectionID}
+	documentRef := ports.KnowledgeDocumentRef{ID: documentID, CollectionID: collectionID}
+
+	if _, err := provider.GetCollection(context.Background(), owner, collectionRef); err != nil {
+		t.Fatalf("legacy creator read failed: %v", err)
+	}
+	if _, err := provider.GetDocument(context.Background(), owner, documentRef); err != nil {
+		t.Fatalf("legacy document read failed: %v", err)
+	}
+	otherUser := owner
+	otherUser.UserID = "other-user"
+	if _, err := provider.GetCollection(context.Background(), otherUser, collectionRef); appCode(err) != domain.ErrorForbidden {
+		t.Fatalf("legacy collection escaped creator: %#v", err)
+	}
+	if _, err := provider.UpdateCollection(context.Background(), owner, collectionRef, ports.UpdateKnowledgeCollectionInput{Name: "changed", Status: domain.KnowledgeBaseActive}); appCode(err) != domain.ErrorForbidden {
+		t.Fatalf("legacy collection update error = %#v", err)
+	}
+	if _, err := provider.UploadDocument(context.Background(), owner, collectionRef, ports.DocumentFile{ID: "doc_new12345", Name: "new.md", SHA256: "sha", Content: strings.NewReader("body")}); appCode(err) != domain.ErrorForbidden {
+		t.Fatalf("legacy upload error = %#v", err)
+	}
+	if fake.updateDatasetCalls != 0 || fake.uploadCalls != 0 {
+		t.Fatalf("legacy writes reached Provider: update=%d upload=%d", fake.updateDatasetCalls, fake.uploadCalls)
+	}
+}
+
+func mustJSON(value any) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return string(encoded)
+}
+
 func TestListChunksHashesProviderIDsAndMapsPagination(t *testing.T) {
 	provider, fake, codec, actor := newTestProvider(t)
 	collectionID, _ := codec.CollectionID(actor, "kb")
@@ -343,6 +402,7 @@ type fakeRAGFlowClient struct {
 	updatedMetadata     map[string]any
 	updateDocumentCalls int
 	updateDocumentErr   error
+	updateDatasetCalls  int
 	downloadBody        string
 }
 
@@ -362,8 +422,11 @@ func (fake *fakeRAGFlowClient) CreateDataset(_ context.Context, name, descriptio
 	fake.datasets = append(fake.datasets, dataset)
 	return dataset, nil
 }
-func (*fakeRAGFlowClient) UpdateDataset(context.Context, string, string) error { return nil }
-func (*fakeRAGFlowClient) DeleteDataset(context.Context, string) error         { return nil }
+func (fake *fakeRAGFlowClient) UpdateDataset(context.Context, string, string) error {
+	fake.updateDatasetCalls++
+	return nil
+}
+func (*fakeRAGFlowClient) DeleteDataset(context.Context, string) error { return nil }
 func (fake *fakeRAGFlowClient) ListDocuments(context.Context, string, int, int, string) (ListDocumentsResult, error) {
 	return ListDocumentsResult{Items: fake.documents, Total: len(fake.documents)}, nil
 }
