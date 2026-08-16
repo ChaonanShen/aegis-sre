@@ -832,9 +832,6 @@ type SessionStatus string
 type SessionDetail struct {
 	Messages *[]Message `json:"messages,omitempty"`
 	Session  Session    `json:"session"`
-
-	// SystemPrompt Current product-level instructions applied to Agent turns.
-	SystemPrompt string `json:"system_prompt"`
 }
 
 // SessionPage defines model for SessionPage.
