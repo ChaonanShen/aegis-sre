@@ -394,8 +394,7 @@
 .knowledge-status.failed {
   color: var(--red);
 }
-.knowledge-status.indexing,
-.knowledge-status.pending {
+.knowledge-status.indexing {
   color: var(--yellow);
 }
 
@@ -413,6 +412,10 @@
 .knowledge-chunks article {
   padding: 12px;
   border-bottom: 1px solid var(--border);
+}
+.knowledge-chunks article[aria-current='true'] {
+  border-left: 3px solid var(--blue);
+  background: color-mix(in srgb, var(--blue) 8%, transparent);
 }
 .knowledge-chunks article:last-child {
   border-bottom: 0;
@@ -438,9 +441,14 @@
 .knowledge-search-results p {
   white-space: pre-wrap;
 }
-.knowledge-search-results footer {
+.knowledge-citation-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--text-muted);
+  cursor: pointer;
   font-size: 11px;
+  text-decoration: underline;
 }
 .knowledge-empty {
   padding: 40px 20px;

@@ -71,7 +71,9 @@ describe('real Knowledge management page', () => {
     fireEvent.click(screen.getByRole('button', { name: '检索' }));
 
     expect(await screen.findByText('先检查健康状态。')).toBeInTheDocument();
-    expect(screen.getByText(/restart.md · paragraph-4/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /restart.md · paragraph-4/ }));
+    expect(await screen.findByText('检查实例健康并逐个重启。')).toBeInTheDocument();
+    expect(screen.getByRole('article', { current: true })).toHaveTextContent('paragraph-4');
     expect(gateway.search).toHaveBeenCalledWith(
       'ops',
       expect.objectContaining({ knowledgeBaseIds: [kb.id], query: '如何重启' }),

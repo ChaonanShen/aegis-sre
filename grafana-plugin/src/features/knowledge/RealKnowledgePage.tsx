@@ -13,6 +13,7 @@ import './knowledge.css';
 
 type Loadable<T> = { status: 'loading' } | { status: 'error'; error: Error } | { status: 'success'; data: T };
 type Tab = 'documents' | 'search';
+type PassageTarget = { knowledgeBaseId: string; documentId: string; ordinal: number; request: number };
 
 export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManagementGateway }) {
   const { activeFolder } = useAppShell();
@@ -24,6 +25,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
   const [selectedBaseId, setSelectedBaseId] = useState<string>();
   const [documents, setDocuments] = useState<Loadable<KnowledgeDocumentRecord[]>>({ status: 'loading' });
   const [tab, setTab] = useState<Tab>('documents');
+  const [passageTarget, setPassageTarget] = useState<PassageTarget>();
   const [notice, setNotice] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [refreshBases, setRefreshBases] = useState(0);
@@ -230,6 +232,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
                 gateway={gateway}
                 knowledgeBaseId={selectedBase.id}
                 mutate={mutate}
+                passageTarget={passageTarget}
                 refresh={() => setRefreshDocuments((value) => value + 1)}
                 writable={writable}
               />
@@ -241,6 +244,16 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
                 gateway={gateway}
                 key={selectedBase.id}
                 knowledgeBaseId={selectedBase.id}
+                openCitation={(citation) => {
+                  setPassageTarget({
+                    knowledgeBaseId: citation.knowledge_base_id,
+                    documentId: citation.document_id,
+                    ordinal: citation.ordinal,
+                    request: Date.now(),
+                  });
+                  setSelectedBaseId(citation.knowledge_base_id);
+                  setTab('documents');
+                }}
               />
             )}
           </>
@@ -312,6 +325,7 @@ function DocumentsPanel({
   gateway,
   knowledgeBaseId,
   mutate,
+  passageTarget,
   refresh,
   writable,
 }: {
@@ -321,6 +335,7 @@ function DocumentsPanel({
   gateway: KnowledgeManagementGateway;
   knowledgeBaseId: string;
   mutate: (operation: () => Promise<void>, success: string) => Promise<void>;
+  passageTarget?: PassageTarget;
   refresh: () => void;
   writable: boolean;
 }) {
@@ -328,6 +343,7 @@ function DocumentsPanel({
   const passagesAbortRef = useRef<AbortController>();
   const [passages, setPassages] = useState<{
     document: KnowledgeDocumentRecord;
+    ordinal?: number;
     state: Loadable<DocumentPassageRecord[]>;
   }>();
   useEffect(() => () => passagesAbortRef.current?.abort(), []);
@@ -350,23 +366,33 @@ function DocumentsPanel({
       refresh();
     }, '文档已上传，等待解析。');
   };
-  const showPassages = (document: KnowledgeDocumentRecord) => {
+  const showPassages = useCallback((document: KnowledgeDocumentRecord, ordinal?: number) => {
     passagesAbortRef.current?.abort();
     const controller = new AbortController();
     passagesAbortRef.current = controller;
-    setPassages({ document, state: { status: 'loading' } });
+    setPassages({ document, state: { status: 'loading' }, ordinal });
     void gateway
       .listPassages(folderUid, knowledgeBaseId, document.id, controller.signal)
       .then((data) => {
         if (!controller.signal.aborted) {
-          setPassages({ document, state: { status: 'success', data } });
+          setPassages({ document, state: { status: 'success', data }, ordinal });
         }
       })
       .catch(
         (error: unknown) =>
-          !isAbortError(error) && setPassages({ document, state: { status: 'error', error: toError(error) } })
+          !isAbortError(error) && setPassages({ document, state: { status: 'error', error: toError(error) }, ordinal })
       );
-  };
+  }, [folderUid, gateway, knowledgeBaseId]);
+
+  useEffect(() => {
+    if (!passageTarget || passageTarget.knowledgeBaseId !== knowledgeBaseId || documents.status !== 'success') {
+      return;
+    }
+    const document = documents.data.find(({ id }) => id === passageTarget.documentId);
+    if (document) {
+      showPassages(document, passageTarget.ordinal);
+    }
+  }, [documents, knowledgeBaseId, passageTarget, showPassages]);
   const download = async (document: KnowledgeDocumentRecord) => {
     await mutate(async () => {
       const blob = await gateway.downloadDocument(folderUid, knowledgeBaseId, document.id);
@@ -452,7 +478,12 @@ function DocumentsPanel({
         )}
       </section>
       {passages && (
-        <PassagesPanel close={() => setPassages(undefined)} document={passages.document} state={passages.state} />
+        <PassagesPanel
+          close={() => setPassages(undefined)}
+          document={passages.document}
+          focusedOrdinal={passages.ordinal}
+          state={passages.state}
+        />
       )}
     </>
   );
@@ -552,10 +583,12 @@ function DocumentWriteActions({
 function PassagesPanel({
   close,
   document,
+  focusedOrdinal,
   state,
 }: {
   close: () => void;
   document: KnowledgeDocumentRecord;
+  focusedOrdinal?: number;
   state: Loadable<DocumentPassageRecord[]>;
 }) {
   return (
@@ -572,7 +605,7 @@ function PassagesPanel({
         <ErrorState error={state.error} retry={close} />
       ) : (
         state.data.map((passage) => (
-          <article key={passage.ordinal}>
+          <article aria-current={passage.ordinal === focusedOrdinal ? 'true' : undefined} key={passage.ordinal}>
             <small>{passage.location || `段落 ${passage.ordinal}`}</small>
             <p>{passage.text}</p>
           </article>
@@ -587,11 +620,13 @@ function SearchPanel({
   folderUid,
   gateway,
   knowledgeBaseId,
+  openCitation,
 }: {
   bases: KnowledgeBaseRecord[];
   folderUid: string;
   gateway: KnowledgeManagementGateway;
   knowledgeBaseId: string;
+  openCitation: (citation: KnowledgeSearchHit['citation']) => void;
 }) {
   const [query, setQuery] = useState('');
   const [service, setService] = useState('');
@@ -674,9 +709,9 @@ function SearchPanel({
           {state.data.map((hit, index) => (
             <article key={`${hit.citation.document_id}:${hit.citation.ordinal}:${index}`}>
               <p>{hit.text}</p>
-              <footer>
+              <button className="knowledge-citation-link" onClick={() => openCitation(hit.citation)} type="button">
                 {hit.citation.source_name} · {hit.citation.location || `段落 ${hit.citation.ordinal}`}
-              </footer>
+              </button>
             </article>
           ))}
           {state.data.length === 0 && <div className="knowledge-empty">没有检索结果。</div>}
