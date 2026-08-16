@@ -44,15 +44,29 @@
   "actionSets": [
     {
       "action": "folders:view",
-      "actions": ["grafana-plugin-app.knowledge:read"]
+      "actions": [
+        "grafana-plugin-app.folder-resources:read",
+        "grafana-plugin-app.knowledge:read"
+      ]
     },
     {
       "action": "folders:edit",
-      "actions": ["grafana-plugin-app.knowledge:write"]
+      "actions": [
+        "grafana-plugin-app.folder-resources:read",
+        "grafana-plugin-app.folder-resources:write",
+        "grafana-plugin-app.knowledge:read",
+        "grafana-plugin-app.knowledge:write"
+      ]
     },
     {
       "action": "folders:admin",
-      "actions": ["grafana-plugin-app.knowledge:write"]
+      "actions": [
+        "grafana-plugin-app.folder-resources:read",
+        "grafana-plugin-app.folder-resources:write",
+        "grafana-plugin-app.folder-resources:admin",
+        "grafana-plugin-app.knowledge:read",
+        "grafana-plugin-app.knowledge:write"
+      ]
     }
   ],
   "dependencies": {

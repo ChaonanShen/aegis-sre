@@ -23,16 +23,14 @@ import (
 )
 
 const (
-	headerTenantID       = "X-Aegis-Tenant-ID"
-	headerOrgID          = "X-Aegis-Org-ID"
-	headerUserID         = "X-Aegis-User-ID"
-	headerUsername       = "X-Aegis-Username"
-	headerRoles          = "X-Aegis-Roles"
-	headerFolderUID      = "X-Aegis-Folder-UID"
-	headerFolderAccess   = "X-Aegis-Folder-Access"
-	headerGrafanaID      = "X-Grafana-Id"
-	actionKnowledgeRead  = "grafana-plugin-app.knowledge:read"
-	actionKnowledgeWrite = "grafana-plugin-app.knowledge:write"
+	headerTenantID     = "X-Aegis-Tenant-ID"
+	headerOrgID        = "X-Aegis-Org-ID"
+	headerUserID       = "X-Aegis-User-ID"
+	headerUsername     = "X-Aegis-Username"
+	headerRoles        = "X-Aegis-Roles"
+	headerFolderUID    = "X-Aegis-Folder-UID"
+	headerFolderAccess = "X-Aegis-Folder-Access"
+	headerGrafanaID    = "X-Grafana-Id"
 )
 
 var errInvalidGrafanaIdentity = errors.New("invalid Grafana identity")
@@ -86,7 +84,7 @@ func newProxyApp(config pluginconfig.ControlPlane) *App {
 			request.Out.Header.Set(headerRoles, identity.roles)
 			if folder.uid != "" {
 				request.Out.Header.Set(headerFolderUID, folder.uid)
-				request.Out.Header.Set(headerFolderAccess, folder.access)
+				request.Out.Header.Set(headerFolderAccess, string(folder.access))
 			}
 			if config.BearerToken != "" {
 				request.Out.Header.Set("Authorization", "Bearer "+config.BearerToken)
@@ -132,13 +130,17 @@ type trustedFolderContextKey struct{}
 
 type folderAuthorization struct {
 	uid    string
-	access string
+	access folderAccess
 }
 
 func (app *App) requireFolderAuthorization(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		action, required := knowledgeFolderAction(request)
-		if !required {
+		policy, known := routePolicyFor(request)
+		if !known {
+			writeNotFound(w, request)
+			return
+		}
+		if policy.access == folderAccessNone {
 			next.ServeHTTP(w, request)
 			return
 		}
@@ -151,7 +153,7 @@ func (app *App) requireFolderAuthorization(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusUnauthorized, "unauthenticated", "Grafana identity token is required")
 			return
 		}
-		allowed, err := app.folderAccess(request, action, folderUID)
+		allowed, err := app.folderAccess(request, policy.action(), folderUID)
 		if err != nil {
 			backend.Logger.Error("Grafana Folder authorization failed", "classification", "authorization_error", "error", err)
 			writeProblem(w, http.StatusServiceUnavailable, "provider_unavailable", "Folder authorization unavailable")
@@ -161,23 +163,9 @@ func (app *App) requireFolderAuthorization(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusForbidden, "forbidden", "Folder permission denied")
 			return
 		}
-		access := "read"
-		if action == actionKnowledgeWrite {
-			access = "write"
-		}
-		ctx := context.WithValue(request.Context(), trustedFolderContextKey{}, folderAuthorization{uid: folderUID, access: access})
+		ctx := context.WithValue(request.Context(), trustedFolderContextKey{}, folderAuthorization{uid: folderUID, access: policy.access})
 		next.ServeHTTP(w, request.WithContext(ctx))
 	})
-}
-
-func knowledgeFolderAction(request *http.Request) (string, bool) {
-	if !strings.HasPrefix(request.URL.Path, "/api/v1/knowledge-bases") && request.URL.Path != "/api/v1/knowledge:search" {
-		return "", false
-	}
-	if request.URL.Path == "/api/v1/knowledge:search" || request.Method == http.MethodGet || request.Method == http.MethodHead {
-		return actionKnowledgeRead, true
-	}
-	return actionKnowledgeWrite, true
 }
 
 func safeFolderUID(value string) string {
@@ -190,7 +178,7 @@ func safeFolderUID(value string) string {
 
 func trustedFolder(ctx context.Context) (folderAuthorization, bool) {
 	value, ok := ctx.Value(trustedFolderContextKey{}).(folderAuthorization)
-	return value, ok && value.uid != "" && (value.access == "read" || value.access == "write")
+	return value, ok && value.uid != "" && (value.access == folderAccessRead || value.access == folderAccessWrite || value.access == folderAccessAdmin)
 }
 
 func (app *App) hasFolderAccess(request *http.Request, action, folderUID string) (bool, error) {
@@ -220,7 +208,7 @@ func (app *App) getAuthzClient(request *http.Request) (authz.EnforcementClient, 
 		APIURL:  grafanaURL,
 		Token:   serviceToken,
 		JWKsURL: strings.TrimRight(grafanaURL, "/") + "/api/signing-keys/keys",
-	}, authz.WithSearchByPrefix("grafana-plugin-app.knowledge"), authz.WithCache(cache.NewLocalCache(cache.Config{Expiry: 10 * time.Second, CleanupInterval: 5 * time.Second})))
+	}, authz.WithSearchByPrefix("grafana-plugin-app."), authz.WithCache(cache.NewLocalCache(cache.Config{Expiry: 10 * time.Second, CleanupInterval: 5 * time.Second})))
 	if err != nil {
 		return nil, errors.New("initialize Grafana authorization client")
 	}

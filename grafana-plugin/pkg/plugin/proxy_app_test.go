@@ -143,7 +143,7 @@ func TestProxyPreservesPlaybookCRUDPayloadAndHeaders(t *testing.T) {
 	}
 }
 
-func TestKnowledgeFolderAuthorizationInjectsOnlyVerifiedFolder(t *testing.T) {
+func TestFolderAuthorizationInjectsOnlyVerifiedFolder(t *testing.T) {
 	var received http.Header
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		received = request.Header.Clone()
@@ -163,7 +163,7 @@ func TestKnowledgeFolderAuthorizationInjectsOnlyVerifiedFolder(t *testing.T) {
 	response := httptest.NewRecorder()
 	requireIdentity(app.requireFolderAuthorization(app.proxy)).ServeHTTP(response, request)
 
-	if response.Code != http.StatusNoContent || checkedAction != actionKnowledgeRead || checkedFolder != "folder-a" {
+	if response.Code != http.StatusNoContent || checkedAction != actionFolderResourcesRead || checkedFolder != "folder-a" {
 		t.Fatalf("status=%d action=%q folder=%q body=%s", response.Code, checkedAction, checkedFolder, response.Body.String())
 	}
 	if received.Get(headerFolderUID) != "folder-a" || received.Get(headerFolderAccess) != "read" || received.Get(headerGrafanaID) != "" {
@@ -171,16 +171,18 @@ func TestKnowledgeFolderAuthorizationInjectsOnlyVerifiedFolder(t *testing.T) {
 	}
 }
 
-func TestKnowledgeFolderAuthorizationMapsSearchToReadAndMutationsToWrite(t *testing.T) {
+func TestFolderAuthorizationMapsRoutesToRequiredAccess(t *testing.T) {
 	app := testProxyApp(t, "http://control-plane.invalid", "")
 	tests := []struct {
 		method string
 		path   string
 		action string
 	}{
-		{method: http.MethodPost, path: "/api/v1/knowledge:search", action: actionKnowledgeRead},
-		{method: http.MethodPost, path: "/api/v1/knowledge-bases", action: actionKnowledgeWrite},
-		{method: http.MethodDelete, path: "/api/v1/knowledge-bases/kbs_abcdefgh", action: actionKnowledgeWrite},
+		{method: http.MethodPost, path: "/api/v1/knowledge:search", action: actionFolderResourcesRead},
+		{method: http.MethodPost, path: "/api/v1/knowledge-bases", action: actionFolderResourcesWrite},
+		{method: http.MethodDelete, path: "/api/v1/knowledge-bases/kbs_abcdefgh", action: actionFolderResourcesAdmin},
+		{method: http.MethodPost, path: "/api/v1/sessions/session-1/turns:stream", action: actionFolderResourcesRead},
+		{method: http.MethodPost, path: "/api/v1/runs/run-1/approvals/approval-1:resolve", action: actionFolderResourcesAdmin},
 	}
 	for _, test := range tests {
 		t.Run(test.method+test.path, func(t *testing.T) {
@@ -201,7 +203,7 @@ func TestKnowledgeFolderAuthorizationMapsSearchToReadAndMutationsToWrite(t *test
 	}
 }
 
-func TestKnowledgeFolderAuthorizationFailsClosed(t *testing.T) {
+func TestFolderAuthorizationFailsClosed(t *testing.T) {
 	app := testProxyApp(t, "http://control-plane.invalid", "")
 	var calls atomic.Int32
 	app.folderAccess = func(*http.Request, string, string) (bool, error) {
@@ -233,6 +235,21 @@ func TestKnowledgeFolderAuthorizationFailsClosed(t *testing.T) {
 	}
 	if calls.Load() != 1 {
 		t.Fatalf("authorization calls = %d, want 1", calls.Load())
+	}
+}
+
+func TestFolderAuthorizationRejectsUnknownRouteBeforeProxy(t *testing.T) {
+	app := testProxyApp(t, "http://control-plane.invalid", "")
+	var calls atomic.Int32
+	app.folderAccess = func(*http.Request, string, string) (bool, error) {
+		calls.Add(1)
+		return true, nil
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/internal-unclassified", nil)
+	response := httptest.NewRecorder()
+	app.requireFolderAuthorization(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { t.Fatal("unknown route reached upstream") })).ServeHTTP(response, request)
+	if response.Code != http.StatusNotFound || calls.Load() != 0 {
+		t.Fatalf("status=%d authorization calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
 	}
 }
 
