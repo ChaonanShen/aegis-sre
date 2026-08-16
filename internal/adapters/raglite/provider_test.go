@@ -47,7 +47,7 @@ func TestProviderCollectionAndDocumentRoundTrip(t *testing.T) {
 		ID: "doc_abcdefgh", Name: "runbook.md", MediaType: "text/markdown", Service: "checkout",
 		Tags: []string{"prod"}, Size: int64(len(payload)), SHA256: hex.EncodeToString(sum[:]), Content: strings.NewReader(payload),
 	})
-	if err != nil || document.Ref.CollectionID != collection.Ref.ID || document.Status != domain.DocumentPending {
+	if err != nil || document.Ref.CollectionID != collection.Ref.ID || document.Status != domain.DocumentQueued {
 		t.Fatalf("upload failed: %+v %v", document, err)
 	}
 	page, err := provider.ListDocuments(context.Background(), actor, collection.Ref, domain.PageRequest{Limit: 1})
@@ -248,7 +248,7 @@ func (f *fakeClient) document() Document {
 	if f.badDigest {
 		digest = strings.Repeat("b", 64)
 	}
-	return Document{ID: "doc_abcdefgh", CollectionID: "kbs_abcdefgh", Name: "runbook.md", MediaType: "text/markdown", Size: 5, SHA256: digest, Service: "checkout", Tags: []string{"prod"}, Status: "pending", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
+	return Document{ID: "doc_abcdefgh", CollectionID: "kbs_abcdefgh", Name: "runbook.md", MediaType: "text/markdown", Size: 5, SHA256: digest, Service: "checkout", Tags: []string{"prod"}, Status: "queued", CreatedAt: time.Now().UTC().Format(time.RFC3339Nano), UpdatedAt: time.Now().UTC().Format(time.RFC3339Nano)}
 }
 func (f *fakeClient) Check(context.Context) error { return f.err }
 func (f *fakeClient) ListCollections(_ context.Context, scope, _ string) ([]Collection, error) {

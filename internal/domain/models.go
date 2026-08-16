@@ -37,6 +37,8 @@ const (
 type DocumentStatus string
 
 const (
+	DocumentQueued DocumentStatus = "queued"
+	// DocumentPending 只用于读取迁移前 Provider 数据，不得再用于新写入或公共响应。
 	DocumentPending  DocumentStatus = "pending"
 	DocumentIndexing DocumentStatus = "indexing"
 	DocumentReady    DocumentStatus = "ready"

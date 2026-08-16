@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -99,6 +100,17 @@ def test_document_cannot_cross_collection_scope(tmp_path: Path) -> None:
         repository.get_document("doc_abcdefgh", "scope-b")
 
 
+def test_document_and_initial_index_job_are_created_atomically(tmp_path: Path) -> None:
+    repository = new_repository(tmp_path)
+    repository.create_collection(collection())
+
+    created, job = repository.create_queued_document(document(), "scope-a")
+
+    assert created.status == "queued"
+    assert job.document_id == created.id
+    assert repository.get_active_job(created.id) == job
+
+
 def test_nonempty_collection_cannot_be_deleted(tmp_path: Path) -> None:
     repository = new_repository(tmp_path)
     repository.create_collection(collection())
@@ -139,3 +151,43 @@ def test_job_claim_cancel_and_restart_recovery(tmp_path: Path) -> None:
     assert recovered.operation == "reindex"
     repository.complete_job(recovered.id)
     assert repository.get_active_job("doc_abcdefgh") is None
+
+
+def test_repository_migrates_legacy_pending_document_to_queued(tmp_path: Path) -> None:
+    path = tmp_path / "provider.sqlite"
+    with sqlite3.connect(path) as connection:
+        connection.executescript(
+            """
+            CREATE TABLE collections (
+                id TEXT PRIMARY KEY, name TEXT NOT NULL, folder_uid TEXT NOT NULL,
+                scope TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL, UNIQUE(scope, folder_uid, name)
+            );
+            CREATE TABLE documents (
+                id TEXT PRIMARY KEY,
+                collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE RESTRICT,
+                name TEXT NOT NULL, media_type TEXT NOT NULL, size INTEGER NOT NULL,
+                sha256 TEXT NOT NULL, original_path TEXT NOT NULL, service TEXT NOT NULL,
+                tags TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (
+                    status IN ('pending', 'indexing', 'ready', 'failed', 'disabled')
+                ),
+                failure_reason TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                UNIQUE(collection_id, id)
+            );
+            INSERT INTO collections VALUES (
+                'kbs_abcdefgh', 'Operations', 'folder-a', 'scope-a', 'active',
+                '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'
+            );
+            INSERT INTO documents VALUES (
+                'doc_abcdefgh', 'kbs_abcdefgh', 'runbook.md', 'text/markdown', 10,
+                'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+                'originals/runbook.md', 'checkout', '[]', 'pending', '',
+                '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'
+            );
+            """
+        )
+
+    repository = Repository(path)
+
+    assert repository.get_document("doc_abcdefgh", "scope-a").status == "queued"

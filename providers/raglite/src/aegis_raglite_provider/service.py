@@ -99,14 +99,7 @@ class KnowledgeService:
         )
 
     def delete_collection(self, collection_id: str, scope: str) -> None:
-        documents = self.repository.list_documents(collection_id, scope)
-        for document in documents:
-            if self.repository.get_active_job(document.id):
-                raise ConflictError("collection contains a document with an active job")
-        for document in documents:
-            self.backend.delete(document.id)
-            self.originals.delete(document.original_path)
-            self.repository.delete_document_record(document.id)
+        # 首版不做隐式级联，避免一次管理操作同时删除原文和索引。
         self.repository.delete_collection(collection_id, scope)
 
     def upload_document(
@@ -141,7 +134,8 @@ class KnowledgeService:
             tags=self._normalize_tags(tags),
         )
         try:
-            return self.repository.create_document(document, scope)
+            queued, _ = self.repository.create_queued_document(document, scope)
+            return queued
         except Exception:
             self.originals.delete(relative)
             raise
@@ -167,19 +161,27 @@ class KnowledgeService:
             service=service.strip(),
             tags=self._normalize_tags(tags),
         )
-        if previous.status == "ready":
+        if previous.status in {"ready", "failed"}:
             self.repository.create_job(document_id, "reindex")
         return document
 
     def start_indexing(self, document_id: str, scope: str) -> Job:
         document = self.repository.get_document(document_id, scope)
-        if document.status == "disabled":
-            raise ConflictError("disabled document cannot be indexed")
+        active = self.repository.get_active_job(document_id)
+        if active is not None:
+            return active
         job = self.repository.create_job(
             document_id, "reindex" if document.status in {"ready", "failed"} else "index"
         )
-        self.repository.set_document_status(document_id, "indexing")
+        self.repository.set_document_status(document_id, "queued")
         return job
+
+    def retry_indexing(self, document_id: str, scope: str) -> Document:
+        document = self.repository.get_document(document_id, scope)
+        if document.status != "failed":
+            return document
+        self.repository.create_job(document_id, "reindex")
+        return self.repository.set_document_status(document_id, "queued")
 
     def stop_indexing(self, document_id: str, scope: str) -> None:
         self.repository.get_document(document_id, scope)
@@ -190,12 +192,15 @@ class KnowledgeService:
             raise CapabilityError("running indexing cannot be cancelled safely")
         if not self.repository.cancel_queued_job(document_id):
             raise ConflictError("indexing job state changed")
-        self.repository.set_document_status(document_id, "pending")
+        self.repository.set_document_status(document_id, "queued")
 
     def delete_document(self, document_id: str, scope: str) -> None:
         document = self.repository.get_document(document_id, scope)
-        if self.repository.get_active_job(document_id):
-            raise ConflictError("document has an active job")
+        active = self.repository.get_active_job(document_id)
+        if active is not None and active.status == "running":
+            raise ConflictError("document is indexing")
+        if active is not None and not self.repository.cancel_queued_job(document_id):
+            raise ConflictError("indexing job state changed")
         self.backend.delete(document.id)
         self.originals.delete(document.original_path)
         self.repository.delete_document_record(document.id)

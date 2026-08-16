@@ -62,7 +62,7 @@ class Repository:
                     service TEXT NOT NULL,
                     tags TEXT NOT NULL,
                     status TEXT NOT NULL CHECK (
-                        status IN ('pending', 'indexing', 'ready', 'failed', 'disabled')
+                        status IN ('pending', 'queued', 'indexing', 'ready', 'failed', 'disabled')
                     ),
                     failure_reason TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -88,6 +88,72 @@ class Repository:
                 CREATE INDEX IF NOT EXISTS jobs_queue_idx ON jobs(status, created_at);
                 """
             )
+            connection.commit()
+            self._migrate_legacy_document_status(connection)
+
+    @staticmethod
+    def _migrate_legacy_document_status(connection: sqlite3.Connection) -> None:
+        row = connection.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'documents'"
+        ).fetchone()
+        if row is None or "'queued'" in row["sql"]:
+            return
+
+        # SQLite 不能原地修改 CHECK；重建 manifest 表并把历史 pending 收敛为 queued。
+        connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            connection.execute("BEGIN IMMEDIATE")
+            connection.execute(
+                """
+                CREATE TABLE documents_v2 (
+                    id TEXT PRIMARY KEY,
+                    collection_id TEXT NOT NULL REFERENCES collections(id) ON DELETE RESTRICT,
+                    name TEXT NOT NULL,
+                    media_type TEXT NOT NULL,
+                    size INTEGER NOT NULL CHECK (size >= 0),
+                    sha256 TEXT NOT NULL,
+                    original_path TEXT NOT NULL,
+                    service TEXT NOT NULL,
+                    tags TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (
+                        status IN ('queued', 'indexing', 'ready', 'failed')
+                    ),
+                    failure_reason TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(collection_id, id)
+                )
+                """
+            )
+            connection.execute(
+                """
+                INSERT INTO documents_v2
+                    (id, collection_id, name, media_type, size, sha256, original_path,
+                     service, tags, status, failure_reason, created_at, updated_at)
+                SELECT id, collection_id, name, media_type, size, sha256, original_path,
+                       service, tags,
+                       CASE
+                           WHEN status IN ('pending', 'disabled') THEN 'queued'
+                           ELSE status
+                       END,
+                       failure_reason, created_at, updated_at
+                FROM documents
+                """
+            )
+            connection.execute("DROP TABLE documents")
+            connection.execute("ALTER TABLE documents_v2 RENAME TO documents")
+            connection.execute(
+                "CREATE INDEX documents_collection_idx ON documents(collection_id, created_at)"
+            )
+            connection.commit()
+        except Exception:
+            connection.rollback()
+            raise
+        finally:
+            connection.execute("PRAGMA foreign_keys = ON")
+
+        if connection.execute("PRAGMA foreign_key_check").fetchone() is not None:
+            raise RuntimeError("provider manifest migration broke foreign keys")
 
     def create_collection(self, collection: Collection) -> Collection:
         with self._lock, self._connect() as connection:
@@ -206,6 +272,43 @@ class Repository:
                 raise ConflictError("document already exists") from error
         return document
 
+    def create_queued_document(self, document: Document, scope: str) -> tuple[Document, Job]:
+        """Atomically persist an uploaded document and its first index task."""
+        self.get_collection(document.collection_id, scope)
+        job = Job(
+            id=f"job_{uuid.uuid4().hex}",
+            document_id=document.id,
+            operation="index",
+            status="queued",
+        )
+        with self._lock, self._connect() as connection:
+            try:
+                connection.execute(
+                    """INSERT INTO documents
+                       (id, collection_id, name, media_type, size, sha256, original_path,
+                        service, tags, status, failure_reason, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        document.id,
+                        document.collection_id,
+                        document.name,
+                        document.media_type,
+                        document.size,
+                        document.sha256,
+                        document.original_path,
+                        document.service,
+                        json.dumps(document.tags),
+                        "queued",
+                        document.failure_reason,
+                        document.created_at,
+                        document.updated_at,
+                    ),
+                )
+                self._insert_job(connection, job)
+            except sqlite3.IntegrityError as error:
+                raise ConflictError("document already exists") from error
+        return replace(document, status="queued"), job
+
     def list_documents(self, collection_id: str, scope: str) -> list[Document]:
         self.get_collection(collection_id, scope)
         with self._connect() as connection:
@@ -261,7 +364,7 @@ class Repository:
         with self._lock, self._connect() as connection:
             connection.execute(
                 """UPDATE documents
-                   SET service = ?, tags = ?, status = 'pending', failure_reason = '',
+                   SET service = ?, tags = ?, status = 'queued', failure_reason = '',
                        updated_at = ?
                    WHERE id = ?""",
                 (service, json.dumps(tags), now_iso(), document_id),
@@ -307,24 +410,28 @@ class Repository:
             ).fetchone()
             if active is not None:
                 raise ConflictError("document already has an active job")
-            connection.execute(
-                """INSERT INTO jobs
-                   (id, document_id, operation, status, attempts, error, created_at,
-                    started_at, finished_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    job.id,
-                    job.document_id,
-                    job.operation,
-                    job.status,
-                    job.attempts,
-                    job.error,
-                    job.created_at,
-                    job.started_at,
-                    job.finished_at,
-                ),
-            )
+            self._insert_job(connection, job)
         return job
+
+    @staticmethod
+    def _insert_job(connection: sqlite3.Connection, job: Job) -> None:
+        connection.execute(
+            """INSERT INTO jobs
+               (id, document_id, operation, status, attempts, error, created_at,
+                started_at, finished_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                job.id,
+                job.document_id,
+                job.operation,
+                job.status,
+                job.attempts,
+                job.error,
+                job.created_at,
+                job.started_at,
+                job.finished_at,
+            ),
+        )
 
     def claim_next_job(self) -> Job | None:
         # BEGIN IMMEDIATE 保证多个线程不会领取同一个写任务。

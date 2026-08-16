@@ -8,7 +8,7 @@ from fakes import FakeBackend
 
 from aegis_raglite_provider.backend import Chunk
 from aegis_raglite_provider.original_store import OriginalStore
-from aegis_raglite_provider.repository import NotFoundError, Repository
+from aegis_raglite_provider.repository import ConflictError, NotFoundError, Repository
 from aegis_raglite_provider.service import CapabilityError, KnowledgeService, ValidationError
 
 
@@ -40,8 +40,9 @@ def new_service(tmp_path: Path) -> tuple[KnowledgeService, FakeBackend]:
 
 def test_worker_indexes_original_and_marks_document_ready(tmp_path: Path) -> None:
     service, backend = new_service(tmp_path)
-    job = service.start_indexing("doc_abcdefgh", "scope-a")
+    job = service.repository.get_active_job("doc_abcdefgh")
 
+    assert job is not None
     assert service.run_once()
     document = service.get_document("doc_abcdefgh", "scope-a")
     assert document.status == "ready"
@@ -52,8 +53,9 @@ def test_worker_indexes_original_and_marks_document_ready(tmp_path: Path) -> Non
 def test_worker_records_failure_without_losing_original(tmp_path: Path) -> None:
     service, backend = new_service(tmp_path)
     backend.fail_index = True
-    job = service.start_indexing("doc_abcdefgh", "scope-a")
+    job = service.repository.get_active_job("doc_abcdefgh")
 
+    assert job is not None
     assert service.run_once()
     document, content = service.open_document("doc_abcdefgh", "scope-a")
     with content:
@@ -65,7 +67,6 @@ def test_worker_records_failure_without_losing_original(tmp_path: Path) -> None:
 
 def test_search_forces_scope_collection_and_service_filters(tmp_path: Path) -> None:
     service, backend = new_service(tmp_path)
-    service.start_indexing("doc_abcdefgh", "scope-a")
     service.run_once()
 
     hits = service.search(
@@ -129,9 +130,8 @@ def test_search_rejects_nonzero_hybrid_threshold(tmp_path: Path) -> None:
 
 def test_stop_only_cancels_queued_job(tmp_path: Path) -> None:
     service, _ = new_service(tmp_path)
-    service.start_indexing("doc_abcdefgh", "scope-a")
     service.stop_indexing("doc_abcdefgh", "scope-a")
-    assert service.get_document("doc_abcdefgh", "scope-a").status == "pending"
+    assert service.get_document("doc_abcdefgh", "scope-a").status == "queued"
 
     service.start_indexing("doc_abcdefgh", "scope-a")
     assert service.repository.claim_next_job() is not None
@@ -166,14 +166,40 @@ def test_delete_failure_preserves_original_and_manifest_for_retry(tmp_path: Path
     assert service.get_document("doc_abcdefgh", "scope-a").id == "doc_abcdefgh"
 
 
-def test_delete_collection_cleans_all_documents_before_collection(tmp_path: Path) -> None:
+def test_delete_collection_rejects_nonempty_collection(tmp_path: Path) -> None:
     service, backend = new_service(tmp_path)
 
-    service.delete_collection("kbs_abcdefgh", "scope-a")
+    with pytest.raises(ConflictError, match="collection is not empty"):
+        service.delete_collection("kbs_abcdefgh", "scope-a")
 
-    assert backend.deleted == ["doc_abcdefgh"]
-    with pytest.raises(NotFoundError):
-        service.get_collection("kbs_abcdefgh", "scope-a")
+    assert backend.deleted == []
+    assert service.get_collection("kbs_abcdefgh", "scope-a").id == "kbs_abcdefgh"
+
+
+def test_upload_automatically_queues_index_job(tmp_path: Path) -> None:
+    service, _ = new_service(tmp_path)
+
+    document = service.get_document("doc_abcdefgh", "scope-a")
+    job = service.repository.get_active_job(document.id)
+
+    assert document.status == "queued"
+    assert job is not None
+    assert job.operation == "index"
+    assert job.status == "queued"
+
+
+def test_failed_document_can_retry_index_idempotently(tmp_path: Path) -> None:
+    service, backend = new_service(tmp_path)
+    backend.fail_index = True
+    service.run_once()
+    backend.fail_index = False
+
+    retried = service.retry_indexing("doc_abcdefgh", "scope-a")
+    repeated = service.retry_indexing("doc_abcdefgh", "scope-a")
+
+    assert retried.status == "queued"
+    assert repeated.status == "queued"
+    assert service.repository.get_active_job("doc_abcdefgh") is not None
 
 
 def test_scope_migration_requires_distinct_provider_scopes(tmp_path: Path) -> None:

@@ -474,7 +474,7 @@ func mapDocument(item Document, collectionID domain.ID) (ports.KnowledgeDocument
 	}
 	status := domain.DocumentStatus(item.Status)
 	switch status {
-	case domain.DocumentPending, domain.DocumentIndexing, domain.DocumentReady, domain.DocumentFailed, domain.DocumentDisabled:
+	case domain.DocumentQueued, domain.DocumentPending, domain.DocumentIndexing, domain.DocumentReady, domain.DocumentFailed, domain.DocumentDisabled:
 	default:
 		return ports.KnowledgeDocument{}, resultUnknown(errors.New("document status is invalid"))
 	}

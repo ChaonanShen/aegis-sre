@@ -121,11 +121,14 @@ def test_scope_migration_moves_collection_without_reuploading_documents(tmp_path
 
     assert response.status_code == 200
     assert response.json()["scope"] == "scp_folder"
-    assert client.get("/v1/documents/doc_abcdefgh", headers=headers("scp_folder")).status_code == 200
+    assert (
+        client.get("/v1/documents/doc_abcdefgh", headers=headers("scp_folder")).status_code
+        == 200
+    )
     assert backend.indexed == []
 
 
-def test_admin_ownership_inventory_requires_service_auth_but_not_resource_scope(tmp_path: Path) -> None:
+def test_admin_inventory_requires_service_auth_but_not_resource_scope(tmp_path: Path) -> None:
     client, _, _ = new_client(tmp_path)
     client.post(
         "/v1/collections",

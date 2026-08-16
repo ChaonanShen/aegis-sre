@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from typing import Literal
 
 CollectionStatus = Literal["active", "disabled"]
-DocumentStatus = Literal["pending", "indexing", "ready", "failed", "disabled"]
+DocumentStatus = Literal["queued", "indexing", "ready", "failed"]
 JobStatus = Literal["queued", "running", "completed", "failed", "cancelled"]
 JobOperation = Literal["index", "reindex", "delete"]
 
@@ -38,7 +38,7 @@ class Document:
     original_path: str
     service: str
     tags: tuple[str, ...]
-    status: DocumentStatus = "pending"
+    status: DocumentStatus = "queued"
     failure_reason: str = ""
     created_at: str = field(default_factory=now_iso)
     updated_at: str = field(default_factory=now_iso)
