@@ -131,7 +131,7 @@ describe('PlaybooksPage native Dagu CRUD', () => {
 });
 
 function document(source = firstSource): PlaybookDocument {
-  return { id: 'pbk_scope_abcdefgh', name: 'diagnose-api', description: 'Diagnose API', status: 'active', source };
+  return { id: 'pbk_scope_abcdefgh', folderUid: 'ops', name: 'diagnose-api', description: 'Diagnose API', status: 'active', source };
 }
 
 function run(status: PlaybookRunRecord['status']): PlaybookRunRecord {

@@ -79,7 +79,7 @@ func TestProviderFiltersNonAegisDAGs(t *testing.T) {
 	client, _ := NewClient(server.URL, server.Client())
 	provider, _ := NewProvider(client)
 	page, err := provider.List(context.Background(), actor, domain.PageRequest{Limit: 10})
-	if err != nil || len(page.Items) != 1 || page.Items[0].Ref.ID != domain.ID(id) {
+	if err != nil || len(page.Items) != 1 || page.Items[0].Ref.ID != domain.ID(id) || page.Items[0].FolderUID != actor.FolderUID {
 		t.Fatalf("page = %#v, err = %v", page, err)
 	}
 }
@@ -452,7 +452,7 @@ func TestProviderGetsNameAndDescriptionFromNativeYAML(t *testing.T) {
 	client, _ := NewClient(server.URL, server.Client())
 	provider, _ := NewProvider(client)
 	resource, err := provider.Get(context.Background(), providerTestActor("folder-a"), ports.PlaybookRef{ID: "pbk_abcdefgh"})
-	if err != nil || resource.Name != "diagnose" || resource.Description != "Diagnose service" {
+	if err != nil || resource.FolderUID != "folder-a" || resource.Name != "diagnose" || resource.Description != "Diagnose service" {
 		t.Fatalf("resource = %#v, err = %v", resource, err)
 	}
 }

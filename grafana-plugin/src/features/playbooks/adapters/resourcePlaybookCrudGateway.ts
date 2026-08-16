@@ -32,7 +32,7 @@ export function createResourcePlaybookCrudGateway(
       do {
         const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
         const page = await client().request(`/api/v1/playbooks${query}`, isPlaybookPage, { headers: folderHeaders(), signal });
-        items.push(...page.items.map(toSummary));
+        items.push(...page.items.map((item) => toSummary(item, requireFolder(options.folderUid))));
         cursor = page.has_more ? page.next_cursor ?? '' : '';
         if (page.has_more && !cursor) {
           throw new ResourceClientError(502, 'provider_unavailable', 'Playbook 分页响应缺少 next_cursor。');
@@ -41,7 +41,7 @@ export function createResourcePlaybookCrudGateway(
       return items;
     },
     async getPlaybook(id, signal) {
-      return toDocument(await client().request(playbookPath(id), isPlaybook, { headers: folderHeaders(), signal }));
+      return toDocument(await client().request(playbookPath(id), isPlaybook, { headers: folderHeaders(), signal }), requireFolder(options.folderUid));
     },
     async createPlaybook(input, signal) {
       requireNativeSource(input.source);
@@ -51,7 +51,8 @@ export function createResourcePlaybookCrudGateway(
           data: input.source,
           headers: { ...folderHeaders(), 'Content-Type': 'application/yaml', 'Idempotency-Key': input.idempotencyKey },
           signal,
-        })
+        }),
+		requireFolder(options.folderUid)
       );
     },
     async updatePlaybook(id, input, signal) {
@@ -62,7 +63,8 @@ export function createResourcePlaybookCrudGateway(
           data: input.source,
           headers: { ...folderHeaders(), 'Content-Type': 'application/yaml' },
           signal,
-        })
+        }),
+		requireFolder(options.folderUid)
       );
     },
     async deletePlaybook(id, signal) {
@@ -160,12 +162,15 @@ function requireFolder(folderUid: string | undefined): string {
   return folderUid;
 }
 
-function toSummary(value: ContractSummary): PlaybookSummary {
-  return { id: value.id, name: value.name, description: value.description, status: value.status };
+function toSummary(value: ContractSummary, expectedFolderUid: string): PlaybookSummary {
+  if (value.folder_uid !== expectedFolderUid) {
+    throw new ResourceClientError(502, 'provider_unavailable', 'Playbook Folder ownership 响应不一致。');
+  }
+  return { id: value.id, folderUid: value.folder_uid, name: value.name, description: value.description, status: value.status };
 }
 
-function toDocument(value: ContractPlaybook): PlaybookDocument {
-  return { ...toSummary(value), source: value.source };
+function toDocument(value: ContractPlaybook, expectedFolderUid: string): PlaybookDocument {
+  return { ...toSummary(value, expectedFolderUid), source: value.source };
 }
 
 function toRun(value: ContractRun): PlaybookRunRecord {

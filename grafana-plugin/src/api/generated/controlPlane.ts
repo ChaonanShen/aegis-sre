@@ -833,6 +833,7 @@ export interface components {
         };
         Playbook: {
             id: components["schemas"]["BusinessID"];
+            folder_uid: string;
             name: string;
             description: string;
             /** @enum {string} */
@@ -841,6 +842,7 @@ export interface components {
         };
         PlaybookSummary: {
             id: components["schemas"]["BusinessID"];
+            folder_uid: string;
             name: string;
             description: string;
             /** @enum {string} */

@@ -29,7 +29,7 @@ describe('usePlaybooksController', () => {
 });
 
 function summary(id: string): PlaybookSummary {
-  return { id, name: id, description: '', status: 'active' };
+  return { id, folderUid: 'ops', name: id, description: '', status: 'active' };
 }
 
 function deferred<T>() {

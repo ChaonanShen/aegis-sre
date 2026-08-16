@@ -2,6 +2,7 @@ export type PlaybookStatus = 'active' | 'disabled';
 
 export interface PlaybookSummary {
   id: string;
+  folderUid: string;
   name: string;
   description: string;
   status: PlaybookStatus;

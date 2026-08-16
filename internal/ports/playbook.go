@@ -16,6 +16,7 @@ type PlaybookRunRef struct {
 
 type PlaybookResource struct {
 	Ref         PlaybookRef
+	FolderUID   string
 	Name        string
 	Description string
 	YAML        []byte

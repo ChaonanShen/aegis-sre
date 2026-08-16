@@ -34,23 +34,30 @@ describe('Control Plane Playbook CRUD gateway', () => {
   });
 
   test('lists summaries without N+1 detail requests', async () => {
-    const backend = fakeBackend([{ items: [{ id: 'pbk_scope_abcdefgh', name: 'diagnose', description: 'Diagnose service', status: 'active' }], has_more: false }]);
+    const backend = fakeBackend([{ items: [{ id: 'pbk_scope_abcdefgh', folder_uid: 'ops', name: 'diagnose', description: 'Diagnose service', status: 'active' }], has_more: false }]);
     const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
     await expect(gateway.listPlaybooks()).resolves.toEqual([
-      { id: 'pbk_scope_abcdefgh', name: 'diagnose', description: 'Diagnose service', status: 'active' },
+      { id: 'pbk_scope_abcdefgh', folderUid: 'ops', name: 'diagnose', description: 'Diagnose service', status: 'active' },
     ]);
     expect(backend.fetch).toHaveBeenCalledTimes(1);
   });
 
+  test('rejects a response whose verified Folder differs from the active binding', async () => {
+    const backend = fakeBackend([{ items: [{ id: 'pbk_scope_abcdefgh', folder_uid: 'payments', name: 'foreign', description: '', status: 'active' }], has_more: false }]);
+    const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
+
+    await expect(gateway.listPlaybooks()).rejects.toMatchObject({ code: 'provider_unavailable' });
+  });
+
   test('loads detail source directly', async () => {
-    const backend = fakeBackend([{ id: 'pbk_scope_abcdefgh', name: 'diagnose', description: 'Diagnose service', status: 'active', source }]);
+    const backend = fakeBackend([{ id: 'pbk_scope_abcdefgh', folder_uid: 'ops', name: 'diagnose', description: 'Diagnose service', status: 'active', source }]);
     const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
     await expect(gateway.getPlaybook('pbk_scope_abcdefgh')).resolves.toMatchObject({ source });
     expect((backend.fetch as jest.Mock).mock.calls[0][0]).toMatchObject({ url: expect.stringContaining('/pbk_scope_abcdefgh') });
   });
 
   test('uses the operation idempotency key supplied by the editor', async () => {
-    const backend = fakeBackend([{ id: 'pbk_scope_abcdefgh', name: 'diagnose', description: 'Diagnose service', status: 'active', source }]);
+    const backend = fakeBackend([{ id: 'pbk_scope_abcdefgh', folder_uid: 'ops', name: 'diagnose', description: 'Diagnose service', status: 'active', source }]);
     const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
     await gateway.createPlaybook({ source, idempotencyKey: 'playbook-operation-123' });
     expect((backend.fetch as jest.Mock).mock.calls[0][0]).toEqual(expect.objectContaining({
@@ -62,7 +69,7 @@ describe('Control Plane Playbook CRUD gateway', () => {
   test('validates unsaved YAML and forwards update and delete', async () => {
     const backend = fakeBackend([
       { valid: true, errors: [] },
-      { id: 'pbk_scope_abcdefgh', name: 'diagnose', description: 'Diagnose service', status: 'active', source },
+      { id: 'pbk_scope_abcdefgh', folder_uid: 'ops', name: 'diagnose', description: 'Diagnose service', status: 'active', source },
       undefined,
     ]);
     const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
@@ -78,7 +85,7 @@ describe('Control Plane Playbook CRUD gateway', () => {
     const controllerSource = `name: controller\nhandler_on:\n  success:\n    command: echo done\n`;
     const backend = fakeBackend([
       { valid: true, errors: [] },
-      { id: 'pbk_scope_abcdefgh', name: 'controller', description: '', status: 'active', source: controllerSource },
+      { id: 'pbk_scope_abcdefgh', folder_uid: 'ops', name: 'controller', description: '', status: 'active', source: controllerSource },
     ]);
     const gateway = createResourcePlaybookCrudGateway({ backendSrv: backend, folderUid: 'ops' });
     await expect(gateway.validatePlaybook(controllerSource)).resolves.toEqual({ valid: true, errors: [] });

@@ -47,9 +47,9 @@ func (fake *playbookHTTPFake) Create(_ context.Context, _ domain.ActorContext, i
 	return ports.PlaybookRef{ID: input.ID}, fake.err
 }
 
-func (fake *playbookHTTPFake) Get(_ context.Context, _ domain.ActorContext, ref ports.PlaybookRef) (ports.PlaybookResource, error) {
+func (fake *playbookHTTPFake) Get(_ context.Context, actor domain.ActorContext, ref ports.PlaybookRef) (ports.PlaybookResource, error) {
 	fake.getCalls++
-	return ports.PlaybookResource{Ref: ref, Name: "diagnose", Description: "Diagnose service", YAML: fake.created.YAML, Enabled: true}, fake.err
+	return ports.PlaybookResource{Ref: ref, FolderUID: actor.FolderUID, Name: "diagnose", Description: "Diagnose service", YAML: fake.created.YAML, Enabled: true}, fake.err
 }
 
 func (fake *playbookHTTPFake) Validate(_ context.Context, _ domain.ActorContext, _ []byte) ([]ports.ValidationIssue, error) {
@@ -130,7 +130,7 @@ func TestCreatePlaybookUsesStablePublicIDAndNativeYAML(t *testing.T) {
 	if strings.Contains(response.Body.String(), "provider") || strings.Contains(response.Body.String(), "dagu") {
 		t.Fatalf("provider detail leaked: %s", response.Body.String())
 	}
-	if !strings.Contains(response.Body.String(), `"description":"Diagnose service"`) || !strings.Contains(response.Body.String(), `"source":"name: diagnose`) {
+	if !strings.Contains(response.Body.String(), `"description":"Diagnose service"`) || !strings.Contains(response.Body.String(), `"folder_uid":"folder-a"`) || !strings.Contains(response.Body.String(), `"source":"name: diagnose`) {
 		t.Fatalf("missing native detail fields: %s", response.Body.String())
 	}
 

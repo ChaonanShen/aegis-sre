@@ -1416,10 +1416,12 @@ components:
     Playbook:
       type: object
       additionalProperties: false
-      required: [id, name, description, status, source]
+      required: [id, folder_uid, name, description, status, source]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
+        folder_uid:
+          type: string
         name:
           type: string
         description:
@@ -1432,10 +1434,12 @@ components:
     PlaybookSummary:
       type: object
       additionalProperties: false
-      required: [id, name, description, status]
+      required: [id, folder_uid, name, description, status]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
+        folder_uid:
+          type: string
         name:
           type: string
         description:

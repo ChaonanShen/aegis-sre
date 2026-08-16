@@ -85,6 +85,7 @@ func (provider *Provider) List(ctx context.Context, actor domain.ActorContext, r
 		}
 		items = append(items, ports.PlaybookResource{
 			Ref:         ports.PlaybookRef{ID: id},
+			FolderUID:   actor.FolderUID,
 			Name:        dag.DAG.Name,
 			Description: dag.DAG.Description,
 			Enabled:     !dag.Suspended,
@@ -107,7 +108,7 @@ func (provider *Provider) Get(ctx context.Context, actor domain.ActorContext, re
 		return ports.PlaybookResource{}, err
 	}
 	name, description := dagMetadata(dag.DAG, dag.Spec)
-	return ports.PlaybookResource{Ref: ref, Name: name, Description: description, YAML: []byte(dag.Spec), Enabled: !dag.Suspended}, nil
+	return ports.PlaybookResource{Ref: ref, FolderUID: actor.FolderUID, Name: name, Description: description, YAML: []byte(dag.Spec), Enabled: !dag.Suspended}, nil
 }
 
 func (provider *Provider) Create(ctx context.Context, actor domain.ActorContext, input ports.CreatePlaybookInput) (ports.PlaybookRef, error) {

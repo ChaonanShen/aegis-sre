@@ -472,7 +472,7 @@ func playbookJSON(resource ports.PlaybookResource) map[string]any {
 }
 
 func playbookSummaryJSON(resource ports.PlaybookResource) map[string]any {
-	value := map[string]any{"id": resource.Ref.ID, "name": resource.Name, "description": resource.Description, "status": "disabled"}
+	value := map[string]any{"id": resource.Ref.ID, "folder_uid": resource.FolderUID, "name": resource.Name, "description": resource.Description, "status": "disabled"}
 	if resource.Enabled {
 		value["status"] = "active"
 	}
