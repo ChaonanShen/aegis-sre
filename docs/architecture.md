@@ -199,6 +199,7 @@ Knowledge 的持久卷由各自组件负责备份恢复，Canvas 卷单独备份
 
 ## 10. 相关文档
 
+- [统一授权与资源归属设计](authorization.md)
 - [Dagu 写入归属 ADR](adr/0001-dagu-authoring-ownership.md)
 - [Agent 公开标识 ADR](adr/0002-agent-public-identifiers.md)
 - [Knowledge 身份与 Folder 授权 ADR](adr/0004-knowledge-identity-and-folder-authorization.md)
