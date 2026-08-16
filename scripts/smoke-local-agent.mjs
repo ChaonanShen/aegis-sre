@@ -22,6 +22,21 @@ async function responseText(response, operation) {
   return text;
 }
 
+function parseServerSentEvents(stream) {
+  return stream
+    .split(/\r?\n\r?\n/)
+    .map((block) => {
+      const lines = block.split(/\r?\n/);
+      const event = lines.find((line) => line.startsWith('event: '))?.slice('event: '.length);
+      const data = lines
+        .filter((line) => line.startsWith('data: '))
+        .map((line) => line.slice('data: '.length))
+        .join('\n');
+      return event && data ? { event, data: JSON.parse(data) } : undefined;
+    })
+    .filter(Boolean);
+}
+
 const settings = JSON.parse(
   await responseText(
     await fetch(`${grafanaBase}/api/plugins/grafana-plugin-app/settings`, { headers: commonHeaders }),
@@ -59,11 +74,20 @@ try {
     }),
     'stream turn'
   );
-  if (!stream.includes('event: turn.completed') || !stream.includes('AEGIS_OK')) {
+  const events = parseServerSentEvents(stream);
+  // Provider 可把单个回答拆成任意 message.delta，必须按事件语义重组后再断言。
+  const assistantOutput = events
+    .filter(({ event }) => event === 'message.delta')
+    .map(({ data }) => data.payload?.delta ?? '')
+    .join('');
+  const hasCompleted = events.some(({ event }) => event === 'turn.completed');
+  const hasFailed = events.some(({ event }) => event === 'turn.failed');
+  const hasExpectedOutput = assistantOutput.includes('AEGIS_OK');
+  if (!hasCompleted || !hasExpectedOutput) {
     throw new Error(
-      stream.includes('event: turn.failed')
+      hasFailed
         ? 'DeepSeek turn failed; inspect the OpenCode provider logs'
-        : 'turn stream did not contain the terminal event and expected DeepSeek output'
+        : `turn stream validation failed (completed=${hasCompleted}, expected_output=${hasExpectedOutput}): ${stream.slice(-1000)}`
     );
   }
 

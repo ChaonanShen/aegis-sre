@@ -629,6 +629,8 @@ export interface components {
         };
         SessionDetail: {
             session: components["schemas"]["Session"];
+            /** @description Current product-level instructions applied to Agent turns. */
+            system_prompt: string;
             messages?: components["schemas"]["Message"][];
         };
         QueryDefinition: {

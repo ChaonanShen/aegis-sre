@@ -810,8 +810,14 @@ type Session struct {
 
 	// FolderUid Request authorization context only; Agent Providers do not persist this value.
 	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
-	FolderUid *string       `json:"folder_uid,omitempty"`
-	Id        BusinessID    `json:"id"`
+	FolderUid *string    `json:"folder_uid,omitempty"`
+	Id        BusinessID `json:"id"`
+
+	// MessageCount Persisted user/assistant message count; null when the provider cannot supply it in a list operation.
+	MessageCount *int `json:"message_count,omitempty"`
+
+	// Preview Latest user message preview; null when unavailable without loading session detail.
+	Preview   *string       `json:"preview,omitempty"`
 	Status    SessionStatus `json:"status"`
 	Title     string        `json:"title"`
 	UpdatedAt time.Time     `json:"updated_at"`
@@ -824,6 +830,9 @@ type SessionStatus string
 type SessionDetail struct {
 	Messages *[]Message `json:"messages,omitempty"`
 	Session  Session    `json:"session"`
+
+	// SystemPrompt Current product-level instructions applied to Agent turns.
+	SystemPrompt string `json:"system_prompt"`
 }
 
 // SessionPage defines model for SessionPage.

@@ -54,6 +54,18 @@ const [target] = process.argv.slice(2);
 fs.writeFileSync(target, JSON.stringify({ deepseek: { type: 'api', key: process.env.DEEPSEEK_API_KEY } }), { mode: 0o600 });
 NODE
 
+# Control Plane readiness 会反向探测 Agent Provider，不能用 Compose healthy 依赖排序。
+# 等待其 HTTP 监听后再握手 MCP，避免首次启动把 Playbook/Canvas 永久标记为失败。
+attempt=0
+until wget -q --spider http://control-plane:8080/health/live; do
+  attempt=$((attempt + 1))
+  if [ "$attempt" -ge 60 ]; then
+    echo "Timed out waiting for Control Plane MCP endpoints" >&2
+    exit 1
+  fi
+  sleep 1
+done
+
 # 启动前必须确认声明的 MCP 能完成握手，避免健康但没有 SRE 工具的伪可用状态。
 opencode mcp list --pure
 exec opencode serve --pure --print-logs --log-level INFO --hostname 0.0.0.0 --port 4096

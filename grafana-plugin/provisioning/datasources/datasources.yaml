@@ -6,5 +6,6 @@ datasources:
     uid: prometheus-local
     access: proxy
     url: http://prometheus:9090
-    isDefault: true
+    # `prometheus` 是 Playbook 和 Canvas 示例使用的默认 datasource UID。
+    isDefault: false
     editable: false
