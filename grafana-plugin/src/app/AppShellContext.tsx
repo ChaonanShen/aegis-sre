@@ -2,7 +2,8 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Folder } from './model';
 import { useAppServices } from './AppServices';
 
-const STORAGE_KEY = 'torchbearing.fixture.shell.v1';
+const STORAGE_KEY = 'aegis.shell.folder.v1';
+const LEGACY_STORAGE_KEY = 'torchbearing.fixture.shell.v1';
 const DEFAULT_FOLDER_UID = 'infra';
 
 type FolderState = { status: 'loading' } | { status: 'success'; data: Folder[] } | { status: 'error'; error: Error };
@@ -102,7 +103,16 @@ export function useAppShell(): AppShellContextValue {
 
 function readPersistedFolderUid(): string | undefined {
   try {
-    return window.sessionStorage.getItem(STORAGE_KEY) || DEFAULT_FOLDER_UID;
+    const current = window.sessionStorage.getItem(STORAGE_KEY);
+    if (current) {
+      return current;
+    }
+    const legacy = window.sessionStorage.getItem(LEGACY_STORAGE_KEY);
+    if (legacy) {
+      window.sessionStorage.setItem(STORAGE_KEY, legacy);
+      return legacy;
+    }
+    return DEFAULT_FOLDER_UID;
   } catch {
     return DEFAULT_FOLDER_UID;
   }

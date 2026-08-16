@@ -92,19 +92,18 @@ function TopBar() {
         <strong>{PRODUCT_BRAND.tagline}</strong>
       </div>
       {runtimeMode === 'fixture' && (
-        <>
           <span aria-label="演示数据模式" className="runtime-badge">
             演示数据
           </span>
-          <FolderDropdown
-            activeFolder={activeFolder}
-            folders={folderList}
-            loading={folders.status === 'loading'}
-            onChange={setActiveFolder}
-            onRefresh={refreshFolders}
-          />
-        </>
       )}
+      <FolderDropdown
+        activeFolder={activeFolder}
+        error={folders.status === 'error'}
+        folders={folderList}
+        loading={folders.status === 'loading'}
+        onChange={setActiveFolder}
+        onRefresh={refreshFolders}
+      />
       <span className="topbar-spacer" />
     </header>
   );
@@ -240,13 +239,14 @@ function MobileNav() {
 
 interface FolderDropdownProps {
   activeFolder?: Folder;
+  error: boolean;
   folders: Folder[];
   loading: boolean;
   onChange: (uid: string) => void;
   onRefresh: () => void;
 }
 
-function FolderDropdown({ activeFolder, folders, loading, onChange, onRefresh }: FolderDropdownProps) {
+function FolderDropdown({ activeFolder, error, folders, loading, onChange, onRefresh }: FolderDropdownProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const rootRef = useRef<HTMLDivElement>(null);
@@ -303,7 +303,9 @@ function FolderDropdown({ activeFolder, folders, loading, onChange, onRefresh }:
       >
         <span className="dot" />
         <FolderIcon aria-hidden size={13} />
-        <span className="topbar-folder-name">Folder: {activeFolder?.title ?? '加载中'}</span>
+        <span className="topbar-folder-name">
+          Folder: {activeFolder?.title ?? (error ? '加载失败' : loading ? '加载中' : '无可用 Folder')}
+        </span>
         {activeFolder && (
           <span className={`perm ${permissionClass(activeFolder.permission)}`}>{activeFolder.permission}</span>
         )}
@@ -325,7 +327,8 @@ function FolderDropdown({ activeFolder, folders, loading, onChange, onRefresh }:
           <div className="folder-list">
             <div className="folder-list-label">Grafana Folders</div>
             {loading && <div className="folder-empty">正在加载…</div>}
-            {!loading && filteredFolders.length === 0 && <div className="folder-empty">没有匹配的 Folder</div>}
+            {error && <div className="folder-empty">Folder 加载失败，请刷新重试</div>}
+            {!loading && !error && filteredFolders.length === 0 && <div className="folder-empty">没有匹配的 Folder</div>}
             {filteredFolders.map((folder) => {
               const active = folder.uid === activeFolder?.uid;
               return (

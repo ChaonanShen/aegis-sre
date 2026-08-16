@@ -25,7 +25,7 @@ describe('AppShell', () => {
     fireEvent.click(screen.getByRole('button', { name: /Payment/ }));
 
     await waitFor(() => expect(screen.getByText('Folder: Payment')).toBeInTheDocument());
-    expect(window.sessionStorage.getItem('torchbearing.fixture.shell.v1')).toBe('payment');
+    expect(window.sessionStorage.getItem('aegis.shell.folder.v1')).toBe('payment');
   });
 
   test('filters folders in the dropdown', async () => {
@@ -85,17 +85,27 @@ describe('AppShell', () => {
     fireEvent.click(screen.getByTestId('set-invalid-folder'));
 
     expect(screen.getByText('success:infra')).toBeInTheDocument();
-    expect(window.sessionStorage.getItem('torchbearing.fixture.shell.v1')).toBeNull();
+    expect(window.sessionStorage.getItem('aegis.shell.folder.v1')).toBeNull();
   });
 
-  test('does not expose fixture Folder controls in real mode', async () => {
+  test('shows Folder loading failures and refresh control in real mode', async () => {
     renderShell('real');
 
     await screen.findByText('error:none');
-    expect(screen.queryByRole('button', { name: /Folder:/ })).not.toBeInTheDocument();
-    expect(screen.queryByText('权限来自 Grafana Folder')).not.toBeInTheDocument();
+    const trigger = screen.getByRole('button', { name: /Folder: 加载失败/ });
+    fireEvent.click(trigger);
+    expect(screen.getByText('Folder 加载失败，请刷新重试')).toBeInTheDocument();
+    expect(screen.getByText('权限来自 Grafana Folder')).toBeInTheDocument();
     expect(screen.queryByLabelText('演示数据模式')).not.toBeInTheDocument();
     expect(window.sessionStorage.getItem('torchbearing.fixture.shell.v1')).toBeNull();
+  });
+
+  test('migrates the legacy fixture Folder selection to the product storage key', async () => {
+    window.sessionStorage.setItem('torchbearing.fixture.shell.v1', 'payment');
+    renderShell();
+
+    await screen.findByText('Folder: Payment');
+    expect(window.sessionStorage.getItem('aegis.shell.folder.v1')).toBe('payment');
   });
 
   test('does not let a stale Folder refresh replace the latest result', async () => {

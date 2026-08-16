@@ -38,12 +38,10 @@ function parseFolders(response: FetchResponse<unknown[]>): Folder[] {
   if (!Array.isArray(response.data) || !response.data.every(isFolderHit)) {
     throw new Error('Grafana 返回了无效 Folder 列表。');
   }
-  return response.data.map((item) => ({
-    uid: item.uid,
-    title: item.title,
-    permission: permissionOf(item.accessControl),
-    serviceCount: 0,
-  }));
+  return response.data.flatMap((item) => {
+    const permission = permissionOf(item.accessControl);
+    return permission ? [{ uid: item.uid, title: item.title, permission, serviceCount: 0 }] : [];
+  });
 }
 
 function isFolderHit(value: unknown): value is GrafanaFolderSearchHit {
@@ -59,12 +57,15 @@ function isFolderHit(value: unknown): value is GrafanaFolderSearchHit {
   );
 }
 
-function permissionOf(actions: Record<string, boolean> | undefined): FolderPermission {
-  if (actions?.['folders.permissions:write']) {
+function permissionOf(actions: Record<string, boolean> | undefined): FolderPermission | undefined {
+  if (actions?.['grafana-plugin-app.folder-resources:admin']) {
     return 'Admin';
   }
-  if (actions?.['folders:write'] || actions?.['grafana-plugin-app.knowledge:write']) {
+  if (actions?.['grafana-plugin-app.folder-resources:write']) {
     return 'Edit';
   }
-  return 'View';
+  if (actions?.['grafana-plugin-app.folder-resources:read']) {
+    return 'View';
+  }
+  return undefined;
 }

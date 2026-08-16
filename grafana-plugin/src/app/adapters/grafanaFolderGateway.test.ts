@@ -3,7 +3,7 @@ import { of, throwError } from 'rxjs';
 import { createGrafanaFolderGateway } from './grafanaFolderGateway';
 
 describe('Grafana folder gateway', () => {
-  test('lists only the folders returned by Grafana and maps write affordances', async () => {
+  test('lists only folders with generic Aegis actions and maps the highest permission', async () => {
     const backend = {
       fetch: jest.fn(() =>
         of(
@@ -12,10 +12,28 @@ describe('Grafana folder gateway', () => {
               uid: 'ops',
               title: 'Operations',
               type: 'dash-folder',
-              accessControl: { 'folders.permissions:write': true },
+              accessControl: {
+                'grafana-plugin-app.folder-resources:read': true,
+                'grafana-plugin-app.folder-resources:write': true,
+                'grafana-plugin-app.folder-resources:admin': true,
+              },
             },
-            { uid: 'apps', title: 'Applications', type: 'dash-folder', accessControl: { 'folders:write': true } },
-            { uid: 'readonly', title: 'Read only', type: 'dash-folder' },
+            {
+              uid: 'apps',
+              title: 'Applications',
+              type: 'dash-folder',
+              accessControl: {
+                'grafana-plugin-app.folder-resources:read': true,
+                'grafana-plugin-app.folder-resources:write': true,
+              },
+            },
+            {
+              uid: 'readonly',
+              title: 'Read only',
+              type: 'dash-folder',
+              accessControl: { 'grafana-plugin-app.folder-resources:read': true },
+            },
+            { uid: 'hidden', title: 'No Aegis permission', type: 'dash-folder' },
           ])
         )
       ),
