@@ -40,6 +40,44 @@ type dependencies struct {
 	canvasMCP       http.Handler
 }
 
+type requestAudit struct {
+	requestedFolderUID  string
+	authorizedFolderUID string
+	grantedAccess       string
+}
+
+type requestAuditContextKey struct{}
+
+type statusResponseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (writer *statusResponseWriter) Unwrap() http.ResponseWriter { return writer.ResponseWriter }
+
+func (writer *statusResponseWriter) WriteHeader(status int) {
+	if writer.status == 0 {
+		writer.status = status
+	}
+	writer.ResponseWriter.WriteHeader(status)
+}
+
+func (writer *statusResponseWriter) Write(content []byte) (int, error) {
+	if writer.status == 0 {
+		writer.WriteHeader(http.StatusOK)
+	}
+	return writer.ResponseWriter.Write(content)
+}
+
+func (writer *statusResponseWriter) Flush() {
+	if writer.status == 0 {
+		writer.WriteHeader(http.StatusOK)
+	}
+	if flusher, ok := writer.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func WithAgentProvider(provider ports.AgentProvider) Option {
 	return func(deps *dependencies) {
 		deps.agents = provider
@@ -174,13 +212,24 @@ func requestContext(logger *slog.Logger, next http.Handler) http.Handler {
 		w.Header().Set(headerTraceID, traceID)
 		r.Header.Set(headerRequestID, requestID)
 		r.Header.Set(headerTraceID, traceID)
+		audit := &requestAudit{requestedFolderUID: safeID(r.Header.Get(headerFolderUID))}
+		r = r.WithContext(context.WithValue(r.Context(), requestAuditContextKey{}, audit))
+		statusWriter := &statusResponseWriter{ResponseWriter: w}
 		started := time.Now()
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(statusWriter, r)
+		status := statusWriter.status
+		if status == 0 {
+			status = http.StatusOK
+		}
 		logger.Info("request completed",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"request_id", requestID,
 			"trace_id", traceID,
+			"status", status,
+			"requested_folder_uid", audit.requestedFolderUID,
+			"authorized_folder_uid", audit.authorizedFolderUID,
+			"granted_access", audit.grantedAccess,
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
 	})

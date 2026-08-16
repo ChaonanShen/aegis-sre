@@ -1,11 +1,13 @@
 package httpserver
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/1024XEngineer/aegis-sre/internal/platform/config"
@@ -107,6 +109,41 @@ func TestRequestIDsRejectHeaderControl(t *testing.T) {
 	server.Handler.ServeHTTP(response, request)
 	if response.Header().Get(headerRequestID) == "unsafe\nvalue" {
 		t.Fatal("unsafe request ID was trusted")
+	}
+}
+
+func TestRequestAuditSeparatesRequestedAndAuthorizedFolderScope(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	handler := requestContext(logger, requireRequestAuthorization(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})))
+	request := actorRequest(http.MethodGet, "/api/v1/test", "")
+	request.Header.Set(headerFolderUID, "folder-a")
+	request.Header.Set(headerFolderAccess, "write")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	logLine := output.String()
+	for _, expected := range []string{`"status":204`, `"requested_folder_uid":"folder-a"`, `"authorized_folder_uid":"folder-a"`, `"granted_access":"write"`} {
+		if !strings.Contains(logLine, expected) {
+			t.Fatalf("audit log %q does not contain %q", logLine, expected)
+		}
+	}
+}
+
+func TestRejectedRequestNeverPromotesRequestedFolderToAuthorizedScope(t *testing.T) {
+	var output bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&output, nil))
+	handler := requestContext(logger, requireRequestAuthorization(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})))
+	request := actorRequest(http.MethodGet, "/api/v1/test", "")
+	request.Header.Set(headerFolderUID, "requested-only")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	logLine := output.String()
+	if !strings.Contains(logLine, `"requested_folder_uid":"requested-only"`) || !strings.Contains(logLine, `"authorized_folder_uid":""`) {
+		t.Fatalf("rejected audit scope = %q", logLine)
 	}
 }
 

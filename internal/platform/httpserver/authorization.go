@@ -48,8 +48,25 @@ func requireRequestAuthorization(next http.Handler) http.Handler {
 			return
 		}
 		ctx := context.WithValue(request.Context(), requestAuthorizationContextKey{}, authorization)
+		if audit, ok := request.Context().Value(requestAuditContextKey{}).(*requestAudit); ok {
+			audit.authorizedFolderUID = authorization.folder.uid
+			audit.grantedAccess = accessName(authorization.folder.access)
+		}
 		next.ServeHTTP(w, request.WithContext(ctx))
 	})
+}
+
+func accessName(access folderAccess) string {
+	switch access {
+	case folderAccessRead:
+		return "read"
+	case folderAccessWrite:
+		return "write"
+	case folderAccessAdmin:
+		return "admin"
+	default:
+		return ""
+	}
 }
 
 func parseRequestAuthorization(request *http.Request) (requestAuthorization, int, string) {
