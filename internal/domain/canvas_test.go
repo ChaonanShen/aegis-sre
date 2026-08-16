@@ -39,6 +39,47 @@ func TestNormalizeQueryChartSpecCanonicalizesPersistableDefinition(t *testing.T)
 	}
 }
 
+func TestNormalizeVizConfigCompletesGrafanaFieldConfigSource(t *testing.T) {
+	tests := map[string]struct {
+		raw  string
+		want string
+	}{
+		"empty": {
+			raw:  `{"kind":"VizConfig","group":"timeseries","version":"v1","spec":{"options":{},"fieldConfig":{}}}`,
+			want: `{"group":"timeseries","kind":"VizConfig","spec":{"fieldConfig":{"defaults":{},"overrides":[]},"options":{}},"version":"v1"}`,
+		},
+		"defaults only": {
+			raw:  `{"kind":"VizConfig","group":"timeseries","version":"v1","spec":{"options":{},"fieldConfig":{"defaults":{"unit":"percent"}}}}`,
+			want: `{"group":"timeseries","kind":"VizConfig","spec":{"fieldConfig":{"defaults":{"unit":"percent"},"overrides":[]},"options":{}},"version":"v1"}`,
+		},
+		"overrides only": {
+			raw:  `{"kind":"VizConfig","group":"timeseries","version":"v1","spec":{"options":{},"fieldConfig":{"overrides":[]}}}`,
+			want: `{"group":"timeseries","kind":"VizConfig","spec":{"fieldConfig":{"defaults":{},"overrides":[]},"options":{}},"version":"v1"}`,
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := NormalizeVizConfig(json.RawMessage(test.raw))
+			if err != nil || string(got) != test.want {
+				t.Fatalf("NormalizeVizConfig() = %s, %v; want %s", got, err, test.want)
+			}
+		})
+	}
+}
+
+func TestNormalizeVizConfigRejectsInvalidGrafanaFieldConfigSource(t *testing.T) {
+	for name, raw := range map[string]string{
+		"defaults":  `{"kind":"VizConfig","group":"timeseries","version":"v1","spec":{"options":{},"fieldConfig":{"defaults":[]}}}`,
+		"overrides": `{"kind":"VizConfig","group":"timeseries","version":"v1","spec":{"options":{},"fieldConfig":{"overrides":{}}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := NormalizeVizConfig(json.RawMessage(raw)); err == nil {
+				t.Fatal("invalid FieldConfigSource accepted")
+			}
+		})
+	}
+}
+
 func TestNormalizeQueryChartSpecRejectsUnsafeOrUnboundedDefinitions(t *testing.T) {
 	tests := map[string]func(*QueryChartSpec){
 		"missing datasource": func(value *QueryChartSpec) { value.DatasourceUID = "" },

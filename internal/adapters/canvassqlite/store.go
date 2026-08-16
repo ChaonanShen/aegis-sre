@@ -381,6 +381,10 @@ func readProjection(ctx context.Context, db queryer, actor domain.ActorContext, 
 		}
 		item.Chart.QueryID, item.Chart.QueryVersion = item.Query.ID, item.Query.Version
 		item.Chart.VizConfig = json.RawMessage(viz)
+		// 兼容早期已持久化但缺少 FieldConfigSource 默认字段的图表；其他非法历史值仍交由单图渲染错误隔离。
+		if normalized, normalizeErr := domain.NormalizeVizConfig(item.Chart.VizConfig); normalizeErr == nil {
+			item.Chart.VizConfig = normalized
+		}
 		for index, raw := range []string{chartCreated, chartUpdated, queryFrom, queryTo, queryCreated} {
 			parsed, err := decodeTime(raw)
 			if err != nil {

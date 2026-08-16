@@ -77,7 +77,7 @@ func TestServicePublishesBoundedCanvasUpdatedNotification(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cancel()
-	spec := domain.QueryChartSpec{DatasourceUID: "prom", Expression: "up", From: time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 8, 15, 1, 0, 0, 0, time.UTC), StepSeconds: 30, Title: "up", Visualization: "timeseries", VizConfig: json.RawMessage(`{"kind":"VizConfig","group":"timeseries","version":"v1","spec":{"options":{},"fieldConfig":{}}}`)}
+	spec := domain.QueryChartSpec{DatasourceUID: "prom", Expression: "up", From: time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 8, 15, 1, 0, 0, 0, time.UTC), StepSeconds: 30, Title: "up", Visualization: "timeseries", VizConfig: json.RawMessage(`{"kind":"VizConfig","group":"timeseries","version":"v1","spec":{"options":{},"fieldConfig":{"defaults":{},"overrides":[]}}}`)}
 	projection, err := service.PublishQueryChart(context.Background(), actor, ports.PublishQueryChartInput{SessionID: "ses_abcdefgh", OperationID: "operation-1", RequestHash: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", Spec: spec})
 	if err != nil {
 		t.Fatal(err)

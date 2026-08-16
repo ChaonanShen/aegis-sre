@@ -78,7 +78,7 @@ describe('Control Plane Workbench gateway', () => {
               kind: 'VizConfig',
               group: 'timeseries',
               version: 'v1',
-              spec: { options: {}, fieldConfig: {} },
+              spec: { options: {}, fieldConfig: { defaults: {}, overrides: [] } },
             },
             created_at: '2026-08-15T01:00:00Z',
             updated_at: '2026-08-15T01:00:00Z',

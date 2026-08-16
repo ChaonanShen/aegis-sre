@@ -155,8 +155,19 @@ func NormalizeVizConfig(raw json.RawMessage) (json.RawMessage, error) {
 	if _, ok := spec["options"].(map[string]any); !ok {
 		return nil, errors.New("VizConfig options are required")
 	}
-	if _, ok := spec["fieldConfig"].(map[string]any); !ok {
+	fieldConfig, ok := spec["fieldConfig"].(map[string]any)
+	if !ok {
 		return nil, errors.New("VizConfig fieldConfig is required")
+	}
+	if defaults, exists := fieldConfig["defaults"]; !exists {
+		fieldConfig["defaults"] = map[string]any{}
+	} else if _, ok := defaults.(map[string]any); !ok {
+		return nil, errors.New("VizConfig fieldConfig defaults must be an object")
+	}
+	if overrides, exists := fieldConfig["overrides"]; !exists {
+		fieldConfig["overrides"] = []any{}
+	} else if _, ok := overrides.([]any); !ok {
+		return nil, errors.New("VizConfig fieldConfig overrides must be an array")
 	}
 	limits := jsonLimits{forbidden: map[string]struct{}{
 		"targets": {}, "frames": {}, "series": {}, "samples": {}, "url": {},
@@ -168,6 +179,9 @@ func NormalizeVizConfig(raw json.RawMessage) (json.RawMessage, error) {
 	canonical, err := json.Marshal(value)
 	if err != nil {
 		return nil, fmt.Errorf("encode VizConfig: %w", err)
+	}
+	if len(canonical) > MaxVizConfigBytes {
+		return nil, errors.New("normalized VizConfig exceeds its limit")
 	}
 	return canonical, nil
 }

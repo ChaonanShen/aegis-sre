@@ -51,6 +51,16 @@ try {
   if (canvas.revision < 1 || canvas.items.length < 1 || !canvas.items[0].chart.query.expression) {
     throw new Error(`Canvas projection contains no persisted query-backed chart: ${JSON.stringify(canvas)}`);
   }
+  const fieldConfig = canvas.items[0].chart.viz_config?.spec?.fieldConfig;
+  if (
+    !fieldConfig ||
+    typeof fieldConfig.defaults !== 'object' ||
+    fieldConfig.defaults === null ||
+    Array.isArray(fieldConfig.defaults) ||
+    !Array.isArray(fieldConfig.overrides)
+  ) {
+    throw new Error(`Canvas projection contains a non-renderable VizConfig: ${JSON.stringify(canvas.items[0].chart.viz_config)}`);
+  }
   console.log(`Canvas E2E passed: ${session.id} revision=${canvas.revision} chart=${canvas.items[0].chart.id}`);
 } catch (error) {
   failure = error;

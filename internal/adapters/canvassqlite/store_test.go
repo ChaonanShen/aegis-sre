@@ -77,6 +77,26 @@ func TestStoreMigratesPublishesAndReopensProjection(t *testing.T) {
 	}
 }
 
+func TestStoreNormalizesLegacyFieldConfigOnRead(t *testing.T) {
+	store, _ := openTestStore(t)
+	if _, err := store.PublishQueryChart(context.Background(), testActor, publishInput(t, "publish-legacy")); err != nil {
+		t.Fatal(err)
+	}
+	legacy := `{"kind":"VizConfig","group":"timeseries","version":"v1","spec":{"options":{},"fieldConfig":{"defaults":{"unit":"percent"}}}}`
+	if _, err := store.db.Exec(`UPDATE charts SET viz_config_json=?`, legacy); err != nil {
+		t.Fatal(err)
+	}
+
+	projection, err := store.Get(context.Background(), testActor, testSessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"group":"timeseries","kind":"VizConfig","spec":{"fieldConfig":{"defaults":{"unit":"percent"},"overrides":[]},"options":{}},"version":"v1"}`
+	if got := string(projection.Items[0].Chart.VizConfig); got != want {
+		t.Fatalf("legacy VizConfig = %s; want %s", got, want)
+	}
+}
+
 func TestPublishIsIdempotentAndRejectsChangedPayload(t *testing.T) {
 	store, _ := openTestStore(t)
 	input := publishInput(t, "publish-0002")

@@ -45,7 +45,7 @@ func TestPublishPersistsOnlyAfterActiveRangeValidation(t *testing.T) {
 }
 
 func validPublishInput(operation string) publishInput {
-	return publishInput{SessionID: "ses_abcdefgh", OperationID: operation + "-key", DatasourceUID: "prom-main", Expression: "up", From: time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 8, 15, 1, 0, 0, 0, time.UTC), StepSeconds: 30, Title: "Availability", Visualization: "timeseries", VizConfig: map[string]any{"kind": "VizConfig", "group": "timeseries", "version": "v1", "spec": map[string]any{"options": map[string]any{}, "fieldConfig": map[string]any{}}}}
+	return publishInput{SessionID: "ses_abcdefgh", OperationID: operation + "-key", DatasourceUID: "prom-main", Expression: "up", From: time.Date(2026, 8, 15, 0, 0, 0, 0, time.UTC), To: time.Date(2026, 8, 15, 1, 0, 0, 0, time.UTC), StepSeconds: 30, Title: "Availability", Visualization: "timeseries", VizConfig: map[string]any{"kind": "VizConfig", "group": "timeseries", "version": "v1", "spec": map[string]any{"options": map[string]any{}, "fieldConfig": map[string]any{"defaults": map[string]any{}, "overrides": []any{}}}}}
 }
 
 func TestHandlerRejectsMissingOrWrongBearerToken(t *testing.T) {
