@@ -90,7 +90,7 @@ func (provider *Provider) Get(ctx context.Context, _ domain.ActorContext, ref po
 	return ports.PlaybookResource{Ref: ref, Name: name, Description: description, YAML: []byte(dag.Spec), Enabled: !dag.Suspended}, nil
 }
 
-func (provider *Provider) Create(ctx context.Context, _ domain.ActorContext, input ports.CreatePlaybookInput) (ports.PlaybookRef, error) {
+func (provider *Provider) Create(ctx context.Context, actor domain.ActorContext, input ports.CreatePlaybookInput) (ports.PlaybookRef, error) {
 	dagName, err := playbookDAGName(input.ID)
 	if err != nil {
 		return ports.PlaybookRef{}, err
@@ -98,7 +98,11 @@ func (provider *Provider) Create(ctx context.Context, _ domain.ActorContext, inp
 	if len(bytes.TrimSpace(input.YAML)) == 0 {
 		return ports.PlaybookRef{}, errors.New("playbook YAML is required")
 	}
-	if err := provider.client.CreateDAG(ctx, dagName, string(input.YAML)); err != nil {
+	bound, err := bindFolderOwnership(input.YAML, actor.FolderUID)
+	if err != nil {
+		return ports.PlaybookRef{}, err
+	}
+	if err := provider.client.CreateDAG(ctx, dagName, string(bound)); err != nil {
 		if !isHTTPConflict(err) {
 			return ports.PlaybookRef{}, err
 		}
@@ -107,7 +111,7 @@ func (provider *Provider) Create(ctx context.Context, _ domain.ActorContext, inp
 		if getErr != nil {
 			return ports.PlaybookRef{}, err
 		}
-		if !bytes.Equal(bytes.TrimSpace([]byte(existing.Spec)), bytes.TrimSpace(input.YAML)) {
+		if !bytes.Equal(bytes.TrimSpace([]byte(existing.Spec)), bytes.TrimSpace(bound)) {
 			return ports.PlaybookRef{}, err
 		}
 	}
@@ -133,8 +137,12 @@ func (provider *Provider) Delete(ctx context.Context, _ domain.ActorContext, ref
 	return provider.client.DeleteDAG(ctx, dagName)
 }
 
-func (provider *Provider) Validate(ctx context.Context, _ domain.ActorContext, spec []byte) ([]ports.ValidationIssue, error) {
-	result, err := provider.client.ValidateDAG(ctx, "aegis-validation", string(spec))
+func (provider *Provider) Validate(ctx context.Context, actor domain.ActorContext, spec []byte) ([]ports.ValidationIssue, error) {
+	bound, err := bindFolderOwnership(spec, actor.FolderUID)
+	if err != nil {
+		return nil, err
+	}
+	result, err := provider.client.ValidateDAG(ctx, "aegis-validation", string(bound))
 	if err != nil {
 		return nil, err
 	}

@@ -161,7 +161,7 @@ func TestPlaybookCRUDEnforcesGrafanaOrgScopeAndWriteRole(t *testing.T) {
 		t.Fatalf("viewer status = %d", viewerResponse.Code)
 	}
 
-	owner := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}
+	owner := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user", FolderUID: "folder-a"}
 	id := scopedPlaybookID(owner, "org-resource")
 	foreign := playbookActorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id), "")
 	foreign.Header.Set(headerOrgID, "another-org")
@@ -227,7 +227,7 @@ func TestListPlaybookRunsReturnsProviderHistory(t *testing.T) {
 	fake := &playbookHTTPFake{}
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 	response := httptest.NewRecorder()
-	id := scopedPlaybookID(domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}, "run-history")
+	id := scopedPlaybookID(domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user", FolderUID: "folder-a"}, "run-history")
 	handler.ServeHTTP(response, playbookActorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id)+"/runs", ""))
 	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"run_abcdefgh"`) {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -236,7 +236,7 @@ func TestListPlaybookRunsReturnsProviderHistory(t *testing.T) {
 
 func TestPlaybookRunStartEnforcesScopeRoleAndResourceScopedIdempotency(t *testing.T) {
 	t.Parallel()
-	actor := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}
+	actor := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user", FolderUID: "folder-a"}
 	firstID := scopedPlaybookID(actor, "first-playbook")
 	secondID := scopedPlaybookID(actor, "second-playbook")
 	fake := &playbookHTTPFake{}
@@ -281,7 +281,7 @@ func TestPlaybookRunStartEnforcesScopeRoleAndResourceScopedIdempotency(t *testin
 
 func TestPlaybookRunRoutesRejectForeignOrgAndViewerMutations(t *testing.T) {
 	t.Parallel()
-	owner := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}
+	owner := domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user", FolderUID: "folder-a"}
 	fake := &playbookHTTPFake{runPlaybookID: scopedPlaybookID(owner, "owned-run")}
 	handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 
@@ -361,7 +361,7 @@ func TestPlaybookAPIRejectsInvalidInputAndSanitizesProviderErrors(t *testing.T) 
 		fake := &playbookHTTPFake{err: errors.New("Dagu secret internal response")}
 		handler := New(config.Config{Endpoints: map[config.Capability]string{}}, nil, WithPlaybookProvider(fake)).Handler
 		response := httptest.NewRecorder()
-		id := scopedPlaybookID(domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user"}, "provider-detail")
+		id := scopedPlaybookID(domain.ActorContext{TenantID: "tenant", OrgID: "org", UserID: "user", FolderUID: "folder-a"}, "provider-detail")
 		handler.ServeHTTP(response, playbookActorRequest(http.MethodGet, "/api/v1/playbooks/"+string(id), ""))
 		if response.Code != http.StatusBadGateway || strings.Contains(response.Body.String(), "secret") || strings.Contains(response.Body.String(), "Dagu") {
 			t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())

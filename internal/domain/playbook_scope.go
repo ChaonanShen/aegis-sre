@@ -7,10 +7,10 @@ import (
 )
 
 // PlaybookScopeKey derives the stable, non-reversible Grafana organization scope
-// embedded in Aegis-managed Dagu filenames. It prevents another organization
+// embedded in Aegis-managed Dagu filenames. It prevents another Folder
 // from discovering or mutating a Playbook through a guessed public ID.
 func PlaybookScopeKey(actor ActorContext) string {
-	sum := sha256.Sum256([]byte(actor.TenantID + "\x00" + actor.OrgID))
+	sum := sha256.Sum256([]byte(actor.TenantID + "\x00" + actor.OrgID + "\x00" + actor.FolderUID))
 	return base64.RawURLEncoding.EncodeToString(sum[:8])
 }
 

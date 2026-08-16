@@ -225,13 +225,17 @@ func TestProviderPaginatesRunsWithOpaqueCursor(t *testing.T) {
 func TestProviderRecoversIdempotentCreateConflict(t *testing.T) {
 	t.Parallel()
 	requests := 0
+	createdSpec := ""
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
 		requests++
 		switch request.Method + " " + request.URL.Path {
 		case "POST /api/v1/dags":
+			var body map[string]string
+			_ = json.NewDecoder(request.Body).Decode(&body)
+			createdSpec = body["spec"]
 			w.WriteHeader(http.StatusConflict)
 		case "GET /api/v1/dags/pbk_abcdefgh":
-			_, _ = w.Write([]byte(`{"spec":"steps: []"}`))
+			_ = json.NewEncoder(w).Encode(map[string]string{"spec": createdSpec})
 		default:
 			t.Errorf("request = %s %s", request.Method, request.URL.Path)
 		}
@@ -239,8 +243,8 @@ func TestProviderRecoversIdempotentCreateConflict(t *testing.T) {
 	defer server.Close()
 	client, _ := NewClient(server.URL, server.Client())
 	provider, _ := NewProvider(client)
-	ref, err := provider.Create(context.Background(), domain.ActorContext{}, ports.CreatePlaybookInput{ID: "pbk_abcdefgh", YAML: []byte("steps: []")})
-	if err != nil || ref.ID != "pbk_abcdefgh" || requests != 2 {
+	ref, err := provider.Create(context.Background(), domain.ActorContext{FolderUID: "folder-a"}, ports.CreatePlaybookInput{ID: "pbk_abcdefgh", YAML: []byte("steps: []")})
+	if err != nil || ref.ID != "pbk_abcdefgh" || requests != 2 || !specOwnedByFolder(createdSpec, "folder-a") {
 		t.Fatalf("ref = %#v, requests = %d, err = %v", ref, requests, err)
 	}
 }
@@ -257,7 +261,7 @@ func TestProviderRejectsCreateConflictWithDifferentSource(t *testing.T) {
 	defer server.Close()
 	client, _ := NewClient(server.URL, server.Client())
 	provider, _ := NewProvider(client)
-	_, err := provider.Create(context.Background(), domain.ActorContext{}, ports.CreatePlaybookInput{ID: "pbk_abcdefgh", YAML: []byte("name: requested\nsteps: []\n")})
+	_, err := provider.Create(context.Background(), domain.ActorContext{FolderUID: "folder-a"}, ports.CreatePlaybookInput{ID: "pbk_abcdefgh", YAML: []byte("name: requested\nsteps: []\n")})
 	var httpErr *HTTPError
 	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusConflict {
 		t.Fatalf("error = %#v", err)
