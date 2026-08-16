@@ -22,12 +22,9 @@ const (
 )
 
 var supportedKnowledgeMedia = map[string]string{
-	".pdf":  "application/pdf",
-	".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-	".md":   "text/markdown",
-	".txt":  "text/plain",
-	".html": "text/html",
-	".htm":  "text/html",
+	".pdf": "application/pdf",
+	".md":  "text/markdown",
+	".txt": "text/plain",
 }
 
 func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvider, ids ports.KnowledgeIDGenerator) {
@@ -407,11 +404,17 @@ func readKnowledgeUpload(w http.ResponseWriter, request *http.Request, documentI
 		writeAPIProblem(w, request, http.StatusBadRequest, "invalid_argument", "document upload is invalid or too large", false)
 		return ports.DocumentFile{}, func() {}, false
 	}
-	seeker, ok := file.(io.Seeker)
+	seeker, ok := file.(io.ReadSeeker)
 	if !ok {
 		_ = file.Close()
 		cleanup()
 		writeAPIProblem(w, request, http.StatusInternalServerError, "internal", "document upload cannot be processed", false)
+		return ports.DocumentFile{}, func() {}, false
+	}
+	if !validKnowledgeContent(seeker, extension) {
+		_ = file.Close()
+		cleanup()
+		writeAPIProblem(w, request, http.StatusBadRequest, "invalid_argument", "document content does not match its supported format", false)
 		return ports.DocumentFile{}, func() {}, false
 	}
 	if _, err := seeker.Seek(0, io.SeekStart); err != nil {
@@ -421,6 +424,22 @@ func readKnowledgeUpload(w http.ResponseWriter, request *http.Request, documentI
 		return ports.DocumentFile{}, func() {}, false
 	}
 	return ports.DocumentFile{ID: documentID, Name: name, MediaType: mediaType, Service: service, Tags: tags, Size: written, SHA256: hex.EncodeToString(hash.Sum(nil)), Content: file}, func() { _ = file.Close(); cleanup() }, true
+}
+
+func validKnowledgeContent(content io.ReadSeeker, extension string) bool {
+	if _, err := content.Seek(0, io.SeekStart); err != nil {
+		return false
+	}
+	sample := make([]byte, 4096)
+	read, err := content.Read(sample)
+	if err != nil && err != io.EOF {
+		return false
+	}
+	sample = sample[:read]
+	if extension == ".pdf" {
+		return len(sample) >= 5 && string(sample[:5]) == "%PDF-"
+	}
+	return utf8.Valid(sample) && !strings.ContainsRune(string(sample), '\x00')
 }
 
 func validateDocumentMetadata(w http.ResponseWriter, request *http.Request, service string, tags []string) bool {

@@ -73,7 +73,7 @@ func TestMultipartUploadComputesDigestAndNormalizesMediaType(t *testing.T) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	part, _ := writer.CreateFormFile("file", "故障手册.PDF")
-	_, _ = io.WriteString(part, "pdf bytes")
+	_, _ = io.WriteString(part, "%PDF-1.7 pdf bytes")
 	_ = writer.WriteField("service", "checkout")
 	_ = writer.WriteField("tags", "sev1")
 	_ = writer.WriteField("tags", "payment")
@@ -89,8 +89,8 @@ func TestMultipartUploadComputesDigestAndNormalizesMediaType(t *testing.T) {
 	if response.Code != http.StatusAccepted {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
-	wantHash := sha256.Sum256([]byte("pdf bytes"))
-	if fake.uploadFile.Name != "故障手册.PDF" || fake.uploadFile.MediaType != "application/pdf" || fake.uploadFile.SHA256 != hex.EncodeToString(wantHash[:]) || fake.uploadFile.Service != "checkout" || len(fake.uploadFile.Tags) != 2 || fake.uploadContent != "pdf bytes" {
+	wantHash := sha256.Sum256([]byte("%PDF-1.7 pdf bytes"))
+	if fake.uploadFile.Name != "故障手册.PDF" || fake.uploadFile.MediaType != "application/pdf" || fake.uploadFile.SHA256 != hex.EncodeToString(wantHash[:]) || fake.uploadFile.Service != "checkout" || len(fake.uploadFile.Tags) != 2 || fake.uploadContent != "%PDF-1.7 pdf bytes" {
 		t.Fatalf("file=%+v content=%q", fake.uploadFile, fake.uploadContent)
 	}
 	if !strings.HasPrefix(string(fake.uploadFile.ID), "doc_") {
@@ -111,6 +111,25 @@ func TestUploadRejectsUnsupportedFilesBeforeProvider(t *testing.T) {
 	request.Header.Set("Idempotency-Key", "upload-doc-001")
 	response := httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || fake.uploadCalls != 0 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, fake.uploadCalls, response.Body.String())
+	}
+}
+
+func TestUploadRejectsContentThatDoesNotMatchExtension(t *testing.T) {
+	server, fake := newKnowledgeHTTPServer(t)
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, _ := writer.CreateFormFile("file", "guide.pdf")
+	_, _ = io.WriteString(part, "not a pdf")
+	_ = writer.Close()
+	request := knowledgeRequest(http.MethodPost, "/api/v1/knowledge-bases/kbs_abcdefgh/documents", "")
+	request.Body = io.NopCloser(body)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	request.Header.Set("Idempotency-Key", "upload-doc-001")
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+
 	if response.Code != http.StatusBadRequest || fake.uploadCalls != 0 {
 		t.Fatalf("status=%d calls=%d body=%s", response.Code, fake.uploadCalls, response.Body.String())
 	}

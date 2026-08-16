@@ -41,7 +41,7 @@ services:
       dockerfile: internal/adapters/raglite/sidecar/Dockerfile
     environment:
       AEGIS_RAGLITE_DATA_DIR: /var/lib/aegis/raglite
-      AEGIS_RAGLITE_MAX_UPLOAD_BYTES: "20971520"
+      AEGIS_RAGLITE_MAX_UPLOAD_BYTES: "10485760"
       AEGIS_RAGLITE_TOKEN_FILE: /run/secrets/knowledge-provider-token
     volumes:
       - raglite-data:/var/lib/aegis/raglite
