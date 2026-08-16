@@ -206,6 +206,66 @@ def test_upload_automatically_queues_index_job(tmp_path: Path) -> None:
     assert job.status == "queued"
 
 
+def test_create_and_upload_retries_return_existing_resources(tmp_path: Path) -> None:
+    service, _ = new_service(tmp_path)
+
+    collection = service.create_collection(
+        collection_id="kbs_abcdefgh",
+        name="Operations",
+        folder_uid="folder-a",
+        scope="scope-a",
+    )
+    document = service.upload_document(
+        collection_id="kbs_abcdefgh",
+        document_id="doc_abcdefgh",
+        scope="scope-a",
+        filename="runbook.md",
+        media_type="text/markdown",
+        service="checkout",
+        tags=("prod",),
+        content=io.BytesIO(b"# Checkout\nrestart deployment"),
+    )
+
+    assert collection.id == "kbs_abcdefgh"
+    assert document.id == "doc_abcdefgh"
+    assert service.repository.get_active_job(document.id) is not None
+
+
+def test_upload_retry_repairs_original_without_manifest(tmp_path: Path) -> None:
+    backend = FakeBackend()
+    service = KnowledgeService(
+        Repository(tmp_path / "provider.sqlite"),
+        OriginalStore(tmp_path, max_bytes=1024),
+        backend,
+    )
+    service.create_collection(
+        collection_id="kbs_abcdefgh",
+        name="Operations",
+        folder_uid="folder-a",
+        scope="scope-a",
+    )
+    service.originals.save(
+        "kbs_abcdefgh",
+        "doc_abcdefgh",
+        "runbook.md",
+        io.BytesIO(b"# Checkout"),
+    )
+
+    repaired = service.upload_document(
+        collection_id="kbs_abcdefgh",
+        document_id="doc_abcdefgh",
+        scope="scope-a",
+        filename="runbook.md",
+        media_type="text/markdown",
+        service="checkout",
+        tags=("prod",),
+        content=io.BytesIO(b"# Checkout"),
+    )
+
+    assert repaired.status == "queued"
+    assert service.repository.get_active_job(repaired.id) is not None
+
+
 def test_failed_document_can_retry_index_idempotently(tmp_path: Path) -> None:
     service, backend = new_service(tmp_path)
     backend.fail_index = True

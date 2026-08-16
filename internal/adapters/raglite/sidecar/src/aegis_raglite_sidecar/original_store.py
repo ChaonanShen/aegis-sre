@@ -13,6 +13,14 @@ from typing import BinaryIO
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]+")
 
 
+class DuplicateOriginalError(FileExistsError):
+    def __init__(self, relative_path: str, size: int, sha256: str) -> None:
+        super().__init__("document original already exists")
+        self.relative_path = relative_path
+        self.size = size
+        self.sha256 = sha256
+
+
 class OriginalStore:
     def __init__(self, root: Path, max_bytes: int) -> None:
         self._root = root.resolve()
@@ -50,7 +58,8 @@ class OriginalStore:
             # sidecar 首版是单进程；进程内锁保证重复 ID 不会覆盖已存在的原文件。
             with self._lock:
                 if target.exists():
-                    raise FileExistsError("document original already exists")
+                    relative = target.relative_to(self._root).as_posix()
+                    raise DuplicateOriginalError(relative, size, digest.hexdigest())
                 os.replace(temp_name, target)
             relative = target.relative_to(self._root).as_posix()
             return relative, size, digest.hexdigest()

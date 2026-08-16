@@ -154,6 +154,41 @@ def test_job_claim_cancel_and_restart_recovery(tmp_path: Path) -> None:
     assert repository.get_active_job("doc_abcdefgh") is None
 
 
+def test_restart_recovery_stops_after_three_attempts(tmp_path: Path) -> None:
+    repository = new_repository(tmp_path)
+    repository.create_collection(collection())
+    repository.create_document(document(), "scope-a")
+    repository.create_job("doc_abcdefgh", "index")
+
+    for _ in range(2):
+        assert repository.claim_next_job() is not None
+        assert repository.recover_running_jobs() == 1
+    assert repository.claim_next_job() is not None
+    assert repository.recover_running_jobs() == 0
+
+    failed = repository.get_document("doc_abcdefgh", "scope-a")
+    assert failed.status == "failed"
+    assert "重试索引" in failed.failure_reason
+    assert repository.get_active_job(failed.id) is None
+
+
+def test_repository_rejects_unknown_or_modified_schema_version(tmp_path: Path) -> None:
+    for version, checksum in [(2, "future"), (1, "modified")]:
+        path = tmp_path / f"provider-{version}-{checksum}.sqlite"
+        with sqlite3.connect(path) as connection:
+            connection.execute(
+                """CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL
+                )"""
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations VALUES (?, ?, ?)",
+                (version, checksum, "2026-08-01T00:00:00Z"),
+            )
+
+        with pytest.raises(RuntimeError, match="schema"):
+            Repository(path)
+
 def test_repository_migrates_legacy_pending_document_to_queued(tmp_path: Path) -> None:
     path = tmp_path / "provider.sqlite"
     with sqlite3.connect(path) as connection:

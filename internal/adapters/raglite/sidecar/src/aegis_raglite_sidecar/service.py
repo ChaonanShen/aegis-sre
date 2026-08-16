@@ -8,8 +8,8 @@ from typing import BinaryIO
 
 from aegis_raglite_sidecar.backend import Backend, Chunk, SearchHit
 from aegis_raglite_sidecar.models import Collection, Document, Job, Passage
-from aegis_raglite_sidecar.original_store import OriginalStore
-from aegis_raglite_sidecar.repository import ConflictError, Repository
+from aegis_raglite_sidecar.original_store import DuplicateOriginalError, OriginalStore
+from aegis_raglite_sidecar.repository import ConflictError, NotFoundError, Repository
 
 
 class CapabilityError(Exception):
@@ -57,14 +57,19 @@ class KnowledgeService:
         self._validate_id(collection_id, "kbs_")
         if not name.strip() or not folder_uid.strip() or not scope.strip():
             raise ValidationError("name, folder_uid and scope are required")
-        return self.repository.create_collection(
-            Collection(
-                id=collection_id,
-                name=name.strip(),
-                folder_uid=folder_uid.strip(),
-                scope=scope,
-            )
+        requested = Collection(
+            id=collection_id,
+            name=name.strip(),
+            folder_uid=folder_uid.strip(),
+            scope=scope,
         )
+        try:
+            return self.repository.create_collection(requested)
+        except ConflictError:
+            existing = self.repository.get_collection(collection_id, scope)
+            if existing.name == requested.name and existing.folder_uid == requested.folder_uid:
+                return existing
+            raise ConflictError("idempotency key was reused with a different payload") from None
 
     def list_collections(self, scope: str, folder_uid: str) -> list[Collection]:
         return self.repository.list_collections(scope, folder_uid)
@@ -120,8 +125,17 @@ class KnowledgeService:
             relative, size, digest = self.originals.save(
                 collection_id, document_id, filename, content
             )
-        except FileExistsError as error:
-            raise ConflictError("document already exists") from error
+        except DuplicateOriginalError as duplicate:
+            return self._reconcile_duplicate_upload(
+                collection_id=collection_id,
+                document_id=document_id,
+                scope=scope,
+                filename=filename,
+                media_type=media_type,
+                service=service,
+                tags=tags,
+                duplicate=duplicate,
+            )
         document = Document(
             id=document_id,
             collection_id=collection_id,
@@ -139,6 +153,57 @@ class KnowledgeService:
         except Exception:
             self.originals.delete(relative)
             raise
+
+    def _reconcile_duplicate_upload(
+        self,
+        *,
+        collection_id: str,
+        document_id: str,
+        scope: str,
+        filename: str,
+        media_type: str,
+        service: str,
+        tags: tuple[str, ...],
+        duplicate: DuplicateOriginalError,
+    ) -> Document:
+        requested = Document(
+            id=document_id,
+            collection_id=collection_id,
+            name=Path(filename).name,
+            media_type=media_type or "application/octet-stream",
+            size=duplicate.size,
+            sha256=duplicate.sha256,
+            original_path=duplicate.relative_path,
+            service=service.strip(),
+            tags=self._normalize_tags(tags),
+        )
+        try:
+            existing = self.repository.get_document(document_id, scope)
+        except NotFoundError:
+            # 原文已原子落盘但 manifest 事务尚未提交时，同 payload 重试负责补建任务。
+            created, _ = self.repository.create_queued_document(requested, scope)
+            return created
+        comparable = (
+            existing.collection_id,
+            existing.name,
+            existing.media_type,
+            existing.size,
+            existing.sha256,
+            existing.service,
+            existing.tags,
+        )
+        requested_comparable = (
+            requested.collection_id,
+            requested.name,
+            requested.media_type,
+            requested.size,
+            requested.sha256,
+            requested.service,
+            requested.tags,
+        )
+        if comparable == requested_comparable:
+            return existing
+        raise ConflictError("idempotency key was reused with a different payload")
 
     def list_documents(self, collection_id: str, scope: str) -> list[Document]:
         return self.repository.list_documents(collection_id, scope)

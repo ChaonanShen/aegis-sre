@@ -20,6 +20,11 @@ class NotFoundError(Exception):
     pass
 
 
+_SCHEMA_VERSION = 1
+_SCHEMA_CHECKSUM = "aegis-raglite-manifest-v1"
+_MAX_RECOVERY_ATTEMPTS = 3
+
+
 class Repository:
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -36,8 +41,14 @@ class Repository:
 
     def _initialize(self) -> None:
         with self._connect() as connection:
+            self._validate_schema_version(connection)
             connection.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    checksum TEXT NOT NULL,
+                    applied_at TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS collections (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -94,7 +105,29 @@ class Repository:
             self._migrate_legacy_document_status(connection)
             self._ensure_generation_columns(connection)
             self._repair_queued_documents(connection)
+            connection.execute(
+                """INSERT OR IGNORE INTO schema_migrations(version, checksum, applied_at)
+                   VALUES (?, ?, ?)""",
+                (_SCHEMA_VERSION, _SCHEMA_CHECKSUM, now_iso()),
+            )
+            self._validate_schema_version(connection)
             connection.commit()
+
+    @staticmethod
+    def _validate_schema_version(connection: sqlite3.Connection) -> None:
+        exists = connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations'"
+        ).fetchone()
+        if exists is None:
+            return
+        rows = connection.execute(
+            "SELECT version, checksum FROM schema_migrations ORDER BY version"
+        ).fetchall()
+        for row in rows:
+            if int(row["version"]) != _SCHEMA_VERSION:
+                raise RuntimeError("provider manifest schema version is unsupported")
+            if str(row["checksum"]) != _SCHEMA_CHECKSUM:
+                raise RuntimeError("provider manifest schema checksum does not match")
 
     @staticmethod
     def _migrate_legacy_document_status(connection: sqlite3.Connection) -> None:
@@ -648,10 +681,28 @@ class Repository:
         # 进程可能在 DuckDB 提交中退出，恢复时重新排队并由 worker 对账后重建。
         with self._lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            exhausted = connection.execute(
+                """SELECT document_id FROM jobs
+                   WHERE status = 'running' AND attempts >= ?""",
+                (_MAX_RECOVERY_ATTEMPTS,),
+            ).fetchall()
+            connection.execute(
+                """UPDATE jobs SET status = 'failed', error = 'restart recovery limit reached',
+                   finished_at = ? WHERE status = 'running' AND attempts >= ?""",
+                (now_iso(), _MAX_RECOVERY_ATTEMPTS),
+            )
+            for row in exhausted:
+                connection.execute(
+                    """UPDATE documents SET status = 'failed',
+                       failure_reason = '索引任务多次异常退出，请重试索引', updated_at = ?
+                       WHERE id = ?""",
+                    (now_iso(), row["document_id"]),
+                )
             cursor = connection.execute(
                 """UPDATE jobs SET status = 'queued', error = 'recovered after restart',
                    operation = CASE WHEN operation = 'index' THEN 'reindex' ELSE operation END,
-                   started_at = NULL WHERE status = 'running'"""
+                   started_at = NULL WHERE status = 'running' AND attempts < ?""",
+                (_MAX_RECOVERY_ATTEMPTS,),
             )
             connection.execute(
                 """UPDATE documents SET status = 'queued', updated_at = ?
