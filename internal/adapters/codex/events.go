@@ -339,6 +339,10 @@ func (hub *eventHub) handleRequest(request Request) {
 }
 
 func (hub *eventHub) resolveApproval(threadID string, decision ports.ApprovalDecision) (ports.EventStream, error) {
+	if decision.Decision == ports.ApprovalApproved {
+		// 当前 Codex pending request 只存在内存中，无法在重启后恢复可信 Folder/工具目标；批准必须保持关闭。
+		return nil, &domain.AppError{Code: domain.ErrorCapabilityUnavailable, Message: "agent approval target cannot be verified", Retryable: false}
+	}
 	hub.mu.Lock()
 	pending, ok := hub.pending[decision.ApprovalID]
 	if ok && pending.threadID == threadID {
@@ -352,13 +356,9 @@ func (hub *eventHub) resolveApproval(threadID string, decision ports.ApprovalDec
 	if err != nil {
 		return nil, err
 	}
-	providerDecision := "decline"
-	if decision.Decision == ports.ApprovalApproved {
-		providerDecision = "accept"
-	}
 	payload, _ := json.Marshal(map[string]any{"approval_id": decision.ApprovalID, "decision": decision.Decision, "reason": decision.Reason})
 	stream.emit(streamItem{event: stream.newEvent(domain.EventApprovalResolved, json.RawMessage(payload), Notification{Method: "aegis/approval/resolved", Params: payload})})
-	if err := hub.provider.transport.Reply(pending.request, map[string]any{"decision": providerDecision}); err != nil {
+	if err := hub.provider.transport.Reply(pending.request, map[string]any{"decision": "decline"}); err != nil {
 		hub.detach(stream)
 		stream.finish()
 		return nil, providerMutationError(err)

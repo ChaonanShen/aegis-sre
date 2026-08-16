@@ -335,14 +335,19 @@ func TestProviderPausesForApprovalAndRegistersContinuationBeforeReply(t *testing
 		t.Fatalf("approval must pause initial stream: %v", err)
 	}
 	continuation, err := provider.ResolveApproval(context.Background(), domain.ActorContext{}, ports.AgentSessionRef{ID: sessionID}, ports.ApprovalDecision{ApprovalID: payload.ApprovalID, Decision: ports.ApprovalApproved, Reason: "approved by operator"})
+	var appErr *domain.AppError
+	if continuation != nil || !errors.As(err, &appErr) || appErr.Code != domain.ErrorCapabilityUnavailable || len(fake.replies) != 0 {
+		t.Fatalf("unsafe approval continuation = %T, error = %#v, replies = %#v", continuation, err, fake.replies)
+	}
+	continuation, err = provider.ResolveApproval(context.Background(), domain.ActorContext{}, ports.AgentSessionRef{ID: sessionID}, ports.ApprovalDecision{ApprovalID: payload.ApprovalID, Decision: ports.ApprovalRejected, Reason: "rejected by operator"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	resolved, err := continuation.Next(ctx)
-	if err != nil || resolved.Type != domain.EventApprovalResolved || !strings.Contains(string(resolved.Payload), `"approved"`) {
+	if err != nil || resolved.Type != domain.EventApprovalResolved || !strings.Contains(string(resolved.Payload), `"rejected"`) {
 		t.Fatalf("resolved = %#v, err = %v", resolved, err)
 	}
-	if len(fake.replies) != 1 || fake.replies[0]["decision"] != "accept" {
+	if len(fake.replies) != 1 || fake.replies[0]["decision"] != "decline" {
 		t.Fatalf("replies = %#v", fake.replies)
 	}
 	fake.notifications <- Notification{Method: "turn/completed", Params: json.RawMessage(`{"threadId":"` + threadUUID + `","turn":{"id":"` + turnUUID + `","status":"interrupted","items":[]}}`)}

@@ -213,6 +213,10 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, can
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/v1/sessions/{session_id}/approvals/{approval_action}", func(w http.ResponseWriter, request *http.Request) {
+		actor, allowed := requireFolderAccess(w, request, folderAccessAdmin)
+		if !allowed {
+			return
+		}
 		session, ok := agentSessionRef(w, request)
 		if !ok {
 			return
@@ -240,7 +244,7 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, can
 			writeAPIProblem(w, request, http.StatusBadRequest, "invalid_argument", "invalid approval decision", false)
 			return
 		}
-		stream, err := provider.ResolveApproval(request.Context(), actorFromRequest(request), session, ports.ApprovalDecision{ApprovalID: domain.ID(approvalID), Decision: body.Decision, Reason: body.Reason})
+		stream, err := provider.ResolveApproval(request.Context(), actor, session, ports.ApprovalDecision{ApprovalID: domain.ID(approvalID), Decision: body.Decision, Reason: body.Reason})
 		if handleProviderError(w, request, err) {
 			return
 		}

@@ -281,10 +281,26 @@ func TestTurnCancellationAndApprovalResolutionAreExplicit(t *testing.T) {
 
 	approvalRequest := actorRequest(http.MethodPost, "/api/v1/sessions/ses_abcdefgh/approvals/apr_abcdefgh:resolve", `{"decision":"approved","reason":"safe"}`)
 	approvalRequest.Header.Set("Idempotency-Key", "resolve-approval-1")
+	approvalRequest.Header.Set(headerFolderUID, "folder-a")
+	approvalRequest.Header.Set(headerFolderAccess, "admin")
 	approval := httptest.NewRecorder()
 	handler.ServeHTTP(approval, approvalRequest)
 	if approval.Code != http.StatusOK || fake.approvalCalls != 1 || fake.approval.ApprovalID != "apr_abcdefgh" || fake.approval.Decision != ports.ApprovalApproved || fake.approval.Reason != "safe" {
 		t.Fatalf("status = %d, calls = %d, decision = %#v, body = %s", approval.Code, fake.approvalCalls, fake.approval, approval.Body.String())
+	}
+}
+
+func TestAgentApprovalRequiresTrustedFolderAdmin(t *testing.T) {
+	t.Parallel()
+	fake := &agentHTTPFake{}
+	request := actorRequest(http.MethodPost, "/api/v1/sessions/ses_abcdefgh/approvals/apr_abcdefgh:resolve", `{"decision":"approved"}`)
+	request.Header.Set("Idempotency-Key", "resolve-approval-1")
+	request.Header.Set(headerFolderUID, "folder-a")
+	request.Header.Set(headerFolderAccess, "write")
+	response := httptest.NewRecorder()
+	agentHandler(fake).ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden || fake.approvalCalls != 0 {
+		t.Fatalf("status = %d, calls = %d, body = %s", response.Code, fake.approvalCalls, response.Body.String())
 	}
 }
 
