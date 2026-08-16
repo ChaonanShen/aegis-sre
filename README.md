@@ -54,7 +54,19 @@ make local-smoke
 
 `local-secrets` 只在 git 忽略的 `deploy/local/secrets/` 生成开发凭据。运行前需要把 DeepSeek API Key 写入 `deploy/local/secrets/deepseek-api-key`；脚本不会生成或提交 Provider 凭据。`make local-up` 每次会重建容器（保留命名卷），创建 Grafana Viewer Service Account，并幂等确保本地测试 Folder `infra`、`payment` 存在；这两个 Folder 只由根 Compose 的开发 bootstrap 创建，生产环境仍由 Grafana 原生 UI/API 管理。Grafana 默认只绑定 `127.0.0.1:3000`，Dagu 只绑定 `127.0.0.1:18081`，Control Plane、OpenCode、只读 Grafana MCP 和其鉴权网关不发布主机端口。可用 `GRAFANA_PORT`、`DAGU_PORT` 覆盖两个开发端口；运行冒烟时需传递相同的 `DAGU_PORT`。
 
-`local-smoke` 同时验证 Dagu 到 Grafana MCP 的底层路径、Grafana Plugin 经 Control Plane 管理和运行原生 Dagu Playbook 的产品路径，以及 OpenCode 到 DeepSeek 的真实文本会话；任一路径不可用都会明确失败。
+`local-smoke` 同时验证 Dagu 到 Grafana MCP 的底层路径、Grafana Plugin 经 Control Plane 管理和运行原生 Dagu Playbook 的产品路径，以及 OpenCode 到 DeepSeek 的真实文本会话；任一路径不可用都会明确失败。产品层烟测默认使用 `infra` 作为请求时 Folder context，可通过 `AEGIS_SMOKE_FOLDER_UID` 覆盖。烟测不会创建 Folder，也不会绕过 Plugin Backend 或 Control Plane 的 Folder 授权。
+
+本地 Folder 与启动验证遵循以下约定：
+
+1. `make local-up` 会执行 `docker compose up --build --wait --force-recreate`，重新构建并重建所有容器，但保留命名卷。
+2. 一次性的 `grafana-bootstrap` 使用 Grafana 官方 Folder API 幂等确保 `infra`（Infrastructure）和
+   `payment`（Payments）存在；已存在时不修改名称、权限或其中资源。
+3. Folder 仍由 Grafana 持有。自动创建只属于根 Compose 的本地测试便利能力，生产部署不得传入
+   `--ensure-folder`，也不应在 Aegis 页面增加第二个 Folder 管理入口。
+4. 前端从 `/api/search` 获取当前用户可见的 Folder，并从
+   `/api/access-control/user/permissions` 获取 Aegis scoped actions；搜索结果本身不包含可靠的插件权限数据。
+5. 页面仍显示“无可用 Folder”时，先用 `docker compose logs grafana-bootstrap` 确认 bootstrap 成功，再检查当前
+   Grafana 用户是否拥有目标 Folder 的 Aegis read action，并强制刷新浏览器以清除旧插件脚本缓存。
 
 Knowledge 是可选部署，不影响基础栈独立运行。默认的轻量 RAGLite 启动与恢复流程见 [RAGLite 本地部署](deploy/raglite/README.md)；迁移窗口内的 [RAGFlow 本地部署](deploy/ragflow/README.md) 仅用于显式回退和对比验收。
 

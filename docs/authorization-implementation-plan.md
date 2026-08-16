@@ -29,7 +29,7 @@ Knowledge、Playbook 和 Agent 会话链路已经接入首版权限，但不能�
 | Plugin manifest | 已注册 `folder-resources:read/write/admin` actionSets | 修改 manifest 后仍需在真实 Grafana 重启验收 |
 | Plugin Backend | RoutePolicy 覆盖 Knowledge、Playbook、Turn、SSE 和下载；默认拒绝未知 API | 真实 Grafana authz 故障与权限撤销场景待 E2E |
 | Control Plane | 使用统一可信 FolderAuthorization，按 read/write/admin 二次校验 | `resource_folder_uid` 审计需随生产审计投影继续完善 |
-| Folder 前端 | real 模式展示 Folder 选择器并映射通用 action；无 action 时不可选择 | 多用户权限变更和深链接待真实浏览器验收 |
+| Folder 前端 | real 模式组合 `/api/search` 与当前用户 permission map，按精确 Folder scope 映射通用 action；无 action 时不可选择 | 多用户权限变更和深链接待真实浏览器验收 |
 | Knowledge | REST、Provider、MCP 和真实页面已形成 Folder 权限闭环 | v1 user-bound 数据只读兼容窗口需迁移运营方案 |
 | Playbook | Dagu label ownership、父级复核、权限 UI、旧资源只读兼容均已接入 | 真实 Dagu 的跨 Folder/SSE/Artifact 验收待执行 |
 | Agent Session | Session 保持 User-owned；Turn 已发送并校验 Folder context | 仍是单 Actor；approve 因无法恢复可信目标而禁用 |
@@ -45,6 +45,10 @@ Knowledge、Playbook 和 Agent 会话链路已经接入首版权限，但不能�
    Folder，保持 User-owned 语义。
 5. 无法持久化可信目标的 Agent approve 返回 `capability_unavailable`；Playbook MCP 写工具默认不注册。
 6. 两层授权日志区分 requested/authorized Folder，拒绝请求不会把浏览器声明提升为可信 scope。
+7. 本地 Compose 每次启动通过 Grafana 官方 API 幂等确保 `infra`、`payment` 测试 Folder 存在；产品与生产环境仍只在
+   Grafana 管理 Folder。
+8. Folder Gateway 不再依赖搜索结果中不存在的插件 `accessControl`，而是读取当前用户 permission map，并覆盖
+   Folder 精确 scope、通配 scope、无权限过滤和无效响应 fail-closed 测试。
 
 仍未完成且不得绕过的工作：
 
@@ -188,9 +192,11 @@ Dagu 2.13.0 真实契约测试回答：
 - `grafana-plugin/src/app/model.ts`
 - 对应 Jest 测试
 
-任务：
+任务（已完成）：
 
-- 按 Admin -> Edit -> View 顺序解析通用 action；缺少 `accessControl` 或 read action 的 Folder 不可选择。
+- 并行读取 `/api/search` 的可见 Folder 与 `/api/access-control/user/permissions` 的当前用户 permission map。
+- 按 Admin -> Edit -> View 顺序解析通用 action，只接受 `folders:uid:<uid>` 或 `folders:*`；缺少匹配 read action 的
+  Folder 不可选择，权限响应无效时 fail-closed。
 - real 模式显示 Folder Dropdown；Folder 列表加载失败、为空和权限被撤销时显示明确状态。
 - 将当前带 `fixture` 的 sessionStorage key 迁移为真实产品 scope key，旧 key 只读兼容一个版本。
 - Folder 切换立即取消旧请求、清空上一 Folder 的 Knowledge/Playbook/Turn 操作状态，再加载新 scope。
@@ -199,7 +205,8 @@ Dagu 2.13.0 真实契约测试回答：
 - 前端收到 403 后刷新 Folder 列表和页面状态，不继续依赖缓存的 Edit/Admin 判断。
 
 完成门禁：real 模式可在同一用户的 View/Edit/Admin Folder 间切换，无 action 的 Folder 不显示为 View，晚到响应
-不会覆盖当前 Folder。
+不会覆盖当前 Folder。当前单元测试已覆盖精确 scope、`folders:*`、无权限过滤、无效 Folder/permission 响应、
+请求取消和无 Folder 引导；真实三用户权限矩阵仍属于生产验收项。
 
 ## 7. 阶段 3：Knowledge 权限与真实前端垂直切片
 
@@ -451,6 +458,18 @@ make verify
 
 涉及 Dagu、Knowledge Provider、Grafana authz 或 Agent runtime 的阶段还必须运行固定版本真实合同/冒烟，单元 fake
 不能代替发布验收。
+
+本地回归使用：
+
+```bash
+make local-up
+make local-smoke
+```
+
+`local-up` 会重建容器并重跑一次性 Grafana bootstrap，确保 `infra`、`payment` 存在；`local-smoke` 默认以
+`infra` 作为 Folder context，覆盖 Dagu -> Grafana MCP、Plugin -> Control Plane -> Dagu Playbook 和
+Plugin -> Control Plane -> OpenCode 三条真实路径。该流程只验证本地单 Actor 栈，不能替代三用户、三 Folder 的
+生产权限矩阵。
 
 整个计划完成的定义：
 

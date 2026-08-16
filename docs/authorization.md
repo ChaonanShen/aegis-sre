@@ -92,6 +92,17 @@ Grafana 原生 UI/API 删除 Folder，Aegis 不能把“所有删除都能被提
 Dashboard、Alert Rule、Folder、用户、团队和 Grafana 原生权限由 Grafana 持有。Aegis 只通过官方
 API、MCP 或插件后端查询和操作，不保存副本，也不创建第二套权限规则。
 
+Aegis 产品界面不提供 Folder 创建、改名、删除或授权入口。用户应在 Grafana 原生 UI/API 中完成这些管理操作；
+当当前用户没有可用 Folder 时，Aegis 只提示用户先在 Grafana 创建 Folder 或联系管理员授权。
+
+根 Compose 是唯一的开发例外：`grafana-bootstrap` 接受可重复的 `--ensure-folder=uid:title` 参数，并在每次
+`make local-up` 时通过 Grafana 官方 API 幂等确保测试 Folder `infra` 和 `payment` 存在。这个 bootstrap：
+
+- 只用于本地测试，不是生产控制面能力；
+- Folder 已存在时不修改名称、权限或其中资源；
+- 不建立 Aegis Folder 表，也不改变 Grafana 是唯一事实来源的边界；
+- 生产部署不得传入 `--ensure-folder`。
+
 ### 2.5 请求时 Folder Context
 
 请求时 Folder context 表示“本次操作希望使用哪个 Folder”，不等于资源本身属于该 Folder。
@@ -510,30 +521,34 @@ Service Account 在之后执行 `write/admin`。
 
 前端负责一致的交互体验，不承担最终授权：
 
-1. 通过 Grafana `/api/search` 只展示当前用户可见的 Folder。
+1. 通过 Grafana `/api/search` 获取当前用户可见的 Folder，并通过
+   `/api/access-control/user/permissions` 获取当前用户的 scoped action 集合。
 2. real 模式提供 Folder 选择器；Folder 切换立即清空上一 scope 的数据和对话操作状态。
 3. 所有 Folder-scoped Gateway 统一发送请求目标 Folder UID。
-4. 根据 Grafana `accessControl` 或 `hasPermission` 控制按钮、路由和只读提示。
+4. 将 action 的 `folders:uid:<uid>` 或 `folders:*` scope 与搜索结果 UID 精确匹配，控制按钮、路由和只读提示。
 5. 收到服务端 `403` 时以服务端结果为准，即使前端此前判断可写。
 6. 深链接必须携带或恢复目标 Folder context，然后由服务端验证；不能只凭资源 ID 打开。
 7. 权限变化后刷新 Folder 列表和资源状态，不长期缓存可写判断。
 
-real 模式应只用通用 scoped action 计算 Folder 能力，不能继续让各模块解释自己的 Knowledge/Playbook action：
+Grafana Folder 搜索结果不保证包含插件自定义 `accessControl`。因此 real 模式必须把可见 Folder 列表与当前用户
+permission map 分开读取，再用通用 scoped action 计算 Folder 能力；不能让各模块解释自己的
+Knowledge/Playbook action：
 
-| `accessControl` 中的通用 action | 前端能力 |
+| 当前用户 permission map 中匹配目标 Folder scope 的 action | 前端能力 |
 | --- | --- |
 | `grafana-plugin-app.folder-resources:admin` | `Admin`，同时具备 Edit/View |
 | `grafana-plugin-app.folder-resources:write` | `Edit`，同时具备 View |
 | `grafana-plugin-app.folder-resources:read` | `View` |
-| 均不存在或 `accessControl` 缺失 | 不可选择，不得默认成 `View` |
+| 均不存在、scope 不匹配或权限响应无效 | 不可选择，不得默认成 `View` |
 
-判断顺序必须是 Admin -> Edit -> View。迁移期可以同时识别旧的 `knowledge:read/write`，但它们只能作为明确的
-兼容分支并设置移除窗口，不能成为新模块契约。`hasPermission`、Folder 搜索结果和按钮状态只用于前端体验；
-Plugin Backend 仍对每次请求检查对应 scoped action，Admin 操作不能因为前端已显示按钮而降级成 write。
+判断顺序必须是 Admin -> Edit -> View。允许的 scope 只有目标 Folder 的 `folders:uid:<uid>` 和覆盖全部 Folder 的
+`folders:*`；不能用前缀、标题或其他 Folder 的 scope 猜测权限。permission map 无效时整个 Folder 列表
+fail-closed。`hasPermission`、Folder 搜索结果和按钮状态只用于前端体验；Plugin Backend 仍对每次请求检查对应
+scoped action，Admin 操作不能因为前端已显示按钮而降级成 write。
 
-当前 `grafanaFolderGateway` 已读取 Folder 搜索结果的 `accessControl`，但 real 模式 TopBar 隐藏了 Folder
-选择器，并且 Gateway 尚未识别通用 `folder-resources:read/write/admin`。这两项必须在统一 Folder 授权链落地时
-调整；尤其不能把缺少 `accessControl` 的搜索结果默认映射为 View。
+当前 `grafanaFolderGateway` 已并行读取 Folder 搜索结果和当前用户 permission map，按上述规则映射
+View/Edit/Admin，并过滤无匹配 Aegis action 的 Folder。列表为空时 TopBar、Knowledge 和 Playbook 页面提示用户
+先在 Grafana 创建 Folder 或联系管理员授权；搜索词没有结果时仍显示“没有匹配的 Folder”，两种状态不能混淆。
 
 ## 16. Plugin Backend 路由策略
 
@@ -633,7 +648,9 @@ Skills 各自解析 Header。Header 名称是平台传输细节，不应散落�
 ### 19.3 前端 E2E
 
 - real 模式只显示用户可见 Folder；
-- 通用 read/write/admin action 分别映射为 View/Edit/Admin，缺少 `accessControl` 时不默认成 View；
+- 通用 read/write/admin action 的精确 Folder scope 分别映射为 View/Edit/Admin，权限响应缺失或无效时 fail-closed；
+- Grafana 搜索结果没有插件 `accessControl` 字段时，仍能依据当前用户 permission map 正确列出 Folder；
+- 无可用 Folder 时引导用户在 Grafana 创建或申请权限，搜索无匹配结果时显示独立状态；
 - Folder 切换不短暂显示上一 Folder 数据；
 - View 用户看不到或不能触发写按钮；
 - 即使强制发送写请求，服务端仍返回 403；
