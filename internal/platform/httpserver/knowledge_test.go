@@ -153,6 +153,23 @@ func TestKnowledgeSearchReturnsStableCitations(t *testing.T) {
 	if fake.searchInput.Limit != 5 || len(fake.searchInput.TagsAll) != 1 || fake.retrieveActor.FolderUID != "folder-a" || !strings.Contains(response.Body.String(), `"source_name":"guide.md"`) || strings.Contains(response.Body.String(), `"score"`) {
 		t.Fatalf("input=%+v actor=%+v body=%s", fake.searchInput, fake.retrieveActor, response.Body.String())
 	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q", response.Header().Get("Cache-Control"))
+	}
+}
+
+func TestDocumentPassagesAreNotCached(t *testing.T) {
+	server, _ := newKnowledgeHTTPServer(t)
+	request := knowledgeRequest(http.MethodGet, "/api/v1/knowledge-bases/kbs_abcdefgh/documents/doc_abcdefgh/passages", "")
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if response.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q", response.Header().Get("Cache-Control"))
+	}
 }
 
 func TestKnowledgeProviderErrorsAreSanitized(t *testing.T) {
@@ -272,6 +289,10 @@ func (fake *knowledgeHTTPFake) UploadDocument(_ context.Context, _ domain.ActorC
 func (fake *knowledgeHTTPFake) Search(_ context.Context, actor domain.ActorContext, input ports.KnowledgeSearchInput) ([]ports.KnowledgeCitation, error) {
 	fake.retrieveActor, fake.searchInput = actor, input
 	return fake.hits, nil
+}
+func (fake *knowledgeHTTPFake) ListDocumentPassages(_ context.Context, actor domain.ActorContext, _ ports.KnowledgeDocumentRef, _ domain.PageRequest) (domain.Page[ports.DocumentPassage], error) {
+	fake.retrieveActor = actor
+	return domain.Page[ports.DocumentPassage]{Items: []ports.DocumentPassage{}}, nil
 }
 func (fake *knowledgeHTTPFake) RetryDocumentIndex(_ context.Context, _ domain.ActorContext, ref ports.KnowledgeDocumentRef) (ports.KnowledgeDocument, error) {
 	fake.startRef = ref

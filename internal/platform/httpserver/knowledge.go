@@ -254,6 +254,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 			}
 			items = append(items, value)
 		}
+		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, pageJSON(items, page.NextCursor, page.HasMore))
 	})
 	mux.HandleFunc("GET /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}/content", func(w http.ResponseWriter, request *http.Request) {
@@ -317,6 +318,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 			}
 			items = append(items, map[string]any{"text": hit.Text, "citation": citation})
 		}
+		w.Header().Set("Cache-Control", "no-store")
 		writeJSON(w, http.StatusOK, map[string]any{"hits": items})
 	})
 }
