@@ -8,7 +8,6 @@ services:
       AEGIS_KNOWLEDGE_MCP_TENANT_ID: default
       AEGIS_KNOWLEDGE_MCP_TOKEN_FILE: /run/secrets/knowledge-mcp-token
       AEGIS_KNOWLEDGE_MCP_USER_ID: agent:knowledge
-      AEGIS_KNOWLEDGE_PROVIDER: raglite
       AEGIS_KNOWLEDGE_TIMEOUT: 30s
       AEGIS_KNOWLEDGE_TOKEN_FILE: /run/secrets/knowledge-provider-token
       AEGIS_KNOWLEDGE_URL: http://raglite-provider:8090

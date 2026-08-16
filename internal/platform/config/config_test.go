@@ -252,29 +252,29 @@ func TestLoadRejectsPlaybookMCPWithoutDaguOrFolders(t *testing.T) {
 
 func TestLoadAcceptsCompleteKnowledgeConfiguration(t *testing.T) {
 	directory := t.TempDir()
-	apiKey := filepath.Join(directory, "ragflow-api-key")
+	token := filepath.Join(directory, "knowledge-provider-token")
 	idKey := filepath.Join(directory, "knowledge-id-key")
 	pluginToken := filepath.Join(directory, "plugin-token")
-	for path, value := range map[string]string{apiKey: "ragflow-secret", idKey: "01234567890123456789012345678901", pluginToken: "plugin-secret"} {
+	for path, value := range map[string]string{token: "provider-secret", idKey: "01234567890123456789012345678901", pluginToken: "plugin-secret"} {
 		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	values := map[string]string{
 		EnvKnowledgeEnabled: "true",
-		EnvRAGFlowURL:       "https://ragflow.internal", EnvRAGFlowAPIKeyFile: apiKey, EnvKnowledgeIDKeyFile: idKey,
-		EnvKnowledgeEmbedding: "Qwen/Qwen3-Embedding-0.6B@OpenAI-API-Compatible", EnvRAGFlowTimeout: "45s", EnvPluginTokenFile: pluginToken,
+		EnvKnowledgeURL:     "http://raglite-provider:8090", EnvKnowledgeTokenFile: token,
+		EnvKnowledgeIDKeyFile: idKey, EnvKnowledgeTimeout: "45s", EnvPluginTokenFile: pluginToken,
 	}
 	cfg, err := Load(func(key string) string { return values[key] })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.KnowledgeProvider != "ragflow" || cfg.Endpoints[CapabilityKnowledge] != values[EnvRAGFlowURL] || cfg.KnowledgeTokenFile != apiKey || cfg.KnowledgeIDKeyFile != idKey || cfg.KnowledgeTimeout != 45*time.Second || cfg.PluginToken != "plugin-secret" {
+	if cfg.Endpoints[CapabilityKnowledge] != values[EnvKnowledgeURL] || cfg.KnowledgeTokenFile != token || cfg.KnowledgeIDKeyFile != idKey || cfg.KnowledgeTimeout != 45*time.Second || cfg.PluginToken != "plugin-secret" {
 		t.Fatalf("config = %+v", cfg)
 	}
 }
 
-func TestLoadAcceptsProviderNeutralRAGLiteConfiguration(t *testing.T) {
+func TestLoadAcceptsDefaultKnowledgeTimeout(t *testing.T) {
 	directory := t.TempDir()
 	token := filepath.Join(directory, "raglite-token")
 	idKey := filepath.Join(directory, "knowledge-id-key")
@@ -285,56 +285,35 @@ func TestLoadAcceptsProviderNeutralRAGLiteConfiguration(t *testing.T) {
 		}
 	}
 	values := map[string]string{
-		EnvKnowledgeEnabled: "true", EnvKnowledgeProvider: "raglite",
-		EnvKnowledgeURL: "http://raglite-provider:8090", EnvKnowledgeTokenFile: token,
+		EnvKnowledgeEnabled: "true",
+		EnvKnowledgeURL:     "http://raglite-provider:8090", EnvKnowledgeTokenFile: token,
 		EnvKnowledgeIDKeyFile: idKey, EnvKnowledgeTimeout: "12s", EnvPluginTokenFile: pluginToken,
 	}
 	cfg, err := Load(func(key string) string { return values[key] })
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.KnowledgeProvider != "raglite" || cfg.KnowledgeTokenFile != token || cfg.KnowledgeTimeout != 12*time.Second || cfg.KnowledgeEmbedding != "" {
+	if cfg.KnowledgeTokenFile != token || cfg.KnowledgeTimeout != 12*time.Second {
 		t.Fatalf("config = %+v", cfg)
-	}
-}
-
-func TestLoadRejectsMixedKnowledgeProviderConfiguration(t *testing.T) {
-	values := map[string]string{
-		EnvKnowledgeEnabled: "true", EnvKnowledgeProvider: "raglite",
-		EnvKnowledgeURL: "http://raglite-provider:8090", EnvRAGFlowURL: "http://ragflow:9380",
-	}
-	if _, err := Load(func(key string) string { return values[key] }); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("error = %v, want ErrInvalid", err)
-	}
-}
-
-func TestLoadRejectsRAGLiteWithLegacyRAGFlowCredential(t *testing.T) {
-	values := map[string]string{
-		EnvKnowledgeEnabled: "true", EnvKnowledgeProvider: "raglite",
-		EnvKnowledgeURL: "http://raglite-provider:8090", EnvRAGFlowAPIKeyFile: "legacy-secret",
-	}
-	if _, err := Load(func(key string) string { return values[key] }); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("error = %v, want ErrInvalid", err)
 	}
 }
 
 func TestLoadRejectsIncompleteKnowledgeConfiguration(t *testing.T) {
 	directory := t.TempDir()
-	apiKey := filepath.Join(directory, "ragflow-api-key")
+	token := filepath.Join(directory, "knowledge-provider-token")
 	idKey := filepath.Join(directory, "knowledge-id-key")
 	pluginToken := filepath.Join(directory, "plugin-token")
-	for path, value := range map[string]string{apiKey: "ragflow-secret", idKey: "01234567890123456789012345678901", pluginToken: "plugin-secret"} {
+	for path, value := range map[string]string{token: "provider-secret", idKey: "01234567890123456789012345678901", pluginToken: "plugin-secret"} {
 		if err := os.WriteFile(path, []byte(value), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	base := map[string]string{EnvRAGFlowURL: "https://ragflow.internal", EnvRAGFlowAPIKeyFile: apiKey, EnvKnowledgeIDKeyFile: idKey, EnvKnowledgeEmbedding: "model@factory", EnvPluginTokenFile: pluginToken}
+	base := map[string]string{EnvKnowledgeEnabled: "true", EnvKnowledgeURL: "http://raglite-provider:8090", EnvKnowledgeTokenFile: token, EnvKnowledgeIDKeyFile: idKey, EnvPluginTokenFile: pluginToken}
 	tests := map[string]map[string]string{
-		"missing API key":     mergeAgentConfig(base, map[string]string{EnvRAGFlowAPIKeyFile: ""}),
+		"missing token":       mergeAgentConfig(base, map[string]string{EnvKnowledgeTokenFile: ""}),
 		"missing ID key":      mergeAgentConfig(base, map[string]string{EnvKnowledgeIDKeyFile: ""}),
-		"invalid embedding":   mergeAgentConfig(base, map[string]string{EnvKnowledgeEmbedding: "model-without-factory"}),
 		"missing proxy token": mergeAgentConfig(base, map[string]string{EnvPluginTokenFile: ""}),
-		"credentials no URL":  {EnvRAGFlowAPIKeyFile: apiKey},
+		"credentials no URL":  {EnvKnowledgeEnabled: "true", EnvKnowledgeTokenFile: token},
 	}
 	for name, values := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -347,8 +326,8 @@ func TestLoadRejectsIncompleteKnowledgeConfiguration(t *testing.T) {
 
 func TestLoadRejectsKnowledgeConfigurationUnlessExplicitlyEnabled(t *testing.T) {
 	_, err := Load(func(key string) string {
-		if key == EnvRAGFlowURL {
-			return "https://ragflow.internal"
+		if key == EnvKnowledgeURL {
+			return "http://raglite-provider:8090"
 		}
 		return ""
 	})
@@ -372,12 +351,12 @@ func TestLoadRejectsInvalidKnowledgeEnabledValue(t *testing.T) {
 func TestLoadBindsKnowledgeMCPTokenToActorAndFolderAllowlist(t *testing.T) {
 	directory := t.TempDir()
 	files := map[string]string{
-		EnvRAGFlowAPIKeyFile: "ragflow-secret", EnvKnowledgeIDKeyFile: "01234567890123456789012345678901",
+		EnvKnowledgeTokenFile: "provider-secret", EnvKnowledgeIDKeyFile: "01234567890123456789012345678901",
 		EnvPluginTokenFile: "plugin-secret", EnvKnowledgeMCPToken: "mcp-secret",
 	}
 	values := map[string]string{
-		EnvKnowledgeEnabled: "true",
-		EnvRAGFlowURL:       "https://ragflow.internal", EnvKnowledgeEmbedding: "model@factory",
+		EnvKnowledgeEnabled:   "true",
+		EnvKnowledgeURL:       "http://raglite-provider:8090",
 		EnvKnowledgeMCPTenant: "tenant", EnvKnowledgeMCPOrg: "org", EnvKnowledgeMCPUser: "knowledge-agent",
 		EnvKnowledgeMCPFolders: "ops, payments,ops",
 	}

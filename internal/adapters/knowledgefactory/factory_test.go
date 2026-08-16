@@ -23,35 +23,14 @@ func TestFactoryBuildsRAGLiteProvider(t *testing.T) {
 	}))
 	defer server.Close()
 	provider, err := New(config.Config{
-		KnowledgeProvider: "raglite", KnowledgeTokenFile: tokenFile(t),
-		KnowledgeTimeout: time.Second, Endpoints: map[config.Capability]string{config.CapabilityKnowledge: server.URL},
+		KnowledgeTokenFile: tokenFile(t),
+		KnowledgeTimeout:   time.Second, Endpoints: map[config.Capability]string{config.CapabilityKnowledge: server.URL},
 	}, codec(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := provider.Check(context.Background()); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func TestFactoryRejectsRAGFlowRuntimeSelection(t *testing.T) {
-	_, err := New(config.Config{
-		KnowledgeProvider: "ragflow", KnowledgeTokenFile: tokenFile(t),
-		KnowledgeEmbedding: "model@factory", KnowledgeTimeout: time.Second,
-		Endpoints: map[config.Capability]string{config.CapabilityKnowledge: "http://provider"},
-	}, codec(t))
-	if err == nil {
-		t.Fatal("RAGFlow runtime selection must fail")
-	}
-}
-
-func TestFactoryRejectsUnknownProvider(t *testing.T) {
-	_, err := New(config.Config{
-		KnowledgeProvider: "unknown", KnowledgeTokenFile: tokenFile(t),
-		Endpoints: map[config.Capability]string{config.CapabilityKnowledge: "http://provider"},
-	}, codec(t))
-	if err == nil {
-		t.Fatal("unknown provider must fail")
 	}
 }
 

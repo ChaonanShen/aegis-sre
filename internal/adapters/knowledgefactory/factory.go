@@ -32,9 +32,6 @@ func New(cfg config.Config, ids *knowledgeid.Codec) (ports.KnowledgeProvider, er
 		content, err := os.ReadFile(cfg.KnowledgeTokenFile)
 		return strings.TrimSpace(string(content)), err
 	}
-	if cfg.KnowledgeProvider != "" && cfg.KnowledgeProvider != "raglite" {
-		return nil, errors.New("only raglite knowledge provider is supported")
-	}
 	client, err := raglite.NewClient(endpoint, tokenSource, httpClient)
 	if err != nil {
 		return nil, err

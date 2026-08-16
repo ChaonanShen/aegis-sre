@@ -23,7 +23,7 @@ jq -e --arg root "$repository_root" '
     .type == "volume" and .target == "/var/lib/aegis/raglite")
   and any($provider.volumes[];
     .type == "bind" and .target == "/run/secrets/knowledge-provider-token" and .read_only)
-  and .services["control-plane"].environment.AEGIS_KNOWLEDGE_PROVIDER == "raglite"
+  and (.services["control-plane"].environment | has("AEGIS_KNOWLEDGE_PROVIDER") | not)
 ' "$compose_json" >/dev/null
 
 raglite_secrets="$test_root/raglite"
@@ -35,20 +35,5 @@ test -s "$raglite_secrets/knowledge-id-key"
 test -s "$raglite_secrets/knowledge-mcp-token"
 test -s "$raglite_secrets/knowledge-provider-token"
 test ! -e "$raglite_secrets/ragflow-mysql-password"
-
-ragflow_secrets="$test_root/ragflow"
-mkdir -p "$ragflow_secrets"
-printf '%s\n' test-key > "$ragflow_secrets/deepseek-api-key"
-if AEGIS_INIT_KNOWLEDGE_SECRETS=1 AEGIS_KNOWLEDGE_PROVIDER=ragflow \
-  "$repository_root/scripts/init-local-secrets.sh" "$ragflow_secrets" >/dev/null 2>&1; then
-  echo "RAGFlow initialization must require an explicit API key" >&2
-  exit 1
-fi
-printf '%s\n' ragflow-key > "$ragflow_secrets/ragflow-api-key"
-AEGIS_INIT_KNOWLEDGE_SECRETS=1 AEGIS_KNOWLEDGE_PROVIDER=ragflow \
-  "$repository_root/scripts/init-local-secrets.sh" "$ragflow_secrets" >/dev/null
-test -s "$ragflow_secrets/ragflow-mysql-password"
-test -s "$ragflow_secrets/ragflow-minio-password"
-test -s "$ragflow_secrets/ragflow-redis-password"
 
 echo "RAGLite deployment contracts passed"

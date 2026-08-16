@@ -31,15 +31,10 @@ const (
 	EnvDaguBasicPass        = "AEGIS_DAGU_BASIC_AUTH_PASSWORD_FILE"
 	EnvPlaybookLegacyFolder = "AEGIS_PLAYBOOK_LEGACY_FOLDER_UID"
 	EnvKnowledgeEnabled     = "AEGIS_KNOWLEDGE_ENABLED"
-	EnvKnowledgeProvider    = "AEGIS_KNOWLEDGE_PROVIDER"
 	EnvKnowledgeURL         = "AEGIS_KNOWLEDGE_URL"
 	EnvKnowledgeTokenFile   = "AEGIS_KNOWLEDGE_TOKEN_FILE"
 	EnvKnowledgeTimeout     = "AEGIS_KNOWLEDGE_TIMEOUT"
-	EnvRAGFlowURL           = "AEGIS_RAGFLOW_URL"
-	EnvRAGFlowAPIKeyFile    = "AEGIS_RAGFLOW_API_KEY_FILE"
 	EnvKnowledgeIDKeyFile   = "AEGIS_KNOWLEDGE_ID_KEY_FILE"
-	EnvKnowledgeEmbedding   = "AEGIS_KNOWLEDGE_EMBEDDING_MODEL"
-	EnvRAGFlowTimeout       = "AEGIS_RAGFLOW_TIMEOUT"
 	EnvKnowledgeMCPToken    = "AEGIS_KNOWLEDGE_MCP_TOKEN_FILE"
 	EnvKnowledgeMCPTenant   = "AEGIS_KNOWLEDGE_MCP_TENANT_ID"
 	EnvKnowledgeMCPOrg      = "AEGIS_KNOWLEDGE_MCP_ORG_ID"
@@ -87,12 +82,8 @@ type Config struct {
 	OpenCodeUsername      string
 	OpenCodePasswordFile  string
 	KnowledgeEnabled      bool
-	KnowledgeProvider     string
 	KnowledgeTokenFile    string
-	RAGFlowAPIKeyFile     string
 	KnowledgeIDKeyFile    string
-	KnowledgeEmbedding    string
-	RAGFlowTimeout        time.Duration
 	KnowledgeTimeout      time.Duration
 	KnowledgeMCPTokenFile string
 	KnowledgeMCPTenantID  string
@@ -151,13 +142,6 @@ func Load(getenv func(string) string) (Config, error) {
 		endpoints[capability] = raw
 	}
 	knowledgeURL := strings.TrimSpace(getenv(EnvKnowledgeURL))
-	legacyKnowledgeURL := strings.TrimSpace(getenv(EnvRAGFlowURL))
-	if knowledgeURL != "" && legacyKnowledgeURL != "" && knowledgeURL != legacyKnowledgeURL {
-		return Config{}, fmt.Errorf("%w: %s and %s cannot disagree", ErrInvalid, EnvKnowledgeURL, EnvRAGFlowURL)
-	}
-	if knowledgeURL == "" {
-		knowledgeURL = legacyKnowledgeURL
-	}
 	if knowledgeEnabled && knowledgeURL != "" {
 		parsed, err := url.Parse(knowledgeURL)
 		if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
@@ -275,35 +259,10 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("%w: %s is required when %s is set", ErrInvalid, EnvAgentProvider, EnvAgentURL)
 	}
 
-	knowledgeProvider := strings.ToLower(strings.TrimSpace(getenv(EnvKnowledgeProvider)))
-	legacyAPIKeyFile := strings.TrimSpace(getenv(EnvRAGFlowAPIKeyFile))
 	knowledgeTokenFile := strings.TrimSpace(getenv(EnvKnowledgeTokenFile))
-	if knowledgeTokenFile != "" && legacyAPIKeyFile != "" && knowledgeTokenFile != legacyAPIKeyFile {
-		return Config{}, fmt.Errorf("%w: %s and %s cannot disagree", ErrInvalid, EnvKnowledgeTokenFile, EnvRAGFlowAPIKeyFile)
-	}
-	if knowledgeTokenFile == "" {
-		knowledgeTokenFile = legacyAPIKeyFile
-	}
-	if knowledgeProvider == "" && (legacyKnowledgeURL != "" || legacyAPIKeyFile != "") {
-		knowledgeProvider = "ragflow"
-	}
-	if knowledgeProvider != "" && knowledgeProvider != "ragflow" && knowledgeProvider != "raglite" {
-		return Config{}, fmt.Errorf("%w: %s must be ragflow or raglite", ErrInvalid, EnvKnowledgeProvider)
-	}
-	if knowledgeProvider == "raglite" && (legacyKnowledgeURL != "" || legacyAPIKeyFile != "") {
-		return Config{}, fmt.Errorf("%w: RAGFlow compatibility settings cannot configure the raglite provider", ErrInvalid)
-	}
 	knowledgeIDKeyFile := strings.TrimSpace(getenv(EnvKnowledgeIDKeyFile))
-	knowledgeEmbedding := strings.TrimSpace(getenv(EnvKnowledgeEmbedding))
 	knowledgeTimeout := 30 * time.Second
 	rawKnowledgeTimeout := strings.TrimSpace(getenv(EnvKnowledgeTimeout))
-	legacyTimeout := strings.TrimSpace(getenv(EnvRAGFlowTimeout))
-	if rawKnowledgeTimeout != "" && legacyTimeout != "" && rawKnowledgeTimeout != legacyTimeout {
-		return Config{}, fmt.Errorf("%w: %s and %s cannot disagree", ErrInvalid, EnvKnowledgeTimeout, EnvRAGFlowTimeout)
-	}
-	if rawKnowledgeTimeout == "" {
-		rawKnowledgeTimeout = legacyTimeout
-	}
 	if rawKnowledgeTimeout != "" {
 		parsed, err := time.ParseDuration(rawKnowledgeTimeout)
 		if err != nil || parsed <= 0 {
@@ -311,27 +270,21 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		knowledgeTimeout = parsed
 	}
-	knowledgeConfigured := knowledgeProvider != "" || knowledgeURL != "" || knowledgeTokenFile != "" || knowledgeIDKeyFile != "" || knowledgeEmbedding != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPToken)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPTenant)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPOrg)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPUser)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPFolders)) != ""
+	knowledgeConfigured := knowledgeURL != "" || knowledgeTokenFile != "" || knowledgeIDKeyFile != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPToken)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPTenant)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPOrg)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPUser)) != "" || strings.TrimSpace(getenv(EnvKnowledgeMCPFolders)) != ""
 	if knowledgeConfigured && !knowledgeEnabled {
 		return Config{}, fmt.Errorf("%w: %s must be true before Knowledge can be configured", ErrInvalid, EnvKnowledgeEnabled)
 	}
 	if endpoints[CapabilityKnowledge] != "" {
-		if knowledgeProvider == "" {
-			return Config{}, fmt.Errorf("%w: %s is required when Knowledge is configured", ErrInvalid, EnvKnowledgeProvider)
-		}
 		if err := requireRegularFile(knowledgeTokenFile, EnvKnowledgeTokenFile); err != nil {
 			return Config{}, err
 		}
 		if err := requireRegularFile(knowledgeIDKeyFile, EnvKnowledgeIDKeyFile); err != nil {
 			return Config{}, err
 		}
-		if knowledgeProvider == "ragflow" && (knowledgeEmbedding == "" || len(knowledgeEmbedding) > 255 || !strings.Contains(knowledgeEmbedding, "@") || strings.ContainsAny(knowledgeEmbedding, "\r\n\x00")) {
-			return Config{}, fmt.Errorf("%w: %s must be a model_name@model_factory value", ErrInvalid, EnvKnowledgeEmbedding)
-		}
 		if pluginToken == "" {
 			return Config{}, fmt.Errorf("%w: %s is required when Knowledge is configured", ErrInvalid, EnvPluginTokenFile)
 		}
-	} else if knowledgeProvider != "" || knowledgeTokenFile != "" || knowledgeIDKeyFile != "" || knowledgeEmbedding != "" {
+	} else if knowledgeTokenFile != "" || knowledgeIDKeyFile != "" {
 		return Config{}, fmt.Errorf("%w: %s is required when Knowledge credentials are configured", ErrInvalid, EnvKnowledgeURL)
 	}
 
@@ -398,7 +351,7 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("%w: %s must be enabled before Canvas is configured", ErrInvalid, EnvCanvasEnabled)
 	}
 
-	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, PlaybookLegacyFolder: playbookLegacyFolder, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, KnowledgeProvider: knowledgeProvider, KnowledgeTokenFile: knowledgeTokenFile, RAGFlowAPIKeyFile: knowledgeTokenFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeEmbedding: knowledgeEmbedding, KnowledgeTimeout: knowledgeTimeout, RAGFlowTimeout: knowledgeTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders, PlaybookMCPTokenFile: playbookMCPTokenFile, PlaybookMCPFolders: playbookMCPFolders, PlaybookMCPWrite: playbookMCPWrite, CanvasEnabled: canvasEnabled, CanvasDBPath: canvasDBPath, CanvasMCPTokenFile: canvasMCPTokenFile}, nil
+	return Config{HTTPAddress: address, ShutdownTimeout: shutdownTimeout, Endpoints: endpoints, PluginToken: pluginToken, DaguTokenFile: daguTokenFile, DaguBasicUser: daguBasicUser, DaguBasicPass: daguBasicPass, PlaybookLegacyFolder: playbookLegacyFolder, AgentProvider: agentProvider, AgentTenantID: agentTenantID, AgentOrgID: agentOrgID, AgentUserID: agentUserID, AgentIDKeyFile: agentIDKeyFile, AgentWorkDir: agentWorkDir, CodexCommand: codexCommand, CodexInitTimeout: codexInitTimeout, OpenCodeUsername: openCodeUsername, OpenCodePasswordFile: openCodePasswordFile, KnowledgeEnabled: knowledgeEnabled, KnowledgeTokenFile: knowledgeTokenFile, KnowledgeIDKeyFile: knowledgeIDKeyFile, KnowledgeTimeout: knowledgeTimeout, KnowledgeMCPTokenFile: knowledgeMCPTokenFile, KnowledgeMCPTenantID: knowledgeMCPTenantID, KnowledgeMCPOrgID: knowledgeMCPOrgID, KnowledgeMCPUserID: knowledgeMCPUserID, KnowledgeMCPFolders: knowledgeMCPFolders, PlaybookMCPTokenFile: playbookMCPTokenFile, PlaybookMCPFolders: playbookMCPFolders, PlaybookMCPWrite: playbookMCPWrite, CanvasEnabled: canvasEnabled, CanvasDBPath: canvasDBPath, CanvasMCPTokenFile: canvasMCPTokenFile}, nil
 }
 
 func parseBool(raw string, defaultValue bool) (bool, error) {

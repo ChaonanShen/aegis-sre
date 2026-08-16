@@ -34,32 +34,10 @@ if [ "${AEGIS_INIT_KNOWLEDGE_SECRETS:-0}" = "1" ]; then
   generate_raw knowledge-id-key
   generate knowledge-mcp-token
   generate knowledge-provider-token
-
-  knowledge_provider="${AEGIS_KNOWLEDGE_PROVIDER:-raglite}"
-  case "$knowledge_provider" in
-    raglite)
-      ;;
-    ragflow)
-      generate ragflow-mysql-password
-      generate ragflow-minio-password
-      generate ragflow-redis-password
-      ;;
-    *)
-      echo "Unsupported AEGIS_KNOWLEDGE_PROVIDER: $knowledge_provider" >&2
-      exit 1
-      ;;
-  esac
 fi
 
 if [ ! -s "$secret_dir/deepseek-api-key" ]; then
   echo "Missing $secret_dir/deepseek-api-key; write the DeepSeek API key to that file before local-up." >&2
-  exit 1
-fi
-
-if [ "${AEGIS_INIT_KNOWLEDGE_SECRETS:-0}" = "1" ] \
-  && [ "${AEGIS_KNOWLEDGE_PROVIDER:-raglite}" = "ragflow" ] \
-  && [ ! -s "$secret_dir/ragflow-api-key" ]; then
-  echo "Missing $secret_dir/ragflow-api-key; create an API key in the RAGFlow account used by Aegis before knowledge-up." >&2
   exit 1
 fi
 
