@@ -3,6 +3,7 @@ import { Observable } from 'rxjs';
 import type { components } from '../../../api/generated/controlPlane';
 import { ResourceClient, ResourceClientError } from '../../../adapters/resourcesdk/resourceClient';
 import { PLUGIN_RESOURCE_BASE_URL } from '../../../constants';
+import { reportFolderAuthorizationDenied } from '../../../app/authorizationEvents';
 import { PlaybookArtifact, PlaybookArtifactPreview, PlaybookDocument, PlaybookRunRecord, PlaybookSummary } from '../crudModel';
 import { PlaybookCrudGateway } from '../ports/PlaybookCrudGateway';
 
@@ -314,6 +315,9 @@ async function* streamRunEvents(
   const decoder = new SSEDecoder();
   for await (const response of observableValues(backend.chunked(request), signal)) {
     if (response.status < 200 || response.status >= 300) {
+      if (response.status === 403) {
+        reportFolderAuthorizationDenied(folderUid);
+      }
       throw new ResourceClientError(response.status, response.status, 'Playbook 事件流请求失败。');
     }
     for (const data of decoder.push(response.data)) {

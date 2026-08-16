@@ -1,6 +1,7 @@
 import { BackendSrv, BackendSrvRequest, FetchResponse } from '@grafana/runtime';
 import { of, throwError } from 'rxjs';
 import { ResourceClient, ResourceClientError } from './resourceClient';
+import { onFolderAuthorizationDenied } from '../../app/authorizationEvents';
 
 const validPayload = { value: 'ok' };
 const isPayload = (value: unknown): value is typeof validPayload =>
@@ -57,6 +58,21 @@ describe('ResourceClient', () => {
     await expect(client.request('/api/v1/sessions', isPayload)).rejects.toEqual(
       new ResourceClientError(403, 'forbidden', 'folder denied')
     );
+  });
+
+  test('reports a denied Folder-scoped request so permissions can be refreshed', async () => {
+    const fetch = jest.fn(() =>
+      throwError(() => ({ status: 403, statusText: 'Forbidden', data: undefined, config: {} as BackendSrvRequest }))
+    );
+    const denied = jest.fn();
+    const unsubscribe = onFolderAuthorizationDenied(denied);
+    const client = new ResourceClient({ fetch } as unknown as BackendSrv);
+
+    await expect(
+      client.request('/api/v1/playbooks', isPayload, { headers: { 'X-Aegis-Folder-UID': 'ops' } })
+    ).rejects.toMatchObject({ status: 403 });
+    expect(denied).toHaveBeenCalledWith('ops');
+    unsubscribe();
   });
 
   test('preserves the AbortError contract for cancelled Grafana requests', async () => {

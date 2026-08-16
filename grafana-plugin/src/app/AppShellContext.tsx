@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Folder } from './model';
 import { useAppServices } from './AppServices';
+import { onFolderAuthorizationDenied } from './authorizationEvents';
 
 const STORAGE_KEY = 'aegis.shell.folder.v1';
 const LEGACY_STORAGE_KEY = 'torchbearing.fixture.shell.v1';
@@ -83,6 +84,15 @@ export function AppShellProvider({ children }: React.PropsWithChildren) {
   }, []);
   const activeFolder =
     folders.status === 'success' ? folders.data.find(({ uid }) => uid === activeFolderUid) : undefined;
+  useEffect(
+    () =>
+      onFolderAuthorizationDenied((folderUid) => {
+        if (folderUid === activeFolderUid) {
+          refreshFolders();
+        }
+      }),
+    [activeFolderUid, refreshFolders]
+  );
   const value = useMemo(
     () => ({ folders, activeFolder, setActiveFolder, refreshFolders }),
     [activeFolder, folders, refreshFolders, setActiveFolder]

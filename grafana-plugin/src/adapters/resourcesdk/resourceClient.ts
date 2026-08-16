@@ -1,6 +1,7 @@
 import { BackendSrv, BackendSrvRequest, getBackendSrv, isFetchError } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
 import type { components } from '../../api/generated/controlPlane';
+import { reportFolderAuthorizationDenied } from '../../app/authorizationEvents';
 import { PLUGIN_RESOURCE_BASE_URL } from '../../constants';
 
 export type ResourceDataGuard<T> = (value: unknown) => value is T;
@@ -58,6 +59,7 @@ export class ResourceClient {
           throw new DOMException('The operation was aborted.', 'AbortError');
         }
         const problem = error.data;
+        reportDenied(error.status, options.headers);
         if (isProblem(problem)) {
           throw new ResourceClientError(error.status, problem.code, problem.detail || problem.title || '请求失败。');
         }
@@ -85,6 +87,7 @@ export class ResourceClient {
         if (error.cancelled) {
           throw new DOMException('The operation was aborted.', 'AbortError');
         }
+        reportDenied(error.status, options.headers);
         if (isProblem(error.data)) {
           throw new ResourceClientError(error.status, error.data.code, error.data.detail || error.data.title);
         }
@@ -117,6 +120,7 @@ export class ResourceClient {
         if (error.cancelled) {
           throw new DOMException('The operation was aborted.', 'AbortError');
         }
+        reportDenied(error.status, options.headers);
         if (isProblem(error.data)) {
           throw new ResourceClientError(error.status, error.data.code, error.data.detail || error.data.title);
         }
@@ -124,6 +128,14 @@ export class ResourceClient {
       throw error;
     }
   }
+}
+
+function reportDenied(status: number, headers: BackendSrvRequest['headers']) {
+  if (status !== 403 || !headers) {
+    return;
+  }
+  const entry = Object.entries(headers).find(([name]) => name.toLowerCase() === 'x-aegis-folder-uid');
+  reportFolderAuthorizationDenied(typeof entry?.[1] === 'string' ? entry[1] : undefined);
 }
 
 function resourceURL(path: string): string {

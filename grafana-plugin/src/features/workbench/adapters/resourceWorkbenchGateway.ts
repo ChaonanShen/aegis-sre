@@ -4,6 +4,7 @@ import type { components } from '../../../api/generated/controlPlane';
 import type { AegisEvent } from '../../../api/generated/events';
 import { ResourceClient, ResourceClientError } from '../../../adapters/resourcesdk/resourceClient';
 import { PLUGIN_RESOURCE_BASE_URL } from '../../../constants';
+import { reportFolderAuthorizationDenied } from '../../../app/authorizationEvents';
 import {
   AgentEvent,
   OpenedSession,
@@ -192,6 +193,9 @@ async function* streamEvents(
       }
     }
     if (bufferedError) {
+      if (bufferedError.status === 403) {
+        reportFolderAuthorizationDenied(folderUid);
+      }
       throw problemFrom(bufferedError);
     }
     for (const raw of decoder.finish()) {

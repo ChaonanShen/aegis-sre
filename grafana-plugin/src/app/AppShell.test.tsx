@@ -5,6 +5,7 @@ import { AppServicesProvider, RuntimeMode } from './AppServices';
 import { AppShell } from './AppShell';
 import { AppShellProvider, useAppShell } from './AppShellContext';
 import { createFixtureWorkbenchGateway } from '../features/workbench/adapters/fixtureWorkbenchGateway';
+import { reportFolderAuthorizationDenied } from './authorizationEvents';
 
 const folders = [
   { uid: 'payment', title: 'Payment', permission: 'Edit' as const, serviceCount: 8 },
@@ -154,6 +155,19 @@ describe('AppShell', () => {
     await act(async () => second.resolve([{ ...folders[1], title: '新结果' }]));
     await waitFor(() => expect(screen.getByText(/新结果/)).toBeInTheDocument());
     expect(screen.queryByText(/旧结果/)).not.toBeInTheDocument();
+  });
+
+  test('refreshes the active Folder after a scoped request is denied', async () => {
+    const folderGateway = { listFolders: jest.fn(async () => folders) };
+    renderShell('real', folderGateway);
+    await screen.findByText('success:infra');
+
+    act(() => reportFolderAuthorizationDenied('payment'));
+    expect(folderGateway.listFolders).toHaveBeenCalledTimes(1);
+
+    act(() => reportFolderAuthorizationDenied('infra'));
+    await waitFor(() => expect(folderGateway.listFolders).toHaveBeenCalledTimes(2));
+    await screen.findByText('success:infra');
   });
 });
 
