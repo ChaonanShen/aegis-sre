@@ -100,9 +100,8 @@ func TestKnowledgeContractCoversTheCompleteVerticalSlice(t *testing.T) {
 		"operationId: deleteKnowledgeBase",
 		"operationId: getDocument",
 		"operationId: updateDocument",
-		"operationId: startDocumentIndexing",
-		"operationId: stopDocumentIndexing",
-		"operationId: listDocumentChunks",
+		"operationId: retryDocumentIndex",
+		"operationId: listDocumentPassages",
 		"operationId: downloadDocumentContent",
 		"operationId: searchKnowledge",
 		"multipart/form-data:",
@@ -121,7 +120,7 @@ func TestKnowledgeSearchDoesNotAcceptArbitraryProviderFilters(t *testing.T) {
 		t.Fatal(err)
 	}
 	lower := strings.ToLower(string(content))
-	for _, forbidden := range []string{"metadata_condition", "similarity_threshold", "vector_similarity_weight"} {
+	for _, forbidden := range []string{"metadata_condition", "similarity_threshold", "vector_similarity_weight", "threshold:", "score:", "knowledgechunk:", "startdocumentindexing", "stopdocumentindexing"} {
 		if strings.Contains(lower, forbidden) {
 			t.Fatalf("Knowledge public contract leaks provider filter %q", forbidden)
 		}

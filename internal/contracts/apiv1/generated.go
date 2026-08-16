@@ -116,43 +116,22 @@ func (e ChartDefinitionVisualization) Valid() bool {
 
 // Defines values for DocumentStatus.
 const (
-	DocumentStatusDisabled DocumentStatus = "disabled"
 	DocumentStatusFailed   DocumentStatus = "failed"
 	DocumentStatusIndexing DocumentStatus = "indexing"
-	DocumentStatusPending  DocumentStatus = "pending"
+	DocumentStatusQueued   DocumentStatus = "queued"
 	DocumentStatusReady    DocumentStatus = "ready"
 )
 
 // Valid indicates whether the value is a known member of the DocumentStatus enum.
 func (e DocumentStatus) Valid() bool {
 	switch e {
-	case DocumentStatusDisabled:
-		return true
 	case DocumentStatusFailed:
 		return true
 	case DocumentStatusIndexing:
 		return true
-	case DocumentStatusPending:
+	case DocumentStatusQueued:
 		return true
 	case DocumentStatusReady:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for KnowledgeBaseStatus.
-const (
-	KnowledgeBaseStatusActive   KnowledgeBaseStatus = "active"
-	KnowledgeBaseStatusDisabled KnowledgeBaseStatus = "disabled"
-)
-
-// Valid indicates whether the value is a known member of the KnowledgeBaseStatus enum.
-func (e KnowledgeBaseStatus) Valid() bool {
-	switch e {
-	case KnowledgeBaseStatusActive:
-		return true
-	case KnowledgeBaseStatusDisabled:
 		return true
 	default:
 		return false
@@ -387,24 +366,6 @@ func (e UpdateCanvasRequestLayout) Valid() bool {
 	}
 }
 
-// Defines values for UpdateKnowledgeBaseRequestStatus.
-const (
-	UpdateKnowledgeBaseRequestStatusActive   UpdateKnowledgeBaseRequestStatus = "active"
-	UpdateKnowledgeBaseRequestStatusDisabled UpdateKnowledgeBaseRequestStatus = "disabled"
-)
-
-// Valid indicates whether the value is a known member of the UpdateKnowledgeBaseRequestStatus enum.
-func (e UpdateKnowledgeBaseRequestStatus) Valid() bool {
-	switch e {
-	case UpdateKnowledgeBaseRequestStatusActive:
-		return true
-	case UpdateKnowledgeBaseRequestStatusDisabled:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for UpdateSessionRequestStatus.
 const (
 	UpdateSessionRequestStatusActive   UpdateSessionRequestStatus = "active"
@@ -595,6 +556,20 @@ type DocumentPage struct {
 	NextCursor *string    `json:"next_cursor,omitempty"`
 }
 
+// DocumentPassage defines model for DocumentPassage.
+type DocumentPassage struct {
+	Location *string `json:"location,omitempty"`
+	Ordinal  int     `json:"ordinal"`
+	Text     string  `json:"text"`
+}
+
+// DocumentPassagePage defines model for DocumentPassagePage.
+type DocumentPassagePage struct {
+	HasMore    bool              `json:"has_more"`
+	Items      []DocumentPassage `json:"items"`
+	NextCursor *string           `json:"next_cursor,omitempty"`
+}
+
 // DocumentUpload defines model for DocumentUpload.
 type DocumentUpload struct {
 	File    openapi_types.File `json:"file"`
@@ -608,15 +583,8 @@ type KnowledgeBase struct {
 	FolderUid string     `json:"folder_uid"`
 	Id        BusinessID `json:"id"`
 	Name      string     `json:"name"`
-
-	// ReadOnly True for legacy user-scoped resources that require an Admin migration before mutation.
-	ReadOnly  bool                `json:"read_only"`
-	Status    KnowledgeBaseStatus `json:"status"`
-	UpdatedAt time.Time           `json:"updated_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
 }
-
-// KnowledgeBaseStatus defines model for KnowledgeBase.Status.
-type KnowledgeBaseStatus string
 
 // KnowledgeBasePage defines model for KnowledgeBasePage.
 type KnowledgeBasePage struct {
@@ -625,35 +593,18 @@ type KnowledgeBasePage struct {
 	NextCursor *string         `json:"next_cursor,omitempty"`
 }
 
-// KnowledgeChunk defines model for KnowledgeChunk.
-type KnowledgeChunk struct {
-	CreatedAt  *time.Time `json:"created_at,omitempty"`
-	DocumentId BusinessID `json:"document_id"`
-	Id         string     `json:"id"`
-	PageNumber int        `json:"page_number"`
-	Position   string     `json:"position"`
-	Text       string     `json:"text"`
-}
-
-// KnowledgeChunkPage defines model for KnowledgeChunkPage.
-type KnowledgeChunkPage struct {
-	HasMore    bool             `json:"has_more"`
-	Items      []KnowledgeChunk `json:"items"`
-	NextCursor *string          `json:"next_cursor,omitempty"`
-}
-
 // KnowledgeCitation defines model for KnowledgeCitation.
 type KnowledgeCitation struct {
-	DocumentId BusinessID `json:"document_id"`
-	PageNumber int        `json:"page_number"`
-	Position   string     `json:"position"`
-	SourceName string     `json:"source_name"`
+	DocumentId      BusinessID `json:"document_id"`
+	KnowledgeBaseId BusinessID `json:"knowledge_base_id"`
+	Location        *string    `json:"location,omitempty"`
+	Ordinal         int        `json:"ordinal"`
+	SourceName      string     `json:"source_name"`
 }
 
 // KnowledgeSearchHit defines model for KnowledgeSearchHit.
 type KnowledgeSearchHit struct {
 	Citation KnowledgeCitation `json:"citation"`
-	Score    float64           `json:"score"`
 	Text     string            `json:"text"`
 }
 
@@ -663,7 +614,8 @@ type KnowledgeSearchRequest struct {
 	Limit            *int         `json:"limit,omitempty"`
 	Query            string       `json:"query"`
 	Service          *string      `json:"service,omitempty"`
-	Threshold        *float64     `json:"threshold,omitempty"`
+	TagsAll          *[]string    `json:"tags_all,omitempty"`
+	TagsAny          *[]string    `json:"tags_any,omitempty"`
 }
 
 // KnowledgeSearchResponse defines model for KnowledgeSearchResponse.
@@ -880,12 +832,8 @@ type UpdateDocumentRequest struct {
 
 // UpdateKnowledgeBaseRequest defines model for UpdateKnowledgeBaseRequest.
 type UpdateKnowledgeBaseRequest struct {
-	Name   string                           `json:"name"`
-	Status UpdateKnowledgeBaseRequestStatus `json:"status"`
+	Name string `json:"name"`
 }
-
-// UpdateKnowledgeBaseRequestStatus defines model for UpdateKnowledgeBaseRequest.Status.
-type UpdateKnowledgeBaseRequestStatus string
 
 // UpdateSessionRequest defines model for UpdateSessionRequest.
 type UpdateSessionRequest struct {
@@ -973,8 +921,8 @@ type CreateDocumentParams struct {
 	IdempotencyKey IdempotencyKey `json:"Idempotency-Key"`
 }
 
-// ListDocumentChunksParams defines parameters for ListDocumentChunks.
-type ListDocumentChunksParams struct {
+// ListDocumentPassagesParams defines parameters for ListDocumentPassages.
+type ListDocumentPassagesParams struct {
 	Cursor *Cursor `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Limit  *Limit  `form:"limit,omitempty" json:"limit,omitempty"`
 }

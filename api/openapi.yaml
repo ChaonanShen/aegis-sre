@@ -272,20 +272,6 @@ paths:
           description: Knowledge base deleted
         default:
           $ref: '#/components/responses/Problem'
-  /knowledge-bases/{knowledge_base_id}/scope-migrations:
-    parameters:
-      - $ref: '#/components/parameters/KnowledgeBaseID'
-    post:
-      operationId: migrateLegacyKnowledgeBaseScope
-      responses:
-        '200':
-          description: Folder-owned knowledge base after an idempotent provider-native scope migration
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/KnowledgeBase'
-        default:
-          $ref: '#/components/responses/Problem'
   /knowledge-bases/{knowledge_base_id}/documents:
     parameters:
       - $ref: '#/components/parameters/KnowledgeBaseID'
@@ -340,7 +326,7 @@ paths:
                 $ref: '#/components/schemas/Document'
         default:
           $ref: '#/components/responses/Problem'
-    patch:
+    put:
       operationId: updateDocument
       requestBody:
         required: true
@@ -364,44 +350,37 @@ paths:
           description: Document deleted
         default:
           $ref: '#/components/responses/Problem'
-  /knowledge-bases/{knowledge_base_id}/documents/{document_id}:index:
+  /knowledge-bases/{knowledge_base_id}/documents/{document_id}:retry-index:
     parameters:
       - $ref: '#/components/parameters/KnowledgeBaseID'
       - $ref: '#/components/parameters/DocumentID'
     post:
-      operationId: startDocumentIndexing
+      operationId: retryDocumentIndex
       responses:
         '202':
-          description: Parsing accepted
+          description: Failed document returned to the index queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Document'
         default:
           $ref: '#/components/responses/Problem'
-  /knowledge-bases/{knowledge_base_id}/documents/{document_id}:stop:
-    parameters:
-      - $ref: '#/components/parameters/KnowledgeBaseID'
-      - $ref: '#/components/parameters/DocumentID'
-    post:
-      operationId: stopDocumentIndexing
-      responses:
-        '202':
-          description: Stop accepted
-        default:
-          $ref: '#/components/responses/Problem'
-  /knowledge-bases/{knowledge_base_id}/documents/{document_id}/chunks:
+  /knowledge-bases/{knowledge_base_id}/documents/{document_id}/passages:
     parameters:
       - $ref: '#/components/parameters/KnowledgeBaseID'
       - $ref: '#/components/parameters/DocumentID'
     get:
-      operationId: listDocumentChunks
+      operationId: listDocumentPassages
       parameters:
         - $ref: '#/components/parameters/Cursor'
         - $ref: '#/components/parameters/Limit'
       responses:
         '200':
-          description: Parsed chunks
+          description: Parsed document passages without Provider identifiers
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/KnowledgeChunkPage'
+                $ref: '#/components/schemas/DocumentPassagePage'
         default:
           $ref: '#/components/responses/Problem'
   /knowledge-bases/{knowledge_base_id}/documents/{document_id}/content:
@@ -1195,7 +1174,7 @@ components:
     KnowledgeBase:
       type: object
       additionalProperties: false
-      required: [id, name, folder_uid, status, read_only, created_at, updated_at]
+      required: [id, name, folder_uid, created_at, updated_at]
       properties:
         id:
           $ref: '#/components/schemas/BusinessID'
@@ -1203,12 +1182,6 @@ components:
           type: string
         folder_uid:
           type: string
-        status:
-          type: string
-          enum: [active, disabled]
-        read_only:
-          type: boolean
-          description: True for legacy user-scoped resources that require an Admin migration before mutation.
         created_at:
           type: string
           format: date-time
@@ -1231,15 +1204,12 @@ components:
     UpdateKnowledgeBaseRequest:
       type: object
       additionalProperties: false
-      required: [name, status]
+      required: [name]
       properties:
         name:
           type: string
           minLength: 1
           maxLength: 200
-        status:
-          type: string
-          enum: [active, disabled]
     KnowledgeBasePage:
       allOf:
         - $ref: '#/components/schemas/PageMetadata'
@@ -1271,7 +1241,7 @@ components:
             type: string
         status:
           type: string
-          enum: [pending, indexing, ready, failed, disabled]
+          enum: [queued, indexing, ready, failed]
         failure_reason:
           type: string
           description: Sanitized parsing failure suitable for display.
@@ -1349,28 +1319,19 @@ components:
               type: array
               items:
                 $ref: '#/components/schemas/Document'
-    KnowledgeChunk:
+    DocumentPassage:
       type: object
       additionalProperties: false
-      required: [id, document_id, text, position, page_number]
+      required: [ordinal, text]
       properties:
-        id:
-          type: string
-          minLength: 1
-          maxLength: 128
-        document_id:
-          $ref: '#/components/schemas/BusinessID'
+        ordinal:
+          type: integer
+          minimum: 1
         text:
           type: string
-        position:
+        location:
           type: string
-        page_number:
-          type: integer
-          minimum: 0
-        created_at:
-          type: string
-          format: date-time
-    KnowledgeChunkPage:
+    DocumentPassagePage:
       allOf:
         - $ref: '#/components/schemas/PageMetadata'
         - type: object
@@ -1379,7 +1340,7 @@ components:
             items:
               type: array
               items:
-                $ref: '#/components/schemas/KnowledgeChunk'
+                $ref: '#/components/schemas/DocumentPassage'
     KnowledgeSearchRequest:
       type: object
       additionalProperties: false
@@ -1398,43 +1359,46 @@ components:
         service:
           type: string
           maxLength: 128
+        tags_any:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            maxLength: 64
+        tags_all:
+          type: array
+          maxItems: 32
+          items:
+            type: string
+            maxLength: 64
         limit:
           type: integer
           minimum: 1
           maximum: 20
           default: 5
-        threshold:
-          type: number
-          format: double
-          minimum: 0
-          maximum: 1
-          default: 0.2
     KnowledgeCitation:
       type: object
       additionalProperties: false
-      required: [document_id, source_name, position, page_number]
+      required: [document_id, knowledge_base_id, source_name, ordinal]
       properties:
         document_id:
           $ref: '#/components/schemas/BusinessID'
+        knowledge_base_id:
+          $ref: '#/components/schemas/BusinessID'
         source_name:
           type: string
-        position:
-          type: string
-        page_number:
+        ordinal:
           type: integer
-          minimum: 0
+          minimum: 1
+        location:
+          type: string
     KnowledgeSearchHit:
       type: object
       additionalProperties: false
-      required: [text, score, citation]
+      required: [text, citation]
       properties:
         text:
           type: string
-        score:
-          type: number
-          format: double
-          minimum: 0
-          maximum: 1
         citation:
           $ref: '#/components/schemas/KnowledgeCitation'
     KnowledgeSearchResponse:

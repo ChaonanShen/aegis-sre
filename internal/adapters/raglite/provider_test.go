@@ -73,6 +73,29 @@ func TestProviderDerivesChunkIDsAndMapsSearch(t *testing.T) {
 	}
 }
 
+func TestProductProviderMapsPassagesSearchAndRetryWithoutPrivateIDs(t *testing.T) {
+	provider, fake, _, actor := testProvider(t)
+	fake.chunks = []Chunk{{ID: "private-chunk", DocumentID: "doc_abcdefgh", CollectionID: "kbs_abcdefgh", SourceName: "runbook.md", Text: "restart", Position: "0"}}
+	fake.hits = []SearchHit{{Chunk: fake.chunks[0], Score: .75}}
+	ref := ports.KnowledgeDocumentRef{ID: "doc_abcdefgh", CollectionID: "kbs_abcdefgh"}
+
+	passages, err := provider.ListDocumentPassages(context.Background(), actor, ref, domain.PageRequest{Limit: 20})
+	if err != nil || len(passages.Items) != 1 || passages.Items[0].Ordinal != 1 || passages.Items[0].Location != "0" {
+		t.Fatalf("passages=%+v err=%v", passages, err)
+	}
+	citations, err := provider.Search(context.Background(), actor, ports.KnowledgeSearchInput{
+		Query: "restart", KnowledgeBases: []ports.KnowledgeBaseRef{{ID: "kbs_abcdefgh"}},
+		Service: "checkout", TagsAll: []string{"prod"}, Limit: 5,
+	})
+	if err != nil || len(citations) != 1 || citations[0].Ordinal != 1 || citations[0].Document.ID != ref.ID {
+		t.Fatalf("citations=%+v err=%v", citations, err)
+	}
+	document, err := provider.RetryDocumentIndex(context.Background(), actor, ref)
+	if err != nil || document.Ref != ref || fake.mutations != 1 {
+		t.Fatalf("document=%+v mutations=%d err=%v", document, fake.mutations, err)
+	}
+}
+
 func TestProviderRejectsSearchHitOutsideRequestedCollections(t *testing.T) {
 	provider, fake, _, actor := testProvider(t)
 	fake.hits = []SearchHit{{Chunk: Chunk{
@@ -360,11 +383,28 @@ func (f *fakeClient) StopIndexing(_ context.Context, scope, _ string) error {
 	f.lastScope = scope
 	return f.err
 }
+func (f *fakeClient) RetryIndexing(_ context.Context, scope, _ string) (Document, error) {
+	f.mutations++
+	f.lastScope = scope
+	return f.document(), f.err
+}
 func (f *fakeClient) ListChunks(_ context.Context, scope, _ string) ([]Chunk, error) {
 	f.lastScope = scope
 	return f.chunks, f.err
 }
+func (f *fakeClient) ListPassages(_ context.Context, scope, _ string) ([]Passage, error) {
+	f.lastScope = scope
+	items := make([]Passage, 0, len(f.chunks))
+	for index, chunk := range f.chunks {
+		items = append(items, Passage{Ordinal: index + 1, Text: chunk.Text, Location: chunk.Position})
+	}
+	return items, f.err
+}
 func (f *fakeClient) Search(_ context.Context, scope, _ string, _ []string, _ string, _ int, _ float64) ([]SearchHit, error) {
+	f.lastScope = scope
+	return f.hits, f.err
+}
+func (f *fakeClient) SearchProduct(_ context.Context, scope, _ string, _ []string, _ string, _, _ []string, _ int) ([]SearchHit, error) {
 	f.lastScope = scope
 	return f.hits, f.err
 }

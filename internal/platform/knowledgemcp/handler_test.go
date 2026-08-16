@@ -32,7 +32,7 @@ func TestKnowledgeMCPStreamableHTTPToolsUseBoundActorAndStableIDs(t *testing.T) 
 	document := callTool(t, server.URL, tokenPath, "knowledge.get_document", map[string]any{
 		"folder_uid": "ops", "knowledge_base_id": "kbs_abcdefgh", "document_id": "doc_abcdefgh",
 	})
-	if document["id"] != "doc_abcdefgh" || len(document["chunks"].([]any)) != 1 {
+	if document["id"] != "doc_abcdefgh" || len(document["passages"].([]any)) != 1 {
 		t.Fatalf("document = %#v", document)
 	}
 
@@ -128,27 +128,21 @@ type knowledgeFake struct {
 }
 
 func (fake *knowledgeFake) Check(context.Context) error { return nil }
-func (fake *knowledgeFake) ListCollections(_ context.Context, actor domain.ActorContext, folder string, _ domain.PageRequest) (domain.Page[ports.KnowledgeCollection], error) {
+func (fake *knowledgeFake) ListKnowledgeBases(_ context.Context, actor domain.ActorContext, _ domain.PageRequest) (domain.Page[ports.KnowledgeBase], error) {
 	fake.lastActor = actor
-	if actor.FolderUID != folder {
-		return domain.Page[ports.KnowledgeCollection]{}, &domain.AppError{Code: domain.ErrorForbidden}
-	}
-	return domain.Page[ports.KnowledgeCollection]{Items: []ports.KnowledgeCollection{{Ref: ports.KnowledgeCollectionRef{ID: "kbs_abcdefgh"}, Name: "Operations", FolderUID: folder, Status: domain.KnowledgeBaseActive}}}, nil
+	return domain.Page[ports.KnowledgeBase]{Items: []ports.KnowledgeBase{{Ref: ports.KnowledgeBaseRef{ID: "kbs_abcdefgh"}, Name: "Operations", FolderUID: actor.FolderUID}}}, nil
 }
-func (fake *knowledgeFake) GetCollection(_ context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
+func (fake *knowledgeFake) GetKnowledgeBase(_ context.Context, actor domain.ActorContext, ref ports.KnowledgeBaseRef) (ports.KnowledgeBase, error) {
 	fake.lastActor = actor
-	return ports.KnowledgeCollection{Ref: ref, Name: "Operations", FolderUID: actor.FolderUID, Status: domain.KnowledgeBaseActive}, nil
+	return ports.KnowledgeBase{Ref: ref, Name: "Operations", FolderUID: actor.FolderUID}, nil
 }
-func (fake *knowledgeFake) CreateCollection(context.Context, domain.ActorContext, ports.CreateKnowledgeCollectionInput) (ports.KnowledgeCollection, error) {
+func (fake *knowledgeFake) CreateKnowledgeBase(context.Context, domain.ActorContext, ports.CreateKnowledgeBaseInput) (ports.KnowledgeBase, error) {
 	panic("unexpected mutation")
 }
-func (fake *knowledgeFake) UpdateCollection(context.Context, domain.ActorContext, ports.KnowledgeCollectionRef, ports.UpdateKnowledgeCollectionInput) (ports.KnowledgeCollection, error) {
+func (fake *knowledgeFake) UpdateKnowledgeBase(context.Context, domain.ActorContext, ports.KnowledgeBaseRef, ports.UpdateKnowledgeBaseInput) (ports.KnowledgeBase, error) {
 	panic("unexpected mutation")
 }
-func (fake *knowledgeFake) MigrateCollectionScope(context.Context, domain.ActorContext, ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
-	panic("unexpected mutation")
-}
-func (fake *knowledgeFake) DeleteCollection(context.Context, domain.ActorContext, ports.KnowledgeCollectionRef) error {
+func (fake *knowledgeFake) DeleteKnowledgeBase(context.Context, domain.ActorContext, ports.KnowledgeBaseRef) error {
 	panic("unexpected mutation")
 }
 func (fake *knowledgeFake) ListDocuments(_ context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef, _ domain.PageRequest) (domain.Page[ports.KnowledgeDocument], error) {
@@ -162,35 +156,32 @@ func (fake *knowledgeFake) GetDocument(_ context.Context, actor domain.ActorCont
 func (fake *knowledgeFake) UploadDocument(context.Context, domain.ActorContext, ports.KnowledgeCollectionRef, ports.DocumentFile) (ports.KnowledgeDocument, error) {
 	panic("unexpected mutation")
 }
-func (fake *knowledgeFake) UpdateDocument(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef, ports.UpdateKnowledgeDocumentInput) (ports.KnowledgeDocument, error) {
+func (fake *knowledgeFake) UpdateDocumentMetadata(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef, ports.UpdateKnowledgeDocumentInput) (ports.KnowledgeDocument, error) {
 	panic("unexpected mutation")
 }
-func (fake *knowledgeFake) StartIndexing(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef) error {
-	panic("unexpected mutation")
-}
-func (fake *knowledgeFake) StopIndexing(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef) error {
+func (fake *knowledgeFake) RetryDocumentIndex(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef) (ports.KnowledgeDocument, error) {
 	panic("unexpected mutation")
 }
 func (fake *knowledgeFake) DeleteDocument(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef) error {
 	panic("unexpected mutation")
 }
-func (fake *knowledgeFake) ListChunks(_ context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef, _ domain.PageRequest) (domain.Page[ports.KnowledgeChunk], error) {
+func (fake *knowledgeFake) ListDocumentPassages(_ context.Context, actor domain.ActorContext, _ ports.KnowledgeDocumentRef, _ domain.PageRequest) (domain.Page[ports.DocumentPassage], error) {
 	fake.lastActor = actor
-	return domain.Page[ports.KnowledgeChunk]{Items: []ports.KnowledgeChunk{{ID: "chk_abcdefgh", Document: ref, Text: "restart one instance", Position: "paragraph-4", PageNumber: 2}}}, nil
+	return domain.Page[ports.DocumentPassage]{Items: []ports.DocumentPassage{{Ordinal: 4, Text: "restart one instance", Location: "paragraph-4"}}}, nil
 }
 func (fake *knowledgeFake) DownloadDocument(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef) (ports.KnowledgeDocumentDownload, error) {
 	return ports.KnowledgeDocumentDownload{Content: io.NopCloser(strings.NewReader(""))}, nil
 }
-func (fake *knowledgeFake) Retrieve(_ context.Context, actor domain.ActorContext, input ports.RetrievalInput) ([]ports.RetrievalHit, error) {
+func (fake *knowledgeFake) Search(_ context.Context, actor domain.ActorContext, input ports.KnowledgeSearchInput) ([]ports.KnowledgeCitation, error) {
 	fake.lastActor, fake.retrieveCalls = actor, fake.retrieveCalls+1
 	count := 1
 	text := "restart one instance"
 	if fake.longResults {
 		count, text = 20, strings.Repeat("界", maxChunkBytes)
 	}
-	result := make([]ports.RetrievalHit, 0, count)
+	result := make([]ports.KnowledgeCitation, 0, count)
 	for range count {
-		result = append(result, ports.RetrievalHit{Document: ports.KnowledgeDocumentRef{ID: "doc_abcdefgh", CollectionID: input.Collections[0].ID}, SourceName: "restart.md", Text: text, Score: .9, Position: "paragraph-4", PageNumber: 2})
+		result = append(result, ports.KnowledgeCitation{Document: ports.KnowledgeDocumentRef{ID: "doc_abcdefgh", CollectionID: input.KnowledgeBases[0].ID}, SourceName: "restart.md", Text: text, Ordinal: 4, Location: "paragraph-4"})
 	}
 	return result, nil
 }

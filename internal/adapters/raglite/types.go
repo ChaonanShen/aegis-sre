@@ -43,6 +43,12 @@ type Chunk struct {
 	PageNumber   int    `json:"page_number"`
 }
 
+type Passage struct {
+	Ordinal  int    `json:"ordinal"`
+	Text     string `json:"text"`
+	Location string `json:"location"`
+}
+
 type SearchHit struct {
 	Chunk Chunk   `json:"chunk"`
 	Score float64 `json:"score"`
@@ -59,6 +65,10 @@ type listDocumentsResponse struct {
 type listChunksResponse struct {
 	Items []Chunk `json:"items"`
 	Total int     `json:"total"`
+}
+type listPassagesResponse struct {
+	Items []Passage `json:"items"`
+	Total int       `json:"total"`
 }
 type searchResponse struct {
 	Hits []SearchHit `json:"hits"`

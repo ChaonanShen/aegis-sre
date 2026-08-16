@@ -118,8 +118,8 @@ func TestUploadRejectsUnsupportedFilesBeforeProvider(t *testing.T) {
 
 func TestKnowledgeSearchReturnsStableCitations(t *testing.T) {
 	server, fake := newKnowledgeHTTPServer(t)
-	fake.hits = []ports.RetrievalHit{{Document: ports.KnowledgeDocumentRef{ID: "doc_abcdefgh", CollectionID: "kbs_abcdefgh"}, SourceName: "guide.md", Text: "restart worker", Score: .94, Position: "section 2", PageNumber: 3}}
-	request := knowledgeRequest(http.MethodPost, "/api/v1/knowledge:search", `{"query":"restart","knowledge_base_ids":["kbs_abcdefgh"],"service":"checkout"}`)
+	fake.hits = []ports.KnowledgeCitation{{Document: ports.KnowledgeDocumentRef{ID: "doc_abcdefgh", CollectionID: "kbs_abcdefgh"}, SourceName: "guide.md", Text: "restart worker", Ordinal: 3, Location: "section 2"}}
+	request := knowledgeRequest(http.MethodPost, "/api/v1/knowledge:search", `{"query":"restart","knowledge_base_ids":["kbs_abcdefgh"],"service":"checkout","tags_all":["prod"]}`)
 	request.Header.Set("X-Aegis-Roles", "Viewer")
 	response := httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
@@ -131,8 +131,8 @@ func TestKnowledgeSearchReturnsStableCitations(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if fake.retrieveInput.Limit != 5 || fake.retrieveInput.Threshold != .2 || fake.retrieveActor.FolderUID != "folder-a" || !strings.Contains(response.Body.String(), `"source_name":"guide.md"`) || strings.Contains(response.Body.String(), "internal-doc") {
-		t.Fatalf("input=%+v actor=%+v body=%s", fake.retrieveInput, fake.retrieveActor, response.Body.String())
+	if fake.searchInput.Limit != 5 || len(fake.searchInput.TagsAll) != 1 || fake.retrieveActor.FolderUID != "folder-a" || !strings.Contains(response.Body.String(), `"source_name":"guide.md"`) || strings.Contains(response.Body.String(), `"score"`) {
+		t.Fatalf("input=%+v actor=%+v body=%s", fake.searchInput, fake.retrieveActor, response.Body.String())
 	}
 }
 
@@ -147,9 +147,9 @@ func TestKnowledgeProviderErrorsAreSanitized(t *testing.T) {
 	}
 }
 
-func TestDocumentIndexActionUsesPublicReference(t *testing.T) {
+func TestDocumentRetryActionUsesPublicReference(t *testing.T) {
 	server, fake := newKnowledgeHTTPServer(t)
-	request := knowledgeRequest(http.MethodPost, "/api/v1/knowledge-bases/kbs_abcdefgh/documents/doc_abcdefgh:index", "")
+	request := knowledgeRequest(http.MethodPost, "/api/v1/knowledge-bases/kbs_abcdefgh/documents/doc_abcdefgh:retry-index", "")
 	response := httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
 	if response.Code != http.StatusAccepted || fake.startRef.ID != "doc_abcdefgh" || fake.startRef.CollectionID != "kbs_abcdefgh" {
@@ -185,21 +185,13 @@ func TestDeleteKnowledgeBaseRequiresFolderAdmin(t *testing.T) {
 	}
 }
 
-func TestLegacyKnowledgeMigrationRequiresFolderAdminAndReturnsMutableResource(t *testing.T) {
-	server, fake := newKnowledgeHTTPServer(t)
+func TestLegacyKnowledgeMigrationIsNotPublic(t *testing.T) {
+	server, _ := newKnowledgeHTTPServer(t)
 	request := knowledgeRequest(http.MethodPost, "/api/v1/knowledge-bases/kbs_abcdefgh/scope-migrations", "")
 	response := httptest.NewRecorder()
 	server.Handler.ServeHTTP(response, request)
-	if response.Code != http.StatusForbidden || fake.migrateCalls != 0 {
-		t.Fatalf("write status=%d calls=%d body=%s", response.Code, fake.migrateCalls, response.Body.String())
-	}
-
-	request = knowledgeRequest(http.MethodPost, "/api/v1/knowledge-bases/kbs_abcdefgh/scope-migrations", "")
-	request.Header.Set("X-Aegis-Folder-Access", "admin")
-	response = httptest.NewRecorder()
-	server.Handler.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || fake.migrateCalls != 1 || fake.migrateActor.FolderUID != "folder-a" || !strings.Contains(response.Body.String(), `"read_only":false`) {
-		t.Fatalf("admin status=%d calls=%d actor=%+v body=%s", response.Code, fake.migrateCalls, fake.migrateActor, response.Body.String())
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -234,46 +226,39 @@ type knowledgeHTTPFake struct {
 	uploadFile    ports.DocumentFile
 	uploadContent string
 	uploadCalls   int
-	hits          []ports.RetrievalHit
+	hits          []ports.KnowledgeCitation
 	retrieveActor domain.ActorContext
-	retrieveInput ports.RetrievalInput
+	searchInput   ports.KnowledgeSearchInput
 	listErr       error
 	startRef      ports.KnowledgeDocumentRef
 	updateRef     ports.KnowledgeDocumentRef
 	updateInput   ports.UpdateKnowledgeDocumentInput
-	migrateCalls  int
-	migrateActor  domain.ActorContext
 }
 
-func (fake *knowledgeHTTPFake) ListCollections(context.Context, domain.ActorContext, string, domain.PageRequest) (domain.Page[ports.KnowledgeCollection], error) {
-	return domain.Page[ports.KnowledgeCollection]{Items: []ports.KnowledgeCollection{}}, fake.listErr
+func (fake *knowledgeHTTPFake) ListKnowledgeBases(context.Context, domain.ActorContext, domain.PageRequest) (domain.Page[ports.KnowledgeBase], error) {
+	return domain.Page[ports.KnowledgeBase]{Items: []ports.KnowledgeBase{}}, fake.listErr
 }
-func (fake *knowledgeHTTPFake) CreateCollection(_ context.Context, actor domain.ActorContext, input ports.CreateKnowledgeCollectionInput) (ports.KnowledgeCollection, error) {
+func (fake *knowledgeHTTPFake) CreateKnowledgeBase(_ context.Context, actor domain.ActorContext, input ports.CreateKnowledgeBaseInput) (ports.KnowledgeBase, error) {
 	fake.createCalls++
 	fake.createActor, fake.createInput = actor, input
-	return ports.KnowledgeCollection{Ref: ports.KnowledgeCollectionRef{ID: input.ID}, Name: input.Name, FolderUID: input.FolderUID, Status: domain.KnowledgeBaseActive}, nil
-}
-func (fake *knowledgeHTTPFake) MigrateCollectionScope(_ context.Context, actor domain.ActorContext, ref ports.KnowledgeCollectionRef) (ports.KnowledgeCollection, error) {
-	fake.migrateCalls++
-	fake.migrateActor = actor
-	return ports.KnowledgeCollection{Ref: ref, Name: "Operations", FolderUID: actor.FolderUID, Status: domain.KnowledgeBaseActive}, nil
+	return ports.KnowledgeBase{Ref: ports.KnowledgeBaseRef{ID: input.ID}, Name: input.Name, FolderUID: input.FolderUID}, nil
 }
 func (fake *knowledgeHTTPFake) UploadDocument(_ context.Context, _ domain.ActorContext, collection ports.KnowledgeCollectionRef, file ports.DocumentFile) (ports.KnowledgeDocument, error) {
 	fake.uploadCalls++
 	fake.uploadFile = file
 	content, _ := io.ReadAll(file.Content)
 	fake.uploadContent = string(content)
-	return ports.KnowledgeDocument{Ref: ports.KnowledgeDocumentRef{ID: file.ID, CollectionID: collection.ID}, Name: file.Name, MediaType: file.MediaType, Service: file.Service, Tags: file.Tags, Status: domain.DocumentPending, Size: file.Size}, nil
+	return ports.KnowledgeDocument{Ref: ports.KnowledgeDocumentRef{ID: file.ID, CollectionID: collection.ID}, Name: file.Name, MediaType: file.MediaType, Service: file.Service, Tags: file.Tags, Status: domain.DocumentQueued, Size: file.Size}, nil
 }
-func (fake *knowledgeHTTPFake) Retrieve(_ context.Context, actor domain.ActorContext, input ports.RetrievalInput) ([]ports.RetrievalHit, error) {
-	fake.retrieveActor, fake.retrieveInput = actor, input
+func (fake *knowledgeHTTPFake) Search(_ context.Context, actor domain.ActorContext, input ports.KnowledgeSearchInput) ([]ports.KnowledgeCitation, error) {
+	fake.retrieveActor, fake.searchInput = actor, input
 	return fake.hits, nil
 }
-func (fake *knowledgeHTTPFake) StartIndexing(_ context.Context, _ domain.ActorContext, ref ports.KnowledgeDocumentRef) error {
+func (fake *knowledgeHTTPFake) RetryDocumentIndex(_ context.Context, _ domain.ActorContext, ref ports.KnowledgeDocumentRef) (ports.KnowledgeDocument, error) {
 	fake.startRef = ref
-	return nil
+	return ports.KnowledgeDocument{Ref: ref, Status: domain.DocumentQueued}, nil
 }
-func (fake *knowledgeHTTPFake) UpdateDocument(_ context.Context, _ domain.ActorContext, ref ports.KnowledgeDocumentRef, input ports.UpdateKnowledgeDocumentInput) (ports.KnowledgeDocument, error) {
+func (fake *knowledgeHTTPFake) UpdateDocumentMetadata(_ context.Context, _ domain.ActorContext, ref ports.KnowledgeDocumentRef, input ports.UpdateKnowledgeDocumentInput) (ports.KnowledgeDocument, error) {
 	fake.updateRef, fake.updateInput = ref, input
 	return ports.KnowledgeDocument{Ref: ref, Name: "guide.md", MediaType: "text/markdown", Service: input.Service, Tags: input.Tags, Status: domain.DocumentReady}, nil
 }

@@ -184,24 +184,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/knowledge-bases/{knowledge_base_id}/scope-migrations": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["migrateLegacyKnowledgeBaseScope"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/knowledge-bases/{knowledge_base_id}/documents": {
         parameters: {
             query?: never;
@@ -231,15 +213,15 @@ export interface paths {
             cookie?: never;
         };
         get: operations["getDocument"];
-        put?: never;
+        put: operations["updateDocument"];
         post?: never;
         delete: operations["deleteDocument"];
         options?: never;
         head?: never;
-        patch: operations["updateDocument"];
+        patch?: never;
         trace?: never;
     };
-    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}:index": {
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}:retry-index": {
         parameters: {
             query?: never;
             header?: never;
@@ -251,14 +233,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["startDocumentIndexing"];
+        post: operations["retryDocumentIndex"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}:stop": {
+    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/passages": {
         parameters: {
             query?: never;
             header?: never;
@@ -268,26 +250,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        get?: never;
-        put?: never;
-        post: operations["stopDocumentIndexing"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/knowledge-bases/{knowledge_base_id}/documents/{document_id}/chunks": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
-                document_id: components["parameters"]["DocumentID"];
-            };
-            cookie?: never;
-        };
-        get: operations["listDocumentChunks"];
+        get: operations["listDocumentPassages"];
         put?: never;
         post?: never;
         delete?: never;
@@ -768,10 +731,6 @@ export interface components {
             id: components["schemas"]["BusinessID"];
             name: string;
             folder_uid: string;
-            /** @enum {string} */
-            status: "active" | "disabled";
-            /** @description True for legacy user-scoped resources that require an Admin migration before mutation. */
-            read_only: boolean;
             /** Format: date-time */
             created_at: string;
             /** Format: date-time */
@@ -783,8 +742,6 @@ export interface components {
         };
         UpdateKnowledgeBaseRequest: {
             name: string;
-            /** @enum {string} */
-            status: "active" | "disabled";
         };
         KnowledgeBasePage: components["schemas"]["PageMetadata"] & {
             items: components["schemas"]["KnowledgeBase"][];
@@ -797,7 +754,7 @@ export interface components {
             service: string;
             tags: string[];
             /** @enum {string} */
-            status: "pending" | "indexing" | "ready" | "failed" | "disabled";
+            status: "queued" | "indexing" | "ready" | "failed";
             /** @description Sanitized parsing failure suitable for display. */
             failure_reason?: string;
             /** Format: int64 */
@@ -828,40 +785,32 @@ export interface components {
         DocumentPage: components["schemas"]["PageMetadata"] & {
             items: components["schemas"]["Document"][];
         };
-        KnowledgeChunk: {
-            id: string;
-            document_id: components["schemas"]["BusinessID"];
+        DocumentPassage: {
+            ordinal: number;
             text: string;
-            position: string;
-            page_number: number;
-            /** Format: date-time */
-            created_at?: string;
+            location?: string;
         };
-        KnowledgeChunkPage: components["schemas"]["PageMetadata"] & {
-            items: components["schemas"]["KnowledgeChunk"][];
+        DocumentPassagePage: components["schemas"]["PageMetadata"] & {
+            items: components["schemas"]["DocumentPassage"][];
         };
         KnowledgeSearchRequest: {
             query: string;
             knowledge_base_ids: components["schemas"]["BusinessID"][];
             service?: string;
+            tags_any?: string[];
+            tags_all?: string[];
             /** @default 5 */
             limit: number;
-            /**
-             * Format: double
-             * @default 0.2
-             */
-            threshold: number;
         };
         KnowledgeCitation: {
             document_id: components["schemas"]["BusinessID"];
+            knowledge_base_id: components["schemas"]["BusinessID"];
             source_name: string;
-            position: string;
-            page_number: number;
+            ordinal: number;
+            location?: string;
         };
         KnowledgeSearchHit: {
             text: string;
-            /** Format: double */
-            score: number;
             citation: components["schemas"]["KnowledgeCitation"];
         };
         KnowledgeSearchResponse: {
@@ -1418,29 +1367,6 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    migrateLegacyKnowledgeBaseScope: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Folder-owned knowledge base after an idempotent provider-native scope migration */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["KnowledgeBase"];
-                };
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
     listDocuments: {
         parameters: {
             query?: {
@@ -1521,28 +1447,6 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    deleteDocument: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                knowledge_base_id: components["parameters"]["KnowledgeBaseID"];
-                document_id: components["parameters"]["DocumentID"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Document deleted */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            default: components["responses"]["Problem"];
-        };
-    };
     updateDocument: {
         parameters: {
             query?: never;
@@ -1571,7 +1475,7 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    startDocumentIndexing: {
+    deleteDocument: {
         parameters: {
             query?: never;
             header?: never;
@@ -1583,8 +1487,8 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Parsing accepted */
-            202: {
+            /** @description Document deleted */
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1593,7 +1497,7 @@ export interface operations {
             default: components["responses"]["Problem"];
         };
     };
-    stopDocumentIndexing: {
+    retryDocumentIndex: {
         parameters: {
             query?: never;
             header?: never;
@@ -1605,17 +1509,19 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Stop accepted */
+            /** @description Failed document returned to the index queue */
             202: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Document"];
+                };
             };
             default: components["responses"]["Problem"];
         };
     };
-    listDocumentChunks: {
+    listDocumentPassages: {
         parameters: {
             query?: {
                 cursor?: components["parameters"]["Cursor"];
@@ -1630,13 +1536,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Parsed chunks */
+            /** @description Parsed document passages without Provider identifiers */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["KnowledgeChunkPage"];
+                    "application/json": components["schemas"]["DocumentPassagePage"];
                 };
             };
             default: components["responses"]["Problem"];

@@ -31,8 +31,11 @@ type ragliteClient interface {
 	DeleteDocument(context.Context, string, string) error
 	StartIndexing(context.Context, string, string) (Job, error)
 	StopIndexing(context.Context, string, string) error
+	RetryIndexing(context.Context, string, string) (Document, error)
 	ListChunks(context.Context, string, string) ([]Chunk, error)
+	ListPassages(context.Context, string, string) ([]Passage, error)
 	Search(context.Context, string, string, []string, string, int, float64) ([]SearchHit, error)
+	SearchProduct(context.Context, string, string, []string, string, []string, []string, int) ([]SearchHit, error)
 	DownloadDocument(context.Context, string, string) (*http.Response, error)
 }
 
@@ -89,6 +92,49 @@ func containsFolder(values []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func (p *Provider) ListKnowledgeBases(ctx context.Context, actor domain.ActorContext, page domain.PageRequest) (domain.Page[ports.KnowledgeBase], error) {
+	scope, err := p.scope(actor)
+	if err != nil {
+		return domain.Page[ports.KnowledgeBase]{}, err
+	}
+	items, err := p.client.ListCollections(ctx, scope, actor.FolderUID)
+	if err != nil {
+		return domain.Page[ports.KnowledgeBase]{}, mapProviderError(err)
+	}
+	mapped := make([]ports.KnowledgeBase, 0, len(items))
+	for _, item := range items {
+		collection, mapErr := mapCollection(item, scope, actor.FolderUID)
+		if mapErr != nil {
+			return domain.Page[ports.KnowledgeBase]{}, mapErr
+		}
+		mapped = append(mapped, productKnowledgeBase(collection))
+	}
+	return paginate(mapped, page)
+}
+
+func (p *Provider) GetKnowledgeBase(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeBaseRef) (ports.KnowledgeBase, error) {
+	item, err := p.requireCollection(ctx, actor, ref)
+	return productKnowledgeBase(item), err
+}
+
+func (p *Provider) CreateKnowledgeBase(ctx context.Context, actor domain.ActorContext, input ports.CreateKnowledgeBaseInput) (ports.KnowledgeBase, error) {
+	item, err := p.CreateCollection(ctx, actor, input)
+	return productKnowledgeBase(item), err
+}
+
+func (p *Provider) UpdateKnowledgeBase(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeBaseRef, input ports.UpdateKnowledgeBaseInput) (ports.KnowledgeBase, error) {
+	item, err := p.UpdateCollection(ctx, actor, ref, ports.UpdateKnowledgeCollectionInput{Name: input.Name, Status: domain.KnowledgeBaseActive})
+	return productKnowledgeBase(item), err
+}
+
+func (p *Provider) DeleteKnowledgeBase(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeBaseRef) error {
+	return p.DeleteCollection(ctx, actor, ref)
+}
+
+func productKnowledgeBase(item ports.KnowledgeCollection) ports.KnowledgeBase {
+	return ports.KnowledgeBase{Ref: item.Ref, Name: item.Name, FolderUID: item.FolderUID, CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt}
 }
 
 func (p *Provider) ListCollections(ctx context.Context, actor domain.ActorContext, folder string, page domain.PageRequest) (domain.Page[ports.KnowledgeCollection], error) {
@@ -265,6 +311,24 @@ func (p *Provider) UpdateDocument(ctx context.Context, actor domain.ActorContext
 	}
 	return mapDocument(item, ref.CollectionID)
 }
+func (p *Provider) UpdateDocumentMetadata(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef, input ports.UpdateKnowledgeDocumentInput) (ports.KnowledgeDocument, error) {
+	return p.UpdateDocument(ctx, actor, ref, input)
+}
+
+func (p *Provider) RetryDocumentIndex(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef) (ports.KnowledgeDocument, error) {
+	scope, err := p.scope(actor)
+	if err != nil {
+		return ports.KnowledgeDocument{}, err
+	}
+	if _, err := p.requireCollection(ctx, actor, ports.KnowledgeBaseRef{ID: ref.CollectionID}); err != nil {
+		return ports.KnowledgeDocument{}, err
+	}
+	item, err := p.client.RetryIndexing(ctx, scope, string(ref.ID))
+	if err != nil {
+		return ports.KnowledgeDocument{}, mapProviderError(err)
+	}
+	return mapDocument(item, ref.CollectionID)
+}
 func (p *Provider) StartIndexing(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef) error {
 	scope, err := p.scope(actor)
 	if err != nil {
@@ -318,6 +382,27 @@ func (p *Provider) ListChunks(ctx context.Context, actor domain.ActorContext, re
 			return domain.Page[ports.KnowledgeChunk]{}, resultUnknown(idErr)
 		}
 		mapped = append(mapped, ports.KnowledgeChunk{ID: id, Document: ref, Text: item.Text, Position: item.Position, PageNumber: item.PageNumber})
+	}
+	return paginate(mapped, page)
+}
+func (p *Provider) ListDocumentPassages(ctx context.Context, actor domain.ActorContext, ref ports.KnowledgeDocumentRef, page domain.PageRequest) (domain.Page[ports.DocumentPassage], error) {
+	if _, err := p.scope(actor); err != nil {
+		return domain.Page[ports.DocumentPassage]{}, err
+	}
+	_, scope, err := p.readableCollection(ctx, actor, ports.KnowledgeBaseRef{ID: ref.CollectionID})
+	if err != nil {
+		return domain.Page[ports.DocumentPassage]{}, err
+	}
+	items, err := p.client.ListPassages(ctx, scope, string(ref.ID))
+	if err != nil {
+		return domain.Page[ports.DocumentPassage]{}, mapProviderError(err)
+	}
+	mapped := make([]ports.DocumentPassage, 0, len(items))
+	for _, item := range items {
+		if item.Ordinal < 1 || strings.TrimSpace(item.Text) == "" {
+			return domain.Page[ports.DocumentPassage]{}, resultUnknown(errors.New("passage is invalid"))
+		}
+		mapped = append(mapped, ports.DocumentPassage{Ordinal: item.Ordinal, Text: item.Text, Location: item.Location})
 	}
 	return paginate(mapped, page)
 }
@@ -388,6 +473,46 @@ func (p *Provider) Retrieve(ctx context.Context, actor domain.ActorContext, inpu
 		})
 	}
 	return mapped, nil
+}
+
+func (p *Provider) Search(ctx context.Context, actor domain.ActorContext, input ports.KnowledgeSearchInput) ([]ports.KnowledgeCitation, error) {
+	scope, err := p.scope(actor)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(input.Query) == "" || len(input.KnowledgeBases) == 0 || input.Limit < 1 || input.Limit > 100 {
+		return nil, invalidArgument(errors.New("invalid knowledge search input"))
+	}
+	ids := make([]string, 0, len(input.KnowledgeBases))
+	allowed := make(map[string]domain.ID, len(input.KnowledgeBases))
+	for _, ref := range input.KnowledgeBases {
+		if _, err := p.requireCollection(ctx, actor, ref); err != nil {
+			return nil, err
+		}
+		ids = append(ids, string(ref.ID))
+		allowed[string(ref.ID)] = ref.ID
+	}
+	hits, err := p.client.SearchProduct(ctx, scope, strings.TrimSpace(input.Query), ids, strings.TrimSpace(input.Service), input.TagsAny, input.TagsAll, input.Limit)
+	if err != nil {
+		return nil, mapProviderError(err)
+	}
+	result := make([]ports.KnowledgeCitation, 0, len(hits))
+	for _, hit := range hits {
+		collectionID, ok := allowed[hit.Chunk.CollectionID]
+		documentID := domain.ID(hit.Chunk.DocumentID)
+		if !ok || !documentID.Valid() || !strings.HasPrefix(string(documentID), "doc_") {
+			return nil, resultUnknown(errors.New("search citation identity is invalid"))
+		}
+		ordinal := 1
+		if index, parseErr := strconv.Atoi(hit.Chunk.Position); parseErr == nil && index >= 0 {
+			ordinal = index + 1
+		}
+		result = append(result, ports.KnowledgeCitation{
+			Document:   ports.KnowledgeDocumentRef{ID: documentID, CollectionID: collectionID},
+			SourceName: hit.Chunk.SourceName, Text: hit.Chunk.Text, Ordinal: ordinal, Location: hit.Chunk.Position,
+		})
+	}
+	return result, nil
 }
 
 func (p *Provider) scope(actor domain.ActorContext) (string, error) {

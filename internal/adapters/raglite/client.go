@@ -147,14 +147,33 @@ func (c *Client) StartIndexing(ctx context.Context, scope, id string) (Job, erro
 func (c *Client) StopIndexing(ctx context.Context, scope, id string) error {
 	return c.doJSON(ctx, http.MethodPost, "/v1/documents/"+url.PathEscape(id)+":stop", scope, nil, nil, true)
 }
+func (c *Client) RetryIndexing(ctx context.Context, scope, id string) (Document, error) {
+	var out Document
+	err := c.doJSON(ctx, http.MethodPost, "/v1/documents/"+url.PathEscape(id)+":retry-index", scope, nil, &out, true)
+	return out, err
+}
 func (c *Client) ListChunks(ctx context.Context, scope, id string) ([]Chunk, error) {
 	var out listChunksResponse
 	err := c.doJSON(ctx, http.MethodGet, "/v1/documents/"+url.PathEscape(id)+"/chunks", scope, nil, &out, false)
 	return out.Items, err
 }
+func (c *Client) ListPassages(ctx context.Context, scope, id string) ([]Passage, error) {
+	var out listPassagesResponse
+	err := c.doJSON(ctx, http.MethodGet, "/v1/documents/"+url.PathEscape(id)+"/passages", scope, nil, &out, false)
+	return out.Items, err
+}
 func (c *Client) Search(ctx context.Context, scope, query string, collections []string, service string, limit int, threshold float64) ([]SearchHit, error) {
 	var out searchResponse
 	body := map[string]any{"query": query, "collections": collections, "service": service, "limit": limit, "threshold": threshold}
+	err := c.doJSON(ctx, http.MethodPost, "/v1/search", scope, body, &out, false)
+	return out.Hits, err
+}
+func (c *Client) SearchProduct(ctx context.Context, scope, query string, knowledgeBaseIDs []string, service string, tagsAny, tagsAll []string, limit int) ([]SearchHit, error) {
+	var out searchResponse
+	body := map[string]any{
+		"query": query, "knowledge_base_ids": knowledgeBaseIDs, "service": service,
+		"tags_any": tagsAny, "tags_all": tagsAll, "limit": limit,
+	}
 	err := c.doJSON(ctx, http.MethodPost, "/v1/search", scope, body, &out, false)
 	return out.Hits, err
 }

@@ -51,7 +51,7 @@ func NewHandler(provider ports.KnowledgeProvider, config Config) (http.Handler, 
 	svc := &service{provider: provider, config: config, folders: folders}
 	server := mcp.NewServer(&mcp.Implementation{Name: "aegis-knowledge", Version: "1.0.0"}, nil)
 	mcp.AddTool(server, &mcp.Tool{Name: "knowledge.search", Description: "Search authorized operations knowledge and return bounded passages with stable citations."}, svc.search)
-	mcp.AddTool(server, &mcp.Tool{Name: "knowledge.get_document", Description: "Read an authorized knowledge source and a bounded set of parsed chunks."}, svc.getDocument)
+	mcp.AddTool(server, &mcp.Tool{Name: "knowledge.get_document", Description: "Read an authorized knowledge source and a bounded set of parsed passages."}, svc.getDocument)
 	mcp.AddTool(server, &mcp.Tool{Name: "knowledge.list_sources", Description: "List authorized knowledge bases and documents in one Folder."}, svc.listSources)
 	streamable := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return server }, nil)
 	return bearerFile(config.TokenFile, streamable), nil
@@ -63,18 +63,19 @@ type searchInput struct {
 	KnowledgeBaseIDs []string `json:"knowledge_base_ids,omitempty" jsonschema:"optional Aegis Knowledge Base business IDs"`
 	Service          string   `json:"service,omitempty" jsonschema:"optional service filter"`
 	Limit            int      `json:"limit,omitempty" jsonschema:"maximum result count from 1 to 10"`
-	Threshold        float64  `json:"threshold,omitempty" jsonschema:"minimum relevance score from 0 to 1"`
+	TagsAny          []string `json:"tags_any,omitempty" jsonschema:"match at least one tag"`
+	TagsAll          []string `json:"tags_all,omitempty" jsonschema:"match all tags"`
 }
 
 type citation struct {
-	DocumentID string `json:"document_id"`
-	SourceName string `json:"source_name"`
-	Position   string `json:"position"`
-	PageNumber int    `json:"page_number"`
+	DocumentID      string `json:"document_id"`
+	SourceName      string `json:"source_name"`
+	KnowledgeBaseID string `json:"knowledge_base_id"`
+	Ordinal         int    `json:"ordinal"`
+	Location        string `json:"location,omitempty"`
 }
 type searchHit struct {
 	Text     string   `json:"text"`
-	Score    float64  `json:"score"`
 	Citation citation `json:"citation"`
 }
 type searchOutput struct {
@@ -94,7 +95,7 @@ func (svc *service) search(ctx context.Context, _ *mcp.CallToolRequest, input se
 	if limit == 0 {
 		limit = 5
 	}
-	if limit < 1 || limit > maxSearchLimit || input.Threshold < 0 || input.Threshold > 1 {
+	if limit < 1 || limit > maxSearchLimit || !validTags(input.TagsAny, input.TagsAll) {
 		return nil, searchOutput{}, toolError("invalid_argument")
 	}
 	refs, err := svc.authorizedCollections(ctx, actor, input.KnowledgeBaseIDs)
@@ -104,7 +105,7 @@ func (svc *service) search(ctx context.Context, _ *mcp.CallToolRequest, input se
 	if len(refs) == 0 {
 		return nil, searchOutput{Hits: []searchHit{}}, nil
 	}
-	hits, err := svc.provider.Retrieve(ctx, actor, ports.RetrievalInput{Query: query, Collections: refs, Service: strings.TrimSpace(input.Service), Limit: limit, Threshold: input.Threshold})
+	hits, err := svc.provider.Search(ctx, actor, ports.KnowledgeSearchInput{Query: query, KnowledgeBases: refs, Service: strings.TrimSpace(input.Service), TagsAny: input.TagsAny, TagsAll: input.TagsAll, Limit: limit})
 	if err != nil {
 		return nil, searchOutput{}, sanitize(err)
 	}
@@ -116,7 +117,7 @@ func (svc *service) search(ctx context.Context, _ *mcp.CallToolRequest, input se
 		}
 		text := boundedText(hit.Text, min(maxChunkBytes, remaining))
 		remaining -= len(text)
-		result = append(result, searchHit{Text: text, Score: hit.Score, Citation: citation{DocumentID: string(hit.Document.ID), SourceName: hit.SourceName, Position: hit.Position, PageNumber: hit.PageNumber}})
+		result = append(result, searchHit{Text: text, Citation: citation{DocumentID: string(hit.Document.ID), KnowledgeBaseID: string(hit.Document.CollectionID), SourceName: hit.SourceName, Ordinal: hit.Ordinal, Location: hit.Location}})
 	}
 	return nil, searchOutput{Hits: result}, nil
 }
@@ -126,19 +127,19 @@ type documentInput struct {
 	KnowledgeBaseID string `json:"knowledge_base_id" jsonschema:"required,Aegis Knowledge Base business ID"`
 	DocumentID      string `json:"document_id" jsonschema:"required,Aegis Document business ID"`
 }
-type chunkOutput struct {
-	Text       string `json:"text"`
-	Position   string `json:"position"`
-	PageNumber int    `json:"page_number"`
+type passageOutput struct {
+	Ordinal  int    `json:"ordinal"`
+	Text     string `json:"text"`
+	Location string `json:"location,omitempty"`
 }
 type documentOutput struct {
-	ID        string        `json:"id"`
-	Name      string        `json:"name"`
-	MediaType string        `json:"media_type"`
-	Service   string        `json:"service,omitempty"`
-	Tags      []string      `json:"tags"`
-	Status    string        `json:"status"`
-	Chunks    []chunkOutput `json:"chunks"`
+	ID        string          `json:"id"`
+	Name      string          `json:"name"`
+	MediaType string          `json:"media_type"`
+	Service   string          `json:"service,omitempty"`
+	Tags      []string        `json:"tags"`
+	Status    string          `json:"status"`
+	Passages  []passageOutput `json:"passages"`
 }
 
 func (svc *service) getDocument(ctx context.Context, _ *mcp.CallToolRequest, input documentInput) (*mcp.CallToolResult, documentOutput, error) {
@@ -151,7 +152,7 @@ func (svc *service) getDocument(ctx context.Context, _ *mcp.CallToolRequest, inp
 		return nil, documentOutput{}, err
 	}
 	collection := ports.KnowledgeCollectionRef{ID: collectionID}
-	if _, err := svc.provider.GetCollection(ctx, actor, collection); err != nil {
+	if _, err := svc.provider.GetKnowledgeBase(ctx, actor, collection); err != nil {
 		return nil, documentOutput{}, sanitize(err)
 	}
 	ref := ports.KnowledgeDocumentRef{ID: documentID, CollectionID: collectionID}
@@ -159,21 +160,21 @@ func (svc *service) getDocument(ctx context.Context, _ *mcp.CallToolRequest, inp
 	if err != nil {
 		return nil, documentOutput{}, sanitize(err)
 	}
-	page, err := svc.provider.ListChunks(ctx, actor, ref, domain.PageRequest{Limit: maxDocumentChunks})
+	page, err := svc.provider.ListDocumentPassages(ctx, actor, ref, domain.PageRequest{Limit: maxDocumentChunks})
 	if err != nil {
 		return nil, documentOutput{}, sanitize(err)
 	}
-	chunks := make([]chunkOutput, 0, min(len(page.Items), maxDocumentChunks))
+	passages := make([]passageOutput, 0, min(len(page.Items), maxDocumentChunks))
 	remaining := maxStructuredTextBytes
-	for _, chunk := range page.Items {
-		if len(chunks) == maxDocumentChunks || remaining <= 0 {
+	for _, passage := range page.Items {
+		if len(passages) == maxDocumentChunks || remaining <= 0 {
 			break
 		}
-		text := boundedText(chunk.Text, min(maxChunkBytes, remaining))
+		text := boundedText(passage.Text, min(maxChunkBytes, remaining))
 		remaining -= len(text)
-		chunks = append(chunks, chunkOutput{Text: text, Position: chunk.Position, PageNumber: chunk.PageNumber})
+		passages = append(passages, passageOutput{Ordinal: passage.Ordinal, Text: text, Location: passage.Location})
 	}
-	return nil, documentOutput{ID: string(document.Ref.ID), Name: document.Name, MediaType: document.MediaType, Service: document.Service, Tags: append([]string(nil), document.Tags...), Status: string(document.Status), Chunks: chunks}, nil
+	return nil, documentOutput{ID: string(document.Ref.ID), Name: document.Name, MediaType: document.MediaType, Service: document.Service, Tags: append([]string(nil), document.Tags...), Status: string(document.Status), Passages: passages}, nil
 }
 
 type sourcesInput struct {
@@ -240,9 +241,7 @@ func (svc *service) authorizedCollections(ctx context.Context, actor domain.Acto
 		}
 		refs := make([]ports.KnowledgeCollectionRef, 0, len(collections))
 		for _, collection := range collections {
-			if collection.Status == domain.KnowledgeBaseActive {
-				refs = append(refs, collection.Ref)
-			}
+			refs = append(refs, collection.Ref)
 		}
 		return refs, nil
 	}
@@ -255,23 +254,20 @@ func (svc *service) authorizedCollections(ctx context.Context, actor domain.Acto
 		if !id.Valid() || !strings.HasPrefix(raw, "kbs_") {
 			return nil, toolError("invalid_argument")
 		}
-		collection, err := svc.provider.GetCollection(ctx, actor, ports.KnowledgeCollectionRef{ID: id})
+		collection, err := svc.provider.GetKnowledgeBase(ctx, actor, ports.KnowledgeBaseRef{ID: id})
 		if err != nil {
 			return nil, err
-		}
-		if collection.Status != domain.KnowledgeBaseActive {
-			return nil, toolError("forbidden")
 		}
 		refs = append(refs, collection.Ref)
 	}
 	return refs, nil
 }
 
-func (svc *service) listCollections(ctx context.Context, actor domain.ActorContext) ([]ports.KnowledgeCollection, error) {
-	result := make([]ports.KnowledgeCollection, 0)
+func (svc *service) listCollections(ctx context.Context, actor domain.ActorContext) ([]ports.KnowledgeBase, error) {
+	result := make([]ports.KnowledgeBase, 0)
 	cursor := ""
 	for len(result) < maxSources {
-		page, err := svc.provider.ListCollections(ctx, actor, actor.FolderUID, domain.PageRequest{Cursor: cursor, Limit: 100})
+		page, err := svc.provider.ListKnowledgeBases(ctx, actor, domain.PageRequest{Cursor: cursor, Limit: 100})
 		if err != nil {
 			return nil, err
 		}
@@ -317,6 +313,20 @@ func boundedText(value string, limit int) string {
 		value = value[:len(value)-1]
 	}
 	return value
+}
+
+func validTags(groups ...[]string) bool {
+	total := 0
+	for _, tags := range groups {
+		total += len(tags)
+		for _, tag := range tags {
+			trimmed := strings.TrimSpace(tag)
+			if trimmed == "" || utf8.RuneCountInString(trimmed) > 64 {
+				return false
+			}
+		}
+	}
+	return total <= 32
 }
 
 func sanitize(err error) error {

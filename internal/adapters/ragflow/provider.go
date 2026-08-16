@@ -866,5 +866,5 @@ func isNotFound(err error) bool {
 	return errors.As(err, &appErr) && appErr.Code == domain.ErrorNotFound
 }
 
-var _ ports.KnowledgeProvider = (*Provider)(nil)
+var _ ports.LegacyKnowledgeProvider = (*Provider)(nil)
 var _ ports.OwnershipInventoryProvider = (*Provider)(nil)

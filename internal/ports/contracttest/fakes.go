@@ -73,6 +73,21 @@ func (fake *AgentProvider) DeleteSession(context.Context, domain.ActorContext, p
 type KnowledgeProvider struct{ Err error }
 
 func (fake *KnowledgeProvider) Check(context.Context) error { return fake.Err }
+func (*KnowledgeProvider) ListKnowledgeBases(context.Context, domain.ActorContext, domain.PageRequest) (domain.Page[ports.KnowledgeBase], error) {
+	return domain.Page[ports.KnowledgeBase]{}, ErrNotConfigured
+}
+func (*KnowledgeProvider) GetKnowledgeBase(context.Context, domain.ActorContext, ports.KnowledgeBaseRef) (ports.KnowledgeBase, error) {
+	return ports.KnowledgeBase{}, ErrNotConfigured
+}
+func (*KnowledgeProvider) CreateKnowledgeBase(context.Context, domain.ActorContext, ports.CreateKnowledgeBaseInput) (ports.KnowledgeBase, error) {
+	return ports.KnowledgeBase{}, ErrNotConfigured
+}
+func (*KnowledgeProvider) UpdateKnowledgeBase(context.Context, domain.ActorContext, ports.KnowledgeBaseRef, ports.UpdateKnowledgeBaseInput) (ports.KnowledgeBase, error) {
+	return ports.KnowledgeBase{}, ErrNotConfigured
+}
+func (fake *KnowledgeProvider) DeleteKnowledgeBase(context.Context, domain.ActorContext, ports.KnowledgeBaseRef) error {
+	return fake.Err
+}
 func (*KnowledgeProvider) ListCollections(context.Context, domain.ActorContext, string, domain.PageRequest) (domain.Page[ports.KnowledgeCollection], error) {
 	return domain.Page[ports.KnowledgeCollection]{}, ErrNotConfigured
 }
@@ -103,6 +118,12 @@ func (*KnowledgeProvider) UploadDocument(context.Context, domain.ActorContext, p
 func (*KnowledgeProvider) UpdateDocument(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef, ports.UpdateKnowledgeDocumentInput) (ports.KnowledgeDocument, error) {
 	return ports.KnowledgeDocument{}, ErrNotConfigured
 }
+func (*KnowledgeProvider) UpdateDocumentMetadata(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef, ports.UpdateKnowledgeDocumentInput) (ports.KnowledgeDocument, error) {
+	return ports.KnowledgeDocument{}, ErrNotConfigured
+}
+func (*KnowledgeProvider) RetryDocumentIndex(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef) (ports.KnowledgeDocument, error) {
+	return ports.KnowledgeDocument{}, ErrNotConfigured
+}
 func (fake *KnowledgeProvider) StartIndexing(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef) error {
 	return fake.Err
 }
@@ -115,10 +136,16 @@ func (fake *KnowledgeProvider) DeleteDocument(context.Context, domain.ActorConte
 func (*KnowledgeProvider) ListChunks(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef, domain.PageRequest) (domain.Page[ports.KnowledgeChunk], error) {
 	return domain.Page[ports.KnowledgeChunk]{}, ErrNotConfigured
 }
+func (*KnowledgeProvider) ListDocumentPassages(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef, domain.PageRequest) (domain.Page[ports.DocumentPassage], error) {
+	return domain.Page[ports.DocumentPassage]{}, ErrNotConfigured
+}
 func (*KnowledgeProvider) DownloadDocument(context.Context, domain.ActorContext, ports.KnowledgeDocumentRef) (ports.KnowledgeDocumentDownload, error) {
 	return ports.KnowledgeDocumentDownload{}, ErrNotConfigured
 }
 func (*KnowledgeProvider) Retrieve(context.Context, domain.ActorContext, ports.RetrievalInput) ([]ports.RetrievalHit, error) {
+	return nil, ErrNotConfigured
+}
+func (*KnowledgeProvider) Search(context.Context, domain.ActorContext, ports.KnowledgeSearchInput) ([]ports.KnowledgeCitation, error) {
 	return nil, ErrNotConfigured
 }
 

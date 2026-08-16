@@ -33,7 +33,7 @@ func TestClientSendsAuthenticationScopeAndUploadMetadata(t *testing.T) {
 			t.Fatalf("unexpected uploaded file %q %q", header.Filename, body)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"id":"doc_abcdefgh","collection_id":"kbs_abcdefgh","name":"runbook.md","media_type":"text/markdown","size":5,"sha256":"digest","service":"checkout","tags":["prod"],"status":"pending","created_at":"2026-08-15T00:00:00Z","updated_at":"2026-08-15T00:00:00Z"}`)
+		_, _ = io.WriteString(w, `{"id":"doc_abcdefgh","collection_id":"kbs_abcdefgh","name":"runbook.md","media_type":"text/markdown","size":5,"sha256":"digest","service":"checkout","tags":["prod"],"status":"queued","created_at":"2026-08-15T00:00:00Z","updated_at":"2026-08-15T00:00:00Z"}`)
 	}))
 	defer server.Close()
 	client, err := NewClient(server.URL, func() (string, error) { return "provider-secret", nil }, server.Client())

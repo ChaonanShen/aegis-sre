@@ -34,24 +34,14 @@ func TestFactoryBuildsRAGLiteProvider(t *testing.T) {
 	}
 }
 
-func TestFactoryKeepsRAGFlowFallback(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
-		if request.URL.Path != "/api/v1/datasets" {
-			t.Fatalf("unexpected path: %s", request.URL.Path)
-		}
-		_, _ = io.WriteString(w, `{"code":0,"data":[],"total_datasets":0}`)
-	}))
-	defer server.Close()
-	provider, err := New(config.Config{
+func TestFactoryRejectsRAGFlowRuntimeSelection(t *testing.T) {
+	_, err := New(config.Config{
 		KnowledgeProvider: "ragflow", KnowledgeTokenFile: tokenFile(t),
 		KnowledgeEmbedding: "model@factory", KnowledgeTimeout: time.Second,
-		Endpoints: map[config.Capability]string{config.CapabilityKnowledge: server.URL},
+		Endpoints: map[config.Capability]string{config.CapabilityKnowledge: "http://provider"},
 	}, codec(t))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := provider.Check(context.Background()); err != nil {
-		t.Fatal(err)
+	if err == nil {
+		t.Fatal("RAGFlow runtime selection must fail")
 	}
 }
 

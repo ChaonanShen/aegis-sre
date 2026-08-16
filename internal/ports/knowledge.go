@@ -9,6 +9,7 @@ import (
 )
 
 type KnowledgeCollectionRef struct{ ID domain.ID }
+type KnowledgeBaseRef = KnowledgeCollectionRef
 type KnowledgeDocumentRef struct {
 	ID           domain.ID
 	CollectionID domain.ID
@@ -24,11 +25,24 @@ type KnowledgeCollection struct {
 	ReadOnly  bool
 }
 
+// KnowledgeBase is the public product model. Provider lifecycle flags are not exposed.
+type KnowledgeBase struct {
+	Ref       KnowledgeBaseRef
+	Name      string
+	FolderUID string
+	CreatedAt time.Time
+	UpdatedAt time.Time
+}
+
 type CreateKnowledgeCollectionInput struct {
 	ID        domain.ID
 	Name      string
 	FolderUID string
 }
+
+type CreateKnowledgeBaseInput = CreateKnowledgeCollectionInput
+
+type UpdateKnowledgeBaseInput struct{ Name string }
 
 type UpdateKnowledgeCollectionInput struct {
 	Name   string
@@ -73,6 +87,29 @@ type KnowledgeChunk struct {
 	CreatedAt  time.Time
 }
 
+type DocumentPassage struct {
+	Ordinal  int
+	Text     string
+	Location string
+}
+
+type KnowledgeSearchInput struct {
+	Query          string
+	KnowledgeBases []KnowledgeBaseRef
+	Service        string
+	TagsAny        []string
+	TagsAll        []string
+	Limit          int
+}
+
+type KnowledgeCitation struct {
+	Document   KnowledgeDocumentRef
+	SourceName string
+	Text       string
+	Ordinal    int
+	Location   string
+}
+
 type RetrievalInput struct {
 	Query       string
 	Collections []KnowledgeCollectionRef
@@ -103,6 +140,26 @@ type KnowledgeIDGenerator interface {
 }
 
 type KnowledgeProvider interface {
+	Check(context.Context) error
+	ListKnowledgeBases(context.Context, domain.ActorContext, domain.PageRequest) (domain.Page[KnowledgeBase], error)
+	GetKnowledgeBase(context.Context, domain.ActorContext, KnowledgeBaseRef) (KnowledgeBase, error)
+	CreateKnowledgeBase(context.Context, domain.ActorContext, CreateKnowledgeBaseInput) (KnowledgeBase, error)
+	UpdateKnowledgeBase(context.Context, domain.ActorContext, KnowledgeBaseRef, UpdateKnowledgeBaseInput) (KnowledgeBase, error)
+	DeleteKnowledgeBase(context.Context, domain.ActorContext, KnowledgeBaseRef) error
+	ListDocuments(context.Context, domain.ActorContext, KnowledgeBaseRef, domain.PageRequest) (domain.Page[KnowledgeDocument], error)
+	GetDocument(context.Context, domain.ActorContext, KnowledgeDocumentRef) (KnowledgeDocument, error)
+	UploadDocument(context.Context, domain.ActorContext, KnowledgeBaseRef, DocumentFile) (KnowledgeDocument, error)
+	UpdateDocumentMetadata(context.Context, domain.ActorContext, KnowledgeDocumentRef, UpdateKnowledgeDocumentInput) (KnowledgeDocument, error)
+	RetryDocumentIndex(context.Context, domain.ActorContext, KnowledgeDocumentRef) (KnowledgeDocument, error)
+	DeleteDocument(context.Context, domain.ActorContext, KnowledgeDocumentRef) error
+	DownloadDocument(context.Context, domain.ActorContext, KnowledgeDocumentRef) (KnowledgeDocumentDownload, error)
+	ListDocumentPassages(context.Context, domain.ActorContext, KnowledgeDocumentRef, domain.PageRequest) (domain.Page[DocumentPassage], error)
+	Search(context.Context, domain.ActorContext, KnowledgeSearchInput) ([]KnowledgeCitation, error)
+}
+
+// LegacyKnowledgeProvider exists only for the time-bounded RAGFlow rollback window.
+// New product code must depend on KnowledgeProvider.
+type LegacyKnowledgeProvider interface {
 	Check(context.Context) error
 	ListCollections(context.Context, domain.ActorContext, string, domain.PageRequest) (domain.Page[KnowledgeCollection], error)
 	GetCollection(context.Context, domain.ActorContext, KnowledgeCollectionRef) (KnowledgeCollection, error)

@@ -39,12 +39,8 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if !ok {
 			return
 		}
-		folderUID := request.URL.Query().Get("folder_uid")
-		if folderUID == "" {
-			folderUID = actor.FolderUID
-		}
 		limit, _ := strconv.Atoi(request.URL.Query().Get("limit"))
-		page, err := provider.ListCollections(request.Context(), actor, folderUID, domain.PageRequest{Cursor: request.URL.Query().Get("cursor"), Limit: limit})
+		page, err := provider.ListKnowledgeBases(request.Context(), actor, domain.PageRequest{Cursor: request.URL.Query().Get("cursor"), Limit: limit})
 		if handleProviderError(w, request, err) {
 			return
 		}
@@ -84,7 +80,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
-		collection, err := provider.CreateCollection(request.Context(), actor, ports.CreateKnowledgeCollectionInput{ID: id, Name: strings.TrimSpace(body.Name), FolderUID: body.FolderUID})
+		collection, err := provider.CreateKnowledgeBase(request.Context(), actor, ports.CreateKnowledgeBaseInput{ID: id, Name: strings.TrimSpace(body.Name), FolderUID: body.FolderUID})
 		if handleProviderError(w, request, err) {
 			return
 		}
@@ -96,7 +92,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if !ok {
 			return
 		}
-		collection, err := provider.GetCollection(request.Context(), actor, ref)
+		collection, err := provider.GetKnowledgeBase(request.Context(), actor, ref)
 		if handleProviderError(w, request, err) {
 			return
 		}
@@ -109,17 +105,16 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 			return
 		}
 		var body struct {
-			Name   string                     `json:"name"`
-			Status domain.KnowledgeBaseStatus `json:"status"`
+			Name string `json:"name"`
 		}
 		if !decodeJSONBody(w, request, &body, maxKnowledgeJSONBytes) {
 			return
 		}
-		if !validKnowledgeText(body.Name, 200) || (body.Status != domain.KnowledgeBaseActive && body.Status != domain.KnowledgeBaseDisabled) {
-			writeAPIProblem(w, request, http.StatusBadRequest, "invalid_argument", "valid knowledge base name and status are required", false)
+		if !validKnowledgeText(body.Name, 200) {
+			writeAPIProblem(w, request, http.StatusBadRequest, "invalid_argument", "valid knowledge base name is required", false)
 			return
 		}
-		collection, err := provider.UpdateCollection(request.Context(), actor, ref, ports.UpdateKnowledgeCollectionInput{Name: strings.TrimSpace(body.Name), Status: body.Status})
+		collection, err := provider.UpdateKnowledgeBase(request.Context(), actor, ref, ports.UpdateKnowledgeBaseInput{Name: strings.TrimSpace(body.Name)})
 		if handleProviderError(w, request, err) {
 			return
 		}
@@ -131,25 +126,12 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if !ok {
 			return
 		}
-		if handleProviderError(w, request, provider.DeleteCollection(request.Context(), actor, ref)) {
+		if handleProviderError(w, request, provider.DeleteKnowledgeBase(request.Context(), actor, ref)) {
 			return
 		}
 		markResourceFolder(request, actor.FolderUID)
 		w.WriteHeader(http.StatusNoContent)
 	})
-	mux.HandleFunc("POST /api/v1/knowledge-bases/{knowledge_base_id}/scope-migrations", func(w http.ResponseWriter, request *http.Request) {
-		actor, ref, ok := knowledgeCollectionRequestWithAccess(w, request, folderAccessAdmin)
-		if !ok {
-			return
-		}
-		collection, err := provider.MigrateCollectionScope(request.Context(), actor, ref)
-		if handleProviderError(w, request, err) {
-			return
-		}
-		markResourceFolder(request, collection.FolderUID)
-		writeJSON(w, http.StatusOK, knowledgeCollectionJSON(collection))
-	})
-
 	mux.HandleFunc("GET /api/v1/knowledge-bases/{knowledge_base_id}/documents", func(w http.ResponseWriter, request *http.Request) {
 		actor, ref, ok := knowledgeCollectionRequest(w, request, false)
 		if !ok {
@@ -217,7 +199,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if !decodeJSONBody(w, request, &body, maxKnowledgeJSONBytes) || !validateDocumentMetadata(w, request, body.Service, body.Tags) {
 			return
 		}
-		document, err := provider.UpdateDocument(request.Context(), actor, ref, ports.UpdateKnowledgeDocumentInput{Service: strings.TrimSpace(body.Service), Tags: body.Tags})
+		document, err := provider.UpdateDocumentMetadata(request.Context(), actor, ref, ports.UpdateKnowledgeDocumentInput{Service: strings.TrimSpace(body.Service), Tags: body.Tags})
 		if handleProviderError(w, request, err) {
 			return
 		}
@@ -240,7 +222,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 	})
 	mux.HandleFunc("POST /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_action}", func(w http.ResponseWriter, request *http.Request) {
 		documentID, action, found := strings.Cut(request.PathValue("document_action"), ":")
-		if !found || (action != "index" && action != "stop") {
+		if !found || action != "retry-index" {
 			writeAPIProblem(w, request, http.StatusNotFound, "not_found", "document action not found", false)
 			return
 		}
@@ -249,34 +231,29 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if !ok {
 			return
 		}
-		var err error
-		if action == "index" {
-			err = provider.StartIndexing(request.Context(), actor, ref)
-		} else {
-			err = provider.StopIndexing(request.Context(), actor, ref)
-		}
+		document, err := provider.RetryDocumentIndex(request.Context(), actor, ref)
 		if handleProviderError(w, request, err) {
 			return
 		}
 		markResourceFolder(request, actor.FolderUID)
-		w.WriteHeader(http.StatusAccepted)
+		writeJSON(w, http.StatusAccepted, knowledgeDocumentJSON(document))
 	})
-	mux.HandleFunc("GET /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}/chunks", func(w http.ResponseWriter, request *http.Request) {
+	mux.HandleFunc("GET /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}/passages", func(w http.ResponseWriter, request *http.Request) {
 		actor, ref, ok := knowledgeDocumentRequest(w, request, false)
 		if !ok {
 			return
 		}
 		limit, _ := strconv.Atoi(request.URL.Query().Get("limit"))
-		page, err := provider.ListChunks(request.Context(), actor, ref, domain.PageRequest{Cursor: request.URL.Query().Get("cursor"), Limit: limit})
+		page, err := provider.ListDocumentPassages(request.Context(), actor, ref, domain.PageRequest{Cursor: request.URL.Query().Get("cursor"), Limit: limit})
 		if handleProviderError(w, request, err) {
 			return
 		}
 		markResourceFolder(request, actor.FolderUID)
 		items := make([]map[string]any, 0, len(page.Items))
 		for _, item := range page.Items {
-			value := map[string]any{"id": item.ID, "document_id": item.Document.ID, "text": item.Text, "position": item.Position, "page_number": item.PageNumber}
-			if !item.CreatedAt.IsZero() {
-				value["created_at"] = item.CreatedAt
+			value := map[string]any{"ordinal": item.Ordinal, "text": item.Text}
+			if item.Location != "" {
+				value["location"] = item.Location
 			}
 			items = append(items, value)
 		}
@@ -308,8 +285,9 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 			Query            string      `json:"query"`
 			KnowledgeBaseIDs []domain.ID `json:"knowledge_base_ids"`
 			Service          string      `json:"service"`
+			TagsAny          []string    `json:"tags_any"`
+			TagsAll          []string    `json:"tags_all"`
 			Limit            int         `json:"limit"`
-			Threshold        *float64    `json:"threshold"`
 		}
 		if !decodeJSONBody(w, request, &body, maxKnowledgeJSONBytes) {
 			return
@@ -317,11 +295,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if body.Limit == 0 {
 			body.Limit = 5
 		}
-		threshold := .2
-		if body.Threshold != nil {
-			threshold = *body.Threshold
-		}
-		if !validKnowledgeText(body.Query, 2000) || len(body.KnowledgeBaseIDs) == 0 || len(body.KnowledgeBaseIDs) > 20 || !validKnowledgeTextOrEmpty(body.Service, 128) {
+		if !validKnowledgeText(body.Query, 2000) || len(body.KnowledgeBaseIDs) == 0 || len(body.KnowledgeBaseIDs) > 20 || !validKnowledgeTextOrEmpty(body.Service, 128) || !validSearchTags(body.TagsAny, body.TagsAll) {
 			writeAPIProblem(w, request, http.StatusBadRequest, "invalid_argument", "invalid knowledge search request", false)
 			return
 		}
@@ -333,14 +307,18 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 			}
 			collections = append(collections, ports.KnowledgeCollectionRef{ID: id})
 		}
-		hits, err := provider.Retrieve(request.Context(), actor, ports.RetrievalInput{Query: strings.TrimSpace(body.Query), Collections: collections, Service: strings.TrimSpace(body.Service), Limit: body.Limit, Threshold: threshold})
+		hits, err := provider.Search(request.Context(), actor, ports.KnowledgeSearchInput{Query: strings.TrimSpace(body.Query), KnowledgeBases: collections, Service: strings.TrimSpace(body.Service), TagsAny: body.TagsAny, TagsAll: body.TagsAll, Limit: body.Limit})
 		if handleProviderError(w, request, err) {
 			return
 		}
 		markResourceFolder(request, actor.FolderUID)
 		items := make([]map[string]any, 0, len(hits))
 		for _, hit := range hits {
-			items = append(items, map[string]any{"text": hit.Text, "score": hit.Score, "citation": map[string]any{"document_id": hit.Document.ID, "source_name": hit.SourceName, "position": hit.Position, "page_number": hit.PageNumber}})
+			citation := map[string]any{"document_id": hit.Document.ID, "knowledge_base_id": hit.Document.CollectionID, "source_name": hit.SourceName, "ordinal": hit.Ordinal}
+			if hit.Location != "" {
+				citation["location"] = hit.Location
+			}
+			items = append(items, map[string]any{"text": hit.Text, "citation": citation})
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"hits": items})
 	})
@@ -468,8 +446,21 @@ func validKnowledgeTextOrEmpty(value string, max int) bool {
 	return value == "" || validKnowledgeText(value, max)
 }
 
-func knowledgeCollectionJSON(collection ports.KnowledgeCollection) map[string]any {
-	return map[string]any{"id": collection.Ref.ID, "name": collection.Name, "folder_uid": collection.FolderUID, "status": collection.Status, "read_only": collection.ReadOnly, "created_at": collection.CreatedAt, "updated_at": collection.UpdatedAt}
+func knowledgeCollectionJSON(collection ports.KnowledgeBase) map[string]any {
+	return map[string]any{"id": collection.Ref.ID, "name": collection.Name, "folder_uid": collection.FolderUID, "created_at": collection.CreatedAt, "updated_at": collection.UpdatedAt}
+}
+
+func validSearchTags(groups ...[]string) bool {
+	total := 0
+	for _, tags := range groups {
+		total += len(tags)
+		for _, tag := range tags {
+			if !validKnowledgeText(tag, 64) {
+				return false
+			}
+		}
+	}
+	return total <= 32
 }
 
 func knowledgeDocumentJSON(document ports.KnowledgeDocument) map[string]any {
