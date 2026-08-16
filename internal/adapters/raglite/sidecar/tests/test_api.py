@@ -71,15 +71,21 @@ def test_collection_upload_index_search_and_download(tmp_path: Path) -> None:
         headers=headers(),
         json={
             "query": "restart",
-            "collections": ["kbs_abcdefgh"],
+            "knowledge_base_ids": ["kbs_abcdefgh"],
             "service": "checkout",
+            "tags_all": ["prod"],
             "limit": 5,
-            "threshold": 0,
         },
     )
     assert response.status_code == 200
     assert response.json()["hits"][0]["chunk"]["document_id"] == "doc_abcdefgh"
     assert response.json()["hits"][0]["chunk"]["collection_id"] == "kbs_abcdefgh"
+
+    response = client.get("/v1/documents/doc_abcdefgh/passages", headers=headers())
+    assert response.status_code == 200
+    assert response.json()["items"] == [
+        {"ordinal": 1, "text": "restart the checkout deployment", "location": "0"}
+    ]
 
     response = client.get("/v1/documents/doc_abcdefgh/content", headers=headers())
     assert response.status_code == 200
@@ -160,6 +166,30 @@ def test_invalid_threshold_returns_stable_capability_error(tmp_path: Path) -> No
     )
     assert response.status_code == 422
     assert response.json()["code"] == "capability_unavailable"
+
+
+def test_failed_document_can_be_retried_through_api(tmp_path: Path) -> None:
+    client, service, backend = new_client(tmp_path)
+    client.post(
+        "/v1/collections",
+        headers=headers(),
+        json={"id": "kbs_abcdefgh", "name": "Operations", "folder_uid": "folder-a"},
+    )
+    client.post(
+        "/v1/collections/kbs_abcdefgh/documents",
+        headers=headers(),
+        data={"id": "doc_abcdefgh"},
+        files={"file": ("runbook.md", b"# Restart", "text/markdown")},
+    )
+    backend.fail_index = True
+    service.run_once()
+
+    response = client.post(
+        "/v1/documents/doc_abcdefgh:retry-index", headers=headers()
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
 
 
 def test_job_status_is_bound_to_document_scope(tmp_path: Path) -> None:

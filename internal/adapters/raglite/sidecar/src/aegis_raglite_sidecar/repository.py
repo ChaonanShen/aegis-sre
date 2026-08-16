@@ -93,6 +93,8 @@ class Repository:
             connection.commit()
             self._migrate_legacy_document_status(connection)
             self._ensure_generation_columns(connection)
+            self._repair_queued_documents(connection)
+            connection.commit()
 
     @staticmethod
     def _migrate_legacy_document_status(connection: sqlite3.Connection) -> None:
@@ -173,6 +175,28 @@ class Repository:
         if "indexed_generation" not in columns:
             connection.execute(
                 "ALTER TABLE documents ADD COLUMN indexed_generation INTEGER NOT NULL DEFAULT 0"
+            )
+
+    @staticmethod
+    def _repair_queued_documents(connection: sqlite3.Connection) -> None:
+        """Backfill work lost by legacy pending uploads or an interrupted transaction."""
+        rows = connection.execute(
+            """SELECT d.id, d.indexed_generation FROM documents d
+               WHERE d.status = 'queued'
+                 AND NOT EXISTS (
+                     SELECT 1 FROM jobs j WHERE j.document_id = d.id
+                       AND j.status IN ('queued', 'running')
+                 )"""
+        ).fetchall()
+        for row in rows:
+            Repository._insert_job(
+                connection,
+                Job(
+                    id=f"job_{uuid.uuid4().hex}",
+                    document_id=str(row["id"]),
+                    operation="reindex" if int(row["indexed_generation"]) > 0 else "index",
+                    status="queued",
+                ),
             )
 
     def create_collection(self, collection: Collection) -> Collection:
@@ -352,6 +376,42 @@ class Repository:
         if row is None:
             raise NotFoundError("document not found")
         return self._document(row)
+
+    def searchable_document_ids(
+        self,
+        collection_ids: list[str],
+        scope: str,
+        service: str,
+        tags_any: tuple[str, ...],
+        tags_all: tuple[str, ...],
+    ) -> list[str]:
+        for collection_id in collection_ids:
+            self.get_collection(collection_id, scope)
+        placeholders = ",".join("?" for _ in collection_ids)
+        parameters: list[object] = [scope, *collection_ids]
+        service_clause = ""
+        if service:
+            service_clause = " AND d.service = ?"
+            parameters.append(service)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"""SELECT d.id, d.tags FROM documents d
+                    JOIN collections c ON c.id = d.collection_id
+                    WHERE c.scope = ? AND d.collection_id IN ({placeholders})
+                      AND d.status = 'ready'{service_clause}
+                    ORDER BY d.id""",  # noqa: S608 - placeholders are generated, not user input.
+                parameters,
+            ).fetchall()
+        any_set = set(tags_any)
+        all_set = set(tags_all)
+        matched: list[str] = []
+        for row in rows:
+            document_tags = set(json.loads(row["tags"]))
+            if (not any_set or any_set.intersection(document_tags)) and all_set.issubset(
+                document_tags
+            ):
+                matched.append(str(row["id"]))
+        return matched
 
     def get_indexing_context(self, document_id: str) -> tuple[Document, Collection, int]:
         with self._connect() as connection:

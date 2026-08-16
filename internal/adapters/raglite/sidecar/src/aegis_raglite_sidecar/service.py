@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from aegis_raglite_sidecar.backend import Backend, Chunk, SearchHit
-from aegis_raglite_sidecar.models import Collection, Document, Job
+from aegis_raglite_sidecar.models import Collection, Document, Job, Passage
 from aegis_raglite_sidecar.original_store import OriginalStore
 from aegis_raglite_sidecar.repository import ConflictError, Repository
 
@@ -205,6 +205,18 @@ class KnowledgeService:
         self.repository.get_document(document_id, scope)
         return self.backend.list_chunks(document_id)
 
+    def list_passages(self, document_id: str, scope: str) -> list[Passage]:
+        self.repository.get_document(document_id, scope)
+        chunks = self.backend.list_chunks(document_id)
+        return [
+            Passage(
+                ordinal=index,
+                text=chunk.text,
+                location=chunk.position.strip() or None,
+            )
+            for index, chunk in enumerate(chunks, start=1)
+        ]
+
     def open_document(self, document_id: str, scope: str) -> tuple[Document, BinaryIO]:
         document = self.repository.get_document(document_id, scope)
         return document, self.originals.open(document.original_path)
@@ -221,25 +233,37 @@ class KnowledgeService:
         collection_ids: list[str],
         scope: str,
         service: str,
+        tags_any: tuple[str, ...],
+        tags_all: tuple[str, ...],
         limit: int,
-        threshold: float,
     ) -> list[SearchHit]:
         if not query.strip() or not collection_ids or limit < 1 or limit > 100:
             raise ValidationError("query, collections and limit are required")
-        if threshold != 0:
-            raise CapabilityError("hybrid retrieval does not support similarity threshold")
-        for collection_id in collection_ids:
-            self.repository.get_collection(collection_id, scope)
+        normalized_any = self._normalize_tags(tags_any)
+        normalized_all = self._normalize_tags(tags_all)
+        document_ids = self.repository.searchable_document_ids(
+            collection_ids,
+            scope,
+            service.strip(),
+            normalized_any,
+            normalized_all,
+        )
+        if not document_ids:
+            return []
         hits = self.backend.search(
             query.strip(),
             collection_ids=collection_ids,
+            document_ids=document_ids,
             scope=scope,
             service=service.strip(),
             limit=limit,
         )
         allowed_collections = set(collection_ids)
+        allowed_documents = set(document_ids)
         if any(hit.chunk.collection_id not in allowed_collections for hit in hits):
             raise RuntimeError("backend returned a chunk outside the requested collections")
+        if any(hit.chunk.document_id not in allowed_documents for hit in hits):
+            raise RuntimeError("backend returned a chunk from a non-searchable document")
         return hits
 
     def run_once(self) -> bool:

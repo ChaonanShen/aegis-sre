@@ -36,6 +36,7 @@ class Backend(Protocol):
         query: str,
         *,
         collection_ids: list[str],
+        document_ids: list[str],
         scope: str,
         service: str,
         limit: int,
@@ -124,6 +125,7 @@ class RAGLiteBackend:
         query: str,
         *,
         collection_ids: list[str],
+        document_ids: list[str],
         scope: str,
         service: str,
         limit: int,
@@ -133,6 +135,7 @@ class RAGLiteBackend:
         metadata_filter: dict[str, object] = {
             "aegis_scope": scope,
             "aegis_collection_id": collection_ids,
+            "aegis_document_id": document_ids,
         }
         if service:
             metadata_filter["aegis_service"] = service

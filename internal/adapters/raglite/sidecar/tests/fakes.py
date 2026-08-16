@@ -51,6 +51,7 @@ class FakeBackend:
         query: str,
         *,
         collection_ids: list[str],
+        document_ids: list[str],
         scope: str,
         service: str,
         limit: int,
@@ -59,10 +60,11 @@ class FakeBackend:
             {
                 "query": query,
                 "collection_ids": collection_ids,
+                "document_ids": document_ids,
                 "scope": scope,
                 "service": service,
                 "limit": limit,
             }
         )
-        chunks = [chunk for values in self.chunks.values() for chunk in values]
+        chunks = [chunk for key in document_ids for chunk in self.chunks.get(key, [])]
         return [SearchHit(chunk=chunk, score=0.5) for chunk in chunks[:limit]]

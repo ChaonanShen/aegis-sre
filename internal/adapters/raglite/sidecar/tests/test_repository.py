@@ -192,6 +192,9 @@ def test_repository_migrates_legacy_pending_document_to_queued(tmp_path: Path) -
     repository = Repository(path)
 
     assert repository.get_document("doc_abcdefgh", "scope-a").status == "queued"
+    repaired_job = repository.get_active_job("doc_abcdefgh")
+    assert repaired_job is not None
+    assert repaired_job.operation == "index"
     with sqlite3.connect(path) as connection:
         columns = {row[1] for row in connection.execute("PRAGMA table_info(documents)")}
     assert {"metadata_generation", "indexed_generation"} <= columns

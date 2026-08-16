@@ -40,8 +40,12 @@ class DocumentUpdate(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
-    collections: list[str]
+    knowledge_base_ids: list[str] = Field(default_factory=list)
+    # 兼容旧 Go adapter 一个发布窗口；公共契约不会暴露 collections/threshold。
+    collections: list[str] = Field(default_factory=list)
     service: str = ""
+    tags_any: list[str] = Field(default_factory=list)
+    tags_all: list[str] = Field(default_factory=list)
     limit: int = 10
     threshold: float = 0
 
@@ -226,9 +230,18 @@ def create_app(
     def stop_index(document_id: str, actor_scope: str = Depends(scope)):
         service.stop_indexing(document_id, actor_scope)
 
+    @app.post("/v1/documents/{document_id}:retry-index")
+    def retry_index(document_id: str, actor_scope: str = Depends(scope)):
+        return asdict(service.retry_indexing(document_id, actor_scope))
+
     @app.get("/v1/documents/{document_id}/chunks")
     def list_chunks(document_id: str, actor_scope: str = Depends(scope)):
         items = service.list_chunks(document_id, actor_scope)
+        return {"items": [asdict(item) for item in items], "total": len(items)}
+
+    @app.get("/v1/documents/{document_id}/passages")
+    def list_passages(document_id: str, actor_scope: str = Depends(scope)):
+        items = service.list_passages(document_id, actor_scope)
         return {"items": [asdict(item) for item in items], "total": len(items)}
 
     @app.get("/v1/documents/{document_id}/content")
@@ -239,13 +252,16 @@ def create_app(
 
     @app.post("/v1/search")
     def search(body: SearchRequest, actor_scope: str = Depends(scope)):
+        if body.threshold != 0:
+            raise CapabilityError("search threshold is not supported")
         hits = service.search(
             query=body.query,
-            collection_ids=body.collections,
+            collection_ids=body.knowledge_base_ids or body.collections,
             scope=actor_scope,
             service=body.service,
+            tags_any=tuple(body.tags_any),
+            tags_all=tuple(body.tags_all),
             limit=body.limit,
-            threshold=body.threshold,
         )
         return {"hits": [asdict(hit) for hit in hits]}
 

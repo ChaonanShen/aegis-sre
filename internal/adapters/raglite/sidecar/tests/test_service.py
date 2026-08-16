@@ -74,8 +74,9 @@ def test_search_forces_scope_collection_and_service_filters(tmp_path: Path) -> N
         collection_ids=["kbs_abcdefgh"],
         scope="scope-a",
         service="checkout",
+        tags_any=("prod",),
+        tags_all=("prod",),
         limit=5,
-        threshold=0,
     )
 
     assert len(hits) == 1
@@ -84,6 +85,7 @@ def test_search_forces_scope_collection_and_service_filters(tmp_path: Path) -> N
         {
             "query": "restart",
             "collection_ids": ["kbs_abcdefgh"],
+            "document_ids": ["doc_abcdefgh"],
             "scope": "scope-a",
             "service": "checkout",
             "limit": 5,
@@ -93,6 +95,7 @@ def test_search_forces_scope_collection_and_service_filters(tmp_path: Path) -> N
 
 def test_search_rejects_backend_hit_from_unrequested_collection(tmp_path: Path) -> None:
     service, backend = new_service(tmp_path)
+    service.run_once()
     backend.chunks["doc_abcdefgh"] = [
         Chunk(
             id="chunk-internal-1",
@@ -110,22 +113,37 @@ def test_search_rejects_backend_hit_from_unrequested_collection(tmp_path: Path) 
             collection_ids=["kbs_abcdefgh"],
             scope="scope-a",
             service="",
+            tags_any=(),
+            tags_all=(),
             limit=5,
-            threshold=0,
         )
 
 
-def test_search_rejects_nonzero_hybrid_threshold(tmp_path: Path) -> None:
+def test_search_excludes_documents_that_are_not_ready(tmp_path: Path) -> None:
+    service, backend = new_service(tmp_path)
+
+    assert service.search(
+        query="restart",
+        collection_ids=["kbs_abcdefgh"],
+        scope="scope-a",
+        service="",
+        tags_any=(),
+        tags_all=(),
+        limit=5,
+    ) == []
+    assert backend.search_calls == []
+
+
+def test_passages_hide_provider_chunk_ids(tmp_path: Path) -> None:
     service, _ = new_service(tmp_path)
-    with pytest.raises(CapabilityError):
-        service.search(
-            query="restart",
-            collection_ids=["kbs_abcdefgh"],
-            scope="scope-a",
-            service="",
-            limit=5,
-            threshold=0.2,
-        )
+    service.run_once()
+
+    passages = service.list_passages("doc_abcdefgh", "scope-a")
+
+    assert passages[0].ordinal == 1
+    assert passages[0].text == "restart the checkout deployment"
+    assert passages[0].location == "0"
+    assert not hasattr(passages[0], "id")
 
 
 def test_stop_only_cancels_queued_job(tmp_path: Path) -> None:
