@@ -49,6 +49,9 @@ func requireRequestAuthorization(next http.Handler) http.Handler {
 		}
 		ctx := context.WithValue(request.Context(), requestAuthorizationContextKey{}, authorization)
 		if audit, ok := request.Context().Value(requestAuditContextKey{}).(*requestAudit); ok {
+			audit.tenantID = authorization.actor.TenantID
+			audit.orgID = authorization.actor.OrgID
+			audit.actorUserID = authorization.actor.UserID
 			audit.authorizedFolderUID = authorization.folder.uid
 			audit.grantedAccess = accessName(authorization.folder.access)
 		}

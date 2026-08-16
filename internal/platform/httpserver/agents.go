@@ -189,6 +189,7 @@ func registerAgentHandlers(mux *http.ServeMux, provider ports.AgentProvider, can
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		if !validAgentID(turn.ID, "turn_") {
 			_ = stream.Close()
 			writeAPIProblem(w, request, http.StatusBadGateway, "provider_result_unknown", "agent provider returned an invalid turn identifier", false)

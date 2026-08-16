@@ -41,8 +41,12 @@ type dependencies struct {
 }
 
 type requestAudit struct {
+	tenantID            string
+	orgID               string
+	actorUserID         string
 	requestedFolderUID  string
 	authorizedFolderUID string
+	resourceFolderUID   string
 	grantedAccess       string
 }
 
@@ -227,12 +231,25 @@ func requestContext(logger *slog.Logger, next http.Handler) http.Handler {
 			"request_id", requestID,
 			"trace_id", traceID,
 			"status", status,
+			"tenant_id", audit.tenantID,
+			"org_id", audit.orgID,
+			"actor_user_id", audit.actorUserID,
 			"requested_folder_uid", audit.requestedFolderUID,
 			"authorized_folder_uid", audit.authorizedFolderUID,
+			"resource_folder_uid", audit.resourceFolderUID,
 			"granted_access", audit.grantedAccess,
 			"duration_ms", time.Since(started).Milliseconds(),
 		)
 	})
+}
+
+// markResourceFolder 仅在 Provider 已验证资源归属且与授权 Folder 一致后记录；请求值不能提升为资源事实。
+func markResourceFolder(request *http.Request, folderUID string) {
+	audit, ok := request.Context().Value(requestAuditContextKey{}).(*requestAudit)
+	if !ok || folderUID == "" || folderUID != audit.authorizedFolderUID {
+		return
+	}
+	audit.resourceFolderUID = folderUID
 }
 
 func safeID(value string) string {

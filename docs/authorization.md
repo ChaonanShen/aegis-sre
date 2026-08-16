@@ -478,6 +478,11 @@ Grafana scoped action 校验后才能写入 authorized scope；只有 Control Pl
 当前 Audit 页面和 store 是 fixture，不应作为生产审计事实来源。生产实现应优先基于结构化日志和既有
 可观测性系统形成只读投影，保留策略、检索范围和脱敏规则需另行冻结。
 
+当前 Control Plane 的结构化请求日志已区分可信 Actor、requested/authorized/resource Folder scope；
+Knowledge、Playbook、Run 和 Agent Turn 仅在 Provider 操作成功且归属与 authorized Folder 一致后写入
+`resource_folder_uid`。Agent 原生 Approval 在服务端尚不能恢复可信目标，因此刻意不写 resource scope，
+也不能据此开放审批。Audit 查询投影、保留策略和 UI 仍按延期模块设计执行。
+
 ## 13. Plugin Configuration、Capability 与健康检查
 
 - Plugin Configuration 是 Org 级管理能力，只允许 Grafana Org Admin。

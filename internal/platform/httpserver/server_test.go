@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
@@ -115,7 +116,8 @@ func TestRequestIDsRejectHeaderControl(t *testing.T) {
 func TestRequestAuditSeparatesRequestedAndAuthorizedFolderScope(t *testing.T) {
 	var output bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&output, nil))
-	handler := requestContext(logger, requireRequestAuthorization(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := requestContext(logger, requireRequestAuthorization(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		markResourceFolder(request, "folder-a")
 		w.WriteHeader(http.StatusNoContent)
 	})))
 	request := actorRequest(http.MethodGet, "/api/v1/test", "")
@@ -125,7 +127,7 @@ func TestRequestAuditSeparatesRequestedAndAuthorizedFolderScope(t *testing.T) {
 	handler.ServeHTTP(response, request)
 
 	logLine := output.String()
-	for _, expected := range []string{`"status":204`, `"requested_folder_uid":"folder-a"`, `"authorized_folder_uid":"folder-a"`, `"granted_access":"write"`} {
+	for _, expected := range []string{`"status":204`, `"tenant_id":"tenant"`, `"org_id":"org"`, `"actor_user_id":"user"`, `"requested_folder_uid":"folder-a"`, `"authorized_folder_uid":"folder-a"`, `"resource_folder_uid":"folder-a"`, `"granted_access":"write"`} {
 		if !strings.Contains(logLine, expected) {
 			t.Fatalf("audit log %q does not contain %q", logLine, expected)
 		}
@@ -144,6 +146,20 @@ func TestRejectedRequestNeverPromotesRequestedFolderToAuthorizedScope(t *testing
 	logLine := output.String()
 	if !strings.Contains(logLine, `"requested_folder_uid":"requested-only"`) || !strings.Contains(logLine, `"authorized_folder_uid":""`) {
 		t.Fatalf("rejected audit scope = %q", logLine)
+	}
+}
+
+func TestResourceAuditOnlyAcceptsProviderScopeMatchingAuthorizedFolder(t *testing.T) {
+	audit := &requestAudit{authorizedFolderUID: "folder-a"}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/playbooks/pbk_test", nil)
+	request = request.WithContext(context.WithValue(request.Context(), requestAuditContextKey{}, audit))
+	markResourceFolder(request, "folder-b")
+	if audit.resourceFolderUID != "" {
+		t.Fatalf("cross-folder resource was promoted: %q", audit.resourceFolderUID)
+	}
+	markResourceFolder(request, "folder-a")
+	if audit.resourceFolderUID != "folder-a" {
+		t.Fatalf("verified resource folder = %q", audit.resourceFolderUID)
 	}
 }
 

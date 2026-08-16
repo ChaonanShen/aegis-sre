@@ -33,6 +33,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		items := make([]any, 0, len(page.Items))
 		for _, item := range page.Items {
 			items = append(items, playbookSummaryJSON(item))
@@ -65,6 +66,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, resource.FolderUID)
 		writeJSON(w, http.StatusCreated, playbookJSON(resource))
 	})
 	mux.HandleFunc("GET /api/v1/playbooks/{playbook_id}", func(w http.ResponseWriter, request *http.Request) {
@@ -80,6 +82,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, resource.FolderUID)
 		writeJSON(w, http.StatusOK, playbookJSON(resource))
 	})
 	mux.HandleFunc("PUT /api/v1/playbooks/{playbook_id}", func(w http.ResponseWriter, request *http.Request) {
@@ -102,6 +105,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, resource.FolderUID)
 		writeJSON(w, http.StatusOK, playbookJSON(resource))
 	})
 	mux.HandleFunc("DELETE /api/v1/playbooks/{playbook_id}", func(w http.ResponseWriter, request *http.Request) {
@@ -116,6 +120,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if err := provider.Delete(request.Context(), actor, ref); handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/v1/playbooks/{playbook_id}/migrations", func(w http.ResponseWriter, request *http.Request) {
@@ -135,6 +140,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, legacy.FolderUID)
 		if !legacy.ReadOnly {
 			writeAPIProblem(w, request, http.StatusConflict, "conflict", "playbook is already Folder-owned", false)
 			return
@@ -149,6 +155,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, resource.FolderUID)
 		writeJSON(w, http.StatusCreated, playbookJSON(resource))
 	})
 	mux.HandleFunc("POST /api/v1/playbooks/{playbook_id}/validate", func(w http.ResponseWriter, request *http.Request) {
@@ -208,6 +215,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		writeJSON(w, http.StatusAccepted, queuedRunJSON(runRef))
 	})
 	mux.HandleFunc("GET /api/v1/playbooks/{playbook_id}/runs", func(w http.ResponseWriter, request *http.Request) {
@@ -224,6 +232,7 @@ func registerPlaybookHandlers(mux *http.ServeMux, provider ports.PlaybookProvide
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		items := make([]any, 0, len(page.Items))
 		for _, item := range page.Items {
 			items = append(items, runJSON(item))
@@ -433,6 +442,7 @@ func scopedRunStateWithAccess(w http.ResponseWriter, request *http.Request, prov
 		writeAPIProblem(w, request, http.StatusNotFound, "not_found", "run not found", false)
 		return domain.ActorContext{}, ports.PlaybookRunState{}, false
 	}
+	markResourceFolder(request, actor.FolderUID)
 	return actor, state, true
 }
 

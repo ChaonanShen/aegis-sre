@@ -48,6 +48,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		items := make([]map[string]any, 0, len(page.Items))
 		for _, item := range page.Items {
 			items = append(items, knowledgeCollectionJSON(item))
@@ -87,6 +88,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, collection.FolderUID)
 		writeJSON(w, http.StatusCreated, knowledgeCollectionJSON(collection))
 	})
 	mux.HandleFunc("GET /api/v1/knowledge-bases/{knowledge_base_id}", func(w http.ResponseWriter, request *http.Request) {
@@ -98,6 +100,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, collection.FolderUID)
 		writeJSON(w, http.StatusOK, knowledgeCollectionJSON(collection))
 	})
 	mux.HandleFunc("PUT /api/v1/knowledge-bases/{knowledge_base_id}", func(w http.ResponseWriter, request *http.Request) {
@@ -120,6 +123,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, collection.FolderUID)
 		writeJSON(w, http.StatusOK, knowledgeCollectionJSON(collection))
 	})
 	mux.HandleFunc("DELETE /api/v1/knowledge-bases/{knowledge_base_id}", func(w http.ResponseWriter, request *http.Request) {
@@ -130,6 +134,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, provider.DeleteCollection(request.Context(), actor, ref)) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/v1/knowledge-bases/{knowledge_base_id}/scope-migrations", func(w http.ResponseWriter, request *http.Request) {
@@ -141,6 +146,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, collection.FolderUID)
 		writeJSON(w, http.StatusOK, knowledgeCollectionJSON(collection))
 	})
 
@@ -154,6 +160,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		items := make([]map[string]any, 0, len(page.Items))
 		for _, item := range page.Items {
 			items = append(items, knowledgeDocumentJSON(item))
@@ -182,6 +189,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		writeJSON(w, http.StatusAccepted, knowledgeDocumentJSON(document))
 	})
 
@@ -194,6 +202,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		writeJSON(w, http.StatusOK, knowledgeDocumentJSON(document))
 	})
 	updateDocument := func(w http.ResponseWriter, request *http.Request) {
@@ -212,6 +221,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		writeJSON(w, http.StatusOK, knowledgeDocumentJSON(document))
 	}
 	// PUT 是冻结公共契约；PATCH 仅保留给迁移期客户端，至少跨过兼容窗口后再删除。
@@ -225,6 +235,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, provider.DeleteDocument(request.Context(), actor, ref)) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		w.WriteHeader(http.StatusNoContent)
 	})
 	mux.HandleFunc("POST /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_action}", func(w http.ResponseWriter, request *http.Request) {
@@ -247,6 +258,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		w.WriteHeader(http.StatusAccepted)
 	})
 	mux.HandleFunc("GET /api/v1/knowledge-bases/{knowledge_base_id}/documents/{document_id}/chunks", func(w http.ResponseWriter, request *http.Request) {
@@ -259,6 +271,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		items := make([]map[string]any, 0, len(page.Items))
 		for _, item := range page.Items {
 			value := map[string]any{"id": item.ID, "document_id": item.Document.ID, "text": item.Text, "position": item.Position, "page_number": item.PageNumber}
@@ -278,6 +291,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		defer download.Content.Close()
 		w.Header().Set("Content-Type", download.MediaType)
 		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": download.Name}))
@@ -323,6 +337,7 @@ func registerKnowledgeHandlers(mux *http.ServeMux, provider ports.KnowledgeProvi
 		if handleProviderError(w, request, err) {
 			return
 		}
+		markResourceFolder(request, actor.FolderUID)
 		items := make([]map[string]any, 0, len(hits))
 		for _, hit := range hits {
 			items = append(items, map[string]any{"text": hit.Text, "score": hit.Score, "citation": map[string]any{"document_id": hit.Document.ID, "source_name": hit.SourceName, "position": hit.Position, "page_number": hit.PageNumber}})
