@@ -18,6 +18,9 @@
 页面同等完成的前端产品闭环。插件中还保留部分 fixture/未接通页面。真实运行模式对未配置的能力返回
 明确的不可用错误，不静默回退到 fixture 或 mock 数据。
 
+Skill、Alerts 和 Audit 尚未接通真实 Provider；接入时的归属、授权矩阵和门禁见
+[Skill、Alerts 与 Audit 权限接入设计](deferred-module-authorization.md)，不得以现有 fixture 固化生产事实来源。
+
 ## 2. 架构原则
 
 1. **控制面优先**：Aegis 只实现产品 API、授权收敛、协议归一化和必要适配，不重新实现 Agent、RAG、Workflow 或 Grafana MCP 的通用能力。

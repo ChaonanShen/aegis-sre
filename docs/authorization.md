@@ -372,6 +372,9 @@ Folder
 
 Skills 当前在 real 模式下明确不可用，因此其权限模型仍属于目标设计。
 
+Skill、Alerts 和 Audit 在真实模块接通时必须遵循的完整权限矩阵、服务端边界和验收门禁见
+[Skill、Alerts 与 Audit 权限接入设计](deferred-module-authorization.md)。
+
 建议采用“私人草稿 -> 显式发布”的生命周期：
 
 | 状态 | 归属 | 权限 |
@@ -723,6 +726,7 @@ Knowledge Base/Playbook 和处理 Approval 要求 Admin；Control Plane 签发 5
 - [Aegis SRE 基本架构](architecture.md)
 - [整体实施计划](implementation-plan.md)
 - [统一权限实施计划](authorization-implementation-plan.md)
+- [Skill、Alerts 与 Audit 权限接入设计](deferred-module-authorization.md)
 - [Agent 公开标识 ADR](adr/0002-agent-public-identifiers.md)
 - [Agent Provider Runtime 与 Scope ADR](adr/0003-agent-provider-runtime-and-scope.md)
 - [Knowledge 身份与 Folder 授权 ADR](adr/0004-knowledge-identity-and-folder-authorization.md)
