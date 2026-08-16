@@ -1,6 +1,7 @@
 import {
   DocumentUploadInput,
   KnowledgeBaseRecord,
+  KnowledgeAvailability,
   DocumentPassageRecord,
   KnowledgeDocumentRecord,
   KnowledgeSearchHit,
@@ -8,6 +9,7 @@ import {
 } from '../managementModel';
 
 export interface KnowledgeManagementGateway {
+  getAvailability(signal?: AbortSignal): Promise<KnowledgeAvailability>;
   listKnowledgeBases(folderUid: string, signal?: AbortSignal): Promise<KnowledgeBaseRecord[]>;
   createKnowledgeBase(
     folderUid: string,

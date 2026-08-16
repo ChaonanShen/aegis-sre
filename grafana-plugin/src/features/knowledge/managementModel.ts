@@ -4,6 +4,10 @@ export type KnowledgeBaseRecord = components['schemas']['KnowledgeBase'];
 export type KnowledgeDocumentRecord = components['schemas']['Document'];
 export type DocumentPassageRecord = components['schemas']['DocumentPassage'];
 export type KnowledgeSearchHit = components['schemas']['KnowledgeSearchHit'];
+export interface KnowledgeAvailability {
+  status: 'available' | 'unavailable' | 'degraded';
+  reason?: string;
+}
 
 export interface DocumentUploadInput {
   file: File;

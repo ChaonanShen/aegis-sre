@@ -150,6 +150,7 @@ function renderPage(gateway: KnowledgeManagementGateway, permission: FolderPermi
 
 function fakeGateway(): KnowledgeManagementGateway {
   return {
+    getAvailability: jest.fn(async () => ({ status: 'available' as const })),
     listKnowledgeBases: jest.fn(async () => [kb]),
     createKnowledgeBase: jest.fn(async () => kb),
     updateKnowledgeBase: jest.fn(async () => kb),

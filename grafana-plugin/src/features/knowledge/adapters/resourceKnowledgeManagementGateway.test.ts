@@ -21,6 +21,18 @@ const document = {
 } as const;
 
 describe('Control Plane Knowledge management gateway', () => {
+  test('reads explicit Knowledge capability state before product requests', async () => {
+    const backend = fakeBackend([
+      { items: [{ name: 'knowledge', status: 'degraded', reason: 'index queue delayed' }] },
+    ]);
+    const gateway = createResourceKnowledgeManagementGateway({ backendSrv: backend });
+
+    await expect(gateway.getAvailability()).resolves.toEqual({
+      status: 'degraded',
+      reason: 'index queue delayed',
+    });
+  });
+
   test('paginates knowledge bases and sends the trusted folder scope on every page', async () => {
     const backend = fakeBackend([
       { items: [kb], has_more: true, next_cursor: 'next page' },

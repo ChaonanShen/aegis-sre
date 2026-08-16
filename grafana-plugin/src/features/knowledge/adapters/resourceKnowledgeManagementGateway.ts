@@ -9,6 +9,7 @@ type Document = components['schemas']['Document'];
 type DocumentPage = components['schemas']['DocumentPage'];
 type PassagePage = components['schemas']['DocumentPassagePage'];
 type SearchResponse = components['schemas']['KnowledgeSearchResponse'];
+type CapabilityList = components['schemas']['CapabilityList'];
 
 export function createResourceKnowledgeManagementGateway(
   options: { backendSrv?: BackendSrv; resourceClient?: ResourceClient } = {}
@@ -19,6 +20,14 @@ export function createResourceKnowledgeManagementGateway(
   const headers = (folderUid: string) => ({ 'X-Aegis-Folder-UID': requireFolder(folderUid) });
 
   return {
+    async getAvailability(signal) {
+      const response = await client().request('/api/v1/capabilities', isCapabilityList, { signal });
+      const capability = response.items.find(({ name }) => name === 'knowledge');
+      if (!capability) {
+        throw new ResourceClientError(502, 'provider_unavailable', '能力响应缺少 Knowledge 状态。');
+      }
+      return { status: capability.status, reason: capability.reason };
+    },
     async listKnowledgeBases(folderUid, signal) {
       return collectPages(
         async (cursor) =>
@@ -200,6 +209,19 @@ function isKnowledgeBase(value: unknown): value is KnowledgeBase {
     typeof value.folder_uid === 'string' &&
     typeof value.created_at === 'string' &&
     typeof value.updated_at === 'string'
+  );
+}
+function isCapabilityList(value: unknown): value is CapabilityList {
+  return (
+    isObject(value) &&
+    Array.isArray(value.items) &&
+    value.items.every(
+      (item) =>
+        isObject(item) &&
+        typeof item.name === 'string' &&
+        ['available', 'unavailable', 'degraded'].includes(String(item.status)) &&
+        (item.reason === undefined || typeof item.reason === 'string')
+    )
   );
 }
 function isKnowledgeBasePage(value: unknown): value is KnowledgeBasePage {

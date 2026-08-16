@@ -4,6 +4,7 @@ import { useAppShell } from '../../app/AppShellContext';
 import {
   KnowledgeBaseRecord,
   DocumentPassageRecord,
+  KnowledgeAvailability,
   KnowledgeDocumentRecord,
   KnowledgeSearchHit,
 } from './managementModel';
@@ -18,6 +19,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
   const folderUid = activeFolder?.uid;
   const writable = activeFolder?.permission === 'Edit' || activeFolder?.permission === 'Admin';
   const admin = activeFolder?.permission === 'Admin';
+  const [availability, setAvailability] = useState<Loadable<KnowledgeAvailability>>({ status: 'loading' });
   const [bases, setBases] = useState<Loadable<KnowledgeBaseRecord[]>>({ status: 'loading' });
   const [selectedBaseId, setSelectedBaseId] = useState<string>();
   const [documents, setDocuments] = useState<Loadable<KnowledgeDocumentRecord[]>>({ status: 'loading' });
@@ -29,7 +31,19 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
   const selectedBase = bases.status === 'success' ? bases.data.find(({ id }) => id === selectedBaseId) : undefined;
 
   useEffect(() => {
-    if (!folderUid) {
+    const controller = new AbortController();
+    void gateway
+      .getAvailability(controller.signal)
+      .then((data) => !controller.signal.aborted && setAvailability({ status: 'success', data }))
+      .catch(
+        (error: unknown) =>
+          !isAbortError(error) && setAvailability({ status: 'error', error: toError(error) })
+      );
+    return () => controller.abort();
+  }, [gateway]);
+
+  useEffect(() => {
+    if (!folderUid || availability.status !== 'success' || availability.data.status === 'unavailable') {
       return;
     }
     const controller = new AbortController();
@@ -49,7 +63,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
       })
       .catch((error: unknown) => !isAbortError(error) && setBases({ status: 'error', error: toError(error) }));
     return () => controller.abort();
-  }, [folderUid, gateway, refreshBases]);
+  }, [availability, folderUid, gateway, refreshBases]);
 
   const loadDocuments = useCallback(
     (signal?: AbortSignal) => {
@@ -108,6 +122,15 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
   if (!folderUid) {
     return <State text="请先在 Grafana 创建 Folder，或联系管理员授予 Folder 权限。" />;
   }
+  if (availability.status === 'loading') {
+    return <State text="正在检查 Knowledge 能力…" />;
+  }
+  if (availability.status === 'error') {
+    return <ErrorState error={availability.error} retry={() => window.location.reload()} />;
+  }
+  if (availability.data.status === 'unavailable') {
+    return <State text={`Knowledge 未配置：${availability.data.reason || '服务不可用'}`} />;
+  }
   if (bases.status === 'loading') {
     return <State text="正在加载知识库…" />;
   }
@@ -158,6 +181,9 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
         )}
       </aside>
       <section className="knowledge-management-content">
+        {availability.data.status === 'degraded' && (
+          <div className="knowledge-permission-banner">Knowledge 当前降级：{availability.data.reason || '部分能力不可用'}</div>
+        )}
         {!selectedBase ? (
           <State text="创建或选择一个知识库后开始管理文档。" />
         ) : (
