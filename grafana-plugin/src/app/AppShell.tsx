@@ -328,7 +328,12 @@ function FolderDropdown({ activeFolder, error, folders, loading, onChange, onRef
             <div className="folder-list-label">Grafana Folders</div>
             {loading && <div className="folder-empty">正在加载…</div>}
             {error && <div className="folder-empty">Folder 加载失败，请刷新重试</div>}
-            {!loading && !error && filteredFolders.length === 0 && <div className="folder-empty">没有匹配的 Folder</div>}
+            {!loading && !error && folders.length === 0 && (
+              <div className="folder-empty">请先在 Grafana 创建 Folder，或联系管理员授予 Folder 权限</div>
+            )}
+            {!loading && !error && folders.length > 0 && filteredFolders.length === 0 && (
+              <div className="folder-empty">没有匹配的 Folder</div>
+            )}
             {filteredFolders.map((folder) => {
               const active = folder.uid === activeFolder?.uid;
               return (

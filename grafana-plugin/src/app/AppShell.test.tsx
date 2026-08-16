@@ -100,6 +100,15 @@ describe('AppShell', () => {
     expect(window.sessionStorage.getItem('torchbearing.fixture.shell.v1')).toBeNull();
   });
 
+  test('guides users to Grafana when no accessible Folder exists', async () => {
+    renderShell('real', { listFolders: async () => [] });
+
+    const trigger = await screen.findByRole('button', { name: /Folder: 无可用 Folder/ });
+    fireEvent.click(trigger);
+
+    expect(screen.getByText('请先在 Grafana 创建 Folder，或联系管理员授予 Folder 权限')).toBeInTheDocument();
+  });
+
   test('migrates the legacy fixture Folder selection to the product storage key', async () => {
     window.sessionStorage.setItem('torchbearing.fixture.shell.v1', 'payment');
     renderShell();
@@ -148,13 +157,20 @@ describe('AppShell', () => {
   });
 });
 
-function renderShell(runtimeMode: RuntimeMode = 'fixture') {
+function renderShell(
+  runtimeMode: RuntimeMode = 'fixture',
+  folderGateway?: { listFolders: () => Promise<typeof folders> }
+) {
   return render(
     <MemoryRouter initialEntries={['/workbench']}>
       <AppServicesProvider
         runtimeMode={runtimeMode}
         services={{
-          ...(runtimeMode === 'fixture' ? { folderGateway: { listFolders: async () => folders } } : {}),
+          ...(folderGateway
+            ? { folderGateway }
+            : runtimeMode === 'fixture'
+              ? { folderGateway: { listFolders: async () => folders } }
+              : {}),
           workbenchGateway: createFixtureWorkbenchGateway({ latencyMs: 0, streamDelayMs: 0 }),
         }}
       >

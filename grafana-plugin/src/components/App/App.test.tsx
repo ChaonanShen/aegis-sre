@@ -21,7 +21,9 @@ jest.mock('@grafana/runtime', () => ({
                   accessControl: { 'grafana-plugin-app.folder-resources:read': true },
                 },
               ]
-            : { items: [], has_more: false },
+            : request.url === '/api/access-control/user/permissions'
+              ? { 'grafana-plugin-app.folder-resources:read': ['folders:uid:ops'] }
+              : { items: [], has_more: false },
         status: 200,
         headers: new Headers(),
         config: request,

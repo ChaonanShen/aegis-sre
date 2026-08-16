@@ -34,7 +34,7 @@ export default function PlaybooksPage() {
   const admin = activeFolder?.permission === 'Admin';
 
   if (!gateway) {
-    return <div className="playbook-loading">当前没有可访问的 Grafana Folder。</div>;
+    return <div className="playbook-loading">请先在 Grafana 创建 Folder，或联系管理员授予 Folder 权限。</div>;
   }
   if (!resourceId) {
     return <PlaybookListRoute gateway={gateway} writable={runtimeMode === 'fixture' || writable} />;

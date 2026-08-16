@@ -106,7 +106,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
   };
 
   if (!folderUid) {
-    return <State text="当前没有可访问的 Grafana Folder。" />;
+    return <State text="请先在 Grafana 创建 Folder，或联系管理员授予 Folder 权限。" />;
   }
   if (bases.status === 'loading') {
     return <State text="正在加载知识库…" />;

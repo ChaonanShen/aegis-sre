@@ -7,23 +7,38 @@ interface GrafanaFolderSearchHit {
   uid: string;
   title: string;
   type: 'dash-folder';
-  accessControl?: Record<string, boolean>;
 }
+
+type GrafanaPermissions = Record<string, string[]>;
+
+const ACTION_READ = 'grafana-plugin-app.folder-resources:read';
+const ACTION_WRITE = 'grafana-plugin-app.folder-resources:write';
+const ACTION_ADMIN = 'grafana-plugin-app.folder-resources:admin';
 
 export function createGrafanaFolderGateway(backendSrv: BackendSrv = getBackendSrv()): FolderGateway {
   return {
     async listFolders(signal) {
       try {
-        const response = await lastValueFrom(
-          backendSrv.fetch<unknown[]>({
-            url: '/api/search',
-            method: 'GET',
-            params: { type: 'dash-folder', limit: 1000 },
-            abortSignal: signal,
-            showErrorAlert: false,
-          })
-        );
-        return parseFolders(response);
+        const [folders, permissions] = await Promise.all([
+          lastValueFrom(
+            backendSrv.fetch<unknown[]>({
+              url: '/api/search',
+              method: 'GET',
+              params: { type: 'dash-folder', limit: 1000 },
+              abortSignal: signal,
+              showErrorAlert: false,
+            })
+          ),
+          lastValueFrom(
+            backendSrv.fetch<unknown>({
+              url: '/api/access-control/user/permissions',
+              method: 'GET',
+              abortSignal: signal,
+              showErrorAlert: false,
+            })
+          ),
+        ]);
+        return parseFolders(folders, permissions);
       } catch (error) {
         if (isFetchError(error) && error.cancelled) {
           throw new DOMException('The operation was aborted.', 'AbortError');
@@ -34,12 +49,16 @@ export function createGrafanaFolderGateway(backendSrv: BackendSrv = getBackendSr
   };
 }
 
-function parseFolders(response: FetchResponse<unknown[]>): Folder[] {
-  if (!Array.isArray(response.data) || !response.data.every(isFolderHit)) {
+function parseFolders(folderResponse: FetchResponse<unknown[]>, permissionResponse: FetchResponse<unknown>): Folder[] {
+  if (!Array.isArray(folderResponse.data) || !folderResponse.data.every(isFolderHit)) {
     throw new Error('Grafana 返回了无效 Folder 列表。');
   }
-  return response.data.flatMap((item) => {
-    const permission = permissionOf(item.accessControl);
+  if (!isPermissionMap(permissionResponse.data)) {
+    throw new Error('Grafana 返回了无效 Folder 权限。');
+  }
+  const permissions = permissionResponse.data;
+  return folderResponse.data.flatMap((item) => {
+    const permission = permissionOf(item.uid, permissions);
     return permission ? [{ uid: item.uid, title: item.title, permission, serviceCount: 0 }] : [];
   });
 }
@@ -57,15 +76,27 @@ function isFolderHit(value: unknown): value is GrafanaFolderSearchHit {
   );
 }
 
-function permissionOf(actions: Record<string, boolean> | undefined): FolderPermission | undefined {
-  if (actions?.['grafana-plugin-app.folder-resources:admin']) {
+function isPermissionMap(value: unknown): value is GrafanaPermissions {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    Object.values(value).every((scopes) => Array.isArray(scopes) && scopes.every((scope) => typeof scope === 'string'))
+  );
+}
+
+function permissionOf(folderUID: string, permissions: GrafanaPermissions): FolderPermission | undefined {
+  if (hasFolderScope(permissions[ACTION_ADMIN], folderUID)) {
     return 'Admin';
   }
-  if (actions?.['grafana-plugin-app.folder-resources:write']) {
+  if (hasFolderScope(permissions[ACTION_WRITE], folderUID)) {
     return 'Edit';
   }
-  if (actions?.['grafana-plugin-app.folder-resources:read']) {
+  if (hasFolderScope(permissions[ACTION_READ], folderUID)) {
     return 'View';
   }
   return undefined;
+}
+
+function hasFolderScope(scopes: string[] | undefined, folderUID: string): boolean {
+  return scopes?.some((scope) => scope === 'folders:*' || scope === `folders:uid:${folderUID}`) ?? false;
 }
