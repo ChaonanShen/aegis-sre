@@ -479,9 +479,9 @@ scripts/
 | --- | --- | --- |
 | `internal/ports`、`domain` | Aegis 稳定类型 | RAGFlow/RAGLite SDK、Provider ID |
 | `internal/adapters/raglite` | sidecar HTTP contract、ID codec | Python 内部模块、DuckDB 文件 |
-| `internal/adapters/raglite/sidecar/api.py` | application service、认证 | 直接拼 SQL、直接访问 DuckDB |
-| `internal/adapters/raglite/sidecar/service.py` | repository、RAGLite facade、原文件 store | FastAPI request/response 对象 |
-| `internal/adapters/raglite/sidecar/repository.py`、`backend.py`、`original_store.py` | SQLite、DuckDB、文件系统、RAGLite | Grafana、Control Plane 内存状态 |
+| `internal/adapters/raglite/sidecar/src/aegis_raglite_sidecar/api.py` | application service、认证 | 直接拼 SQL、直接访问 DuckDB |
+| `internal/adapters/raglite/sidecar/src/aegis_raglite_sidecar/service.py` | repository、RAGLite facade、原文件 store | FastAPI request/response 对象 |
+| `internal/adapters/raglite/sidecar/src/aegis_raglite_sidecar/repository.py`、`backend.py`、`original_store.py` | SQLite、DuckDB、文件系统、RAGLite | Grafana、Control Plane 内存状态 |
 | `deploy/raglite` | 镜像、卷、secret、网络 | 业务逻辑、Provider 映射 |
 
 ### 13.2 数据所有权

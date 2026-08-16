@@ -200,15 +200,15 @@ POST .../{knowledge_base_id}/scope-migrations
 
 ### P2：RAGLite sidecar 状态机和持久化
 
-- [ ] 修改 SQLite schema，使上传事务创建 Document 和唯一 queued index job。
-- [ ] 上传文件、Document manifest 和任务创建失败时实现可恢复补偿；不留下无任务 queued 文档。
-- [ ] worker 用条件更新 claim queued 任务，并执行 queued -> indexing -> ready/failed。
-- [ ] 增加 metadata/index generation，合并 queued 更新并处理 indexing 期间的后续修改。
-- [ ] metadata 更新对 ready/failed 自动排队；queued 合并；indexing 完成后发现新 generation 时再次排队。
-- [ ] retry_index 实现为幂等状态转换，不暴露内部 job。
+- [x] 修改 SQLite schema，使上传事务创建 Document 和唯一 queued index job。
+- [x] 上传文件、Document manifest 和任务创建失败时实现可恢复补偿；不留下无任务 queued 文档。
+- [x] worker 用条件更新 claim queued 任务，并执行 queued -> indexing -> ready/failed。
+- [x] 增加 metadata/index generation，合并 queued 更新并处理 indexing 期间的后续修改。
+- [x] metadata 更新对 ready/failed 自动排队；queued 合并；indexing 完成后发现新 generation 时再次排队。
+- [x] retry_index 实现为幂等状态转换，不暴露内部 job。
 - [ ] 启动时恢复遗留 indexing、清理半成品，限制自动 attempts，最终失败可由用户重试。
-- [ ] queued 删除取消内部未运行任务；indexing 删除返回稳定 conflict。
-- [ ] Knowledge Base 非空删除返回稳定 conflict，不级联。
+- [x] queued 删除取消内部未运行任务；indexing 删除返回稳定 conflict。
+- [x] Knowledge Base 非空删除返回稳定 conflict，不级联。
 - [ ] Search 强制只返回 ready Document，并验证 scope、Knowledge Base 和 service/tag 过滤。
 - [ ] Passage 映射为 ordinal/text/location，不返回 DuckDB Chunk ID。
 - [ ] 相同幂等键和相同 payload 返回已有资源；异 payload 返回 idempotency conflict。
@@ -251,6 +251,7 @@ POST .../{knowledge_base_id}/scope-migrations
 
 ### P5：Grafana Plugin 产品闭环
 
+- [ ] Grafana Plugin、TypeScript 生成类型和公共 OpenAPI 不感知 sidecar 的语言、目录、服务名或内部协议。
 - [ ] real 模式只展示 Knowledge Base、Documents、Search 和 Passage；不恢复 fixture Service/Import/独立 Runbook 模型。
 - [ ] 上传后直接显示 queued，不再显示 pending 或“开始索引”按钮。
 - [ ] 只在 queued/indexing 时有限轮询；离开 Folder/Knowledge Base 或组件卸载时取消请求。
@@ -289,7 +290,7 @@ POST .../{knowledge_base_id}/scope-migrations
 ### P7：安全、恢复和可观测性
 
 - [ ] 固定 RAGLite、Python、DuckDB、Pandoc、模型、扩展和最终镜像 digest。
-- [ ] RAGLite 完整依赖、sidecar 测试和 Ruff 固定在 Linux/amd64 容器执行；Intel macOS 因
+- [x] RAGLite 完整依赖、sidecar 测试和 Ruff 固定在 Linux/amd64 容器执行；Intel macOS 因
   `onnxruntime 1.28.0` 无 x86_64 wheel，只运行不依赖真实 Runtime 的轻量测试，不能修改锁文件绕过。
 - [ ] 模型和 FTS/VSS 扩展离线预热，稳态启动和首次索引不访问公网。
 - [ ] 文件扩展名、MIME、实际内容、畸形文件和解析超时采用一致 fail-closed 策略。
