@@ -228,6 +228,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
               <DocumentsPanel
                 busy={busy}
                 documents={documents}
+                clearPassageTarget={() => setPassageTarget(undefined)}
                 folderUid={folderUid}
                 gateway={gateway}
                 knowledgeBaseId={selectedBase.id}
@@ -320,6 +321,7 @@ function KnowledgeBaseActions({
 
 function DocumentsPanel({
   busy,
+  clearPassageTarget,
   documents,
   folderUid,
   gateway,
@@ -330,6 +332,7 @@ function DocumentsPanel({
   writable,
 }: {
   busy: boolean;
+  clearPassageTarget: () => void;
   documents: Loadable<KnowledgeDocumentRecord[]>;
   folderUid: string;
   gateway: KnowledgeManagementGateway;
@@ -384,15 +387,6 @@ function DocumentsPanel({
       );
   }, [folderUid, gateway, knowledgeBaseId]);
 
-  useEffect(() => {
-    if (!passageTarget || passageTarget.knowledgeBaseId !== knowledgeBaseId || documents.status !== 'success') {
-      return;
-    }
-    const document = documents.data.find(({ id }) => id === passageTarget.documentId);
-    if (document) {
-      showPassages(document, passageTarget.ordinal);
-    }
-  }, [documents, knowledgeBaseId, passageTarget, showPassages]);
   const download = async (document: KnowledgeDocumentRecord) => {
     await mutate(async () => {
       const blob = await gateway.downloadDocument(folderUid, knowledgeBaseId, document.id);
@@ -410,6 +404,10 @@ function DocumentsPanel({
   if (documents.status === 'error') {
     return <ErrorState error={documents.error} retry={refresh} />;
   }
+  const citationDocument =
+    passageTarget?.knowledgeBaseId === knowledgeBaseId
+      ? documents.data.find(({ id }) => id === passageTarget.documentId)
+      : undefined;
   return (
     <>
       {writable && (
@@ -483,6 +481,17 @@ function DocumentsPanel({
           document={passages.document}
           focusedOrdinal={passages.ordinal}
           state={passages.state}
+        />
+      )}
+      {citationDocument && passageTarget && (
+        <CitationPassagesPanel
+          close={clearPassageTarget}
+          document={citationDocument}
+          folderUid={folderUid}
+          gateway={gateway}
+          key={passageTarget.request}
+          knowledgeBaseId={knowledgeBaseId}
+          ordinal={passageTarget.ordinal}
         />
       )}
     </>
@@ -613,6 +622,36 @@ function PassagesPanel({
       )}
     </section>
   );
+}
+
+function CitationPassagesPanel({
+  close,
+  document,
+  folderUid,
+  gateway,
+  knowledgeBaseId,
+  ordinal,
+}: {
+  close: () => void;
+  document: KnowledgeDocumentRecord;
+  folderUid: string;
+  gateway: KnowledgeManagementGateway;
+  knowledgeBaseId: string;
+  ordinal: number;
+}) {
+  const [state, setState] = useState<Loadable<DocumentPassageRecord[]>>({ status: 'loading' });
+  useEffect(() => {
+    const controller = new AbortController();
+    void gateway
+      .listPassages(folderUid, knowledgeBaseId, document.id, controller.signal)
+      .then((data) => !controller.signal.aborted && setState({ status: 'success', data }))
+      .catch(
+        (error: unknown) =>
+          !isAbortError(error) && setState({ status: 'error', error: toError(error) })
+      );
+    return () => controller.abort();
+  }, [document.id, folderUid, gateway, knowledgeBaseId]);
+  return <PassagesPanel close={close} document={document} focusedOrdinal={ordinal} state={state} />;
 }
 
 function SearchPanel({
