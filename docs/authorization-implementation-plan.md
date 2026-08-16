@@ -1,6 +1,6 @@
 # Aegis SRE 统一权限实施计划
 
-- 状态：待执行
+- 状态：执行中（核心 REST/前端权限闭环已完成，生产委托与真实环境验收待完成）
 - 日期：2026-08-16
 - 设计基线：[权限与资源归属设计](authorization.md)
 - 基线提交：`f26ee4d`
@@ -8,15 +8,14 @@
 
 ## 1. 结论与实施原则
 
-现有 Knowledge、Playbook 和 Agent 会话链路已经足以开始接入权限，但不能把同一套 Folder 规则机械地套到
+Knowledge、Playbook 和 Agent 会话链路已经接入首版权限，但不能把同一套 Folder 规则机械地套到
 所有接口：
 
 - Agent Session、Message 和 Canvas 是 User-owned。列出、打开、改名、归档和删除 Session 只校验当前用户是
   owner；只有发起 Turn、调用 Folder 资源和处理高风险审批时才检查 Folder。
-- Knowledge Base 和 Document 是 Folder-owned。现有代码已有最小 read/write 授权链，应先迁移到通用
-  read/write/admin 基础设施，再完成真实前端闭环。
-- Playbook、Run、Step、Approval 和 Artifact 是 Folder-owned。当前实现只有 Grafana Org Role 和 Org-scoped
-  `pbk_` ID，不具备 Folder ownership；必须先通过 ADR 冻结 Dagu 原生事实来源及兼容迁移，再改代码。
+- Knowledge Base 和 Document 是 Folder-owned。现已迁移到通用 read/write/admin 授权链，并完成真实前端闭环。
+- Playbook、Run、Step、Approval 和 Artifact 是 Folder-owned。现已使用 Dagu 原生 label 保存 Folder ownership，
+  并为旧 Org-scoped `pbk_` 资源提供显式 Folder 下的只读兼容窗口。
 - MCP 固定 Token 只代表工作负载。单 Actor 模式可以继续作为过渡部署，多用户模式不得在逐 Turn 委托能力
   落地前开放 Folder-scoped 工具，尤其不能开放 `playbook.start` 等写操作。
 
@@ -27,28 +26,32 @@
 
 | 区域 | 当前行为 | 主要缺口 |
 | --- | --- | --- |
-| Plugin manifest | 只注册 `knowledge:read/write` action | 缺少通用 `folder-resources:read/write/admin` |
-| Plugin Backend | 只识别 Knowledge 路径；read/write 两级 | Playbook、Turn、SSE、下载没有 RoutePolicy；没有 admin |
-| Control Plane | Knowledge handler 直接解析 Folder Header | 授权上下文分散；Playbook 仍按 Grafana Editor/Admin Role 判断 |
-| Folder 前端 | real 模式能查询 Grafana Folder | TopBar 只在 fixture 模式显示；缺少通用 action 映射；无 action 被默认成 View |
-| Knowledge | REST、Provider、最小真实页面基本接通 | 搜索路径不一致；删除没有 admin；尚未使用统一授权器 |
-| Playbook | CRUD、Run、SSE、Human Task、Approval、Artifact 已接 Dagu | Gateway 不发送 Folder；ID 只验证 Org；资源响应没有 Folder |
-| Agent Session | Session、Turn、Codex 审批和 Canvas 已接通 | 仅单 Actor；Turn Gateway 不发送 Folder；审批目标 Folder 无法服务端恢复 |
-| Knowledge/Playbook MCP | 固定 Actor + Folder allowlist | 不能代表发起 Turn 的 Grafana 用户；缺少逐 Turn 委托能力 |
-| Audit | 结构化日志和 trace 基础存在 | 未统一记录 requested/authorized/resource Folder scope |
+| Plugin manifest | 已注册 `folder-resources:read/write/admin` actionSets | 修改 manifest 后仍需在真实 Grafana 重启验收 |
+| Plugin Backend | RoutePolicy 覆盖 Knowledge、Playbook、Turn、SSE 和下载；默认拒绝未知 API | 真实 Grafana authz 故障与权限撤销场景待 E2E |
+| Control Plane | 使用统一可信 FolderAuthorization，按 read/write/admin 二次校验 | `resource_folder_uid` 审计需随生产审计投影继续完善 |
+| Folder 前端 | real 模式展示 Folder 选择器并映射通用 action；无 action 时不可选择 | 多用户权限变更和深链接待真实浏览器验收 |
+| Knowledge | REST、Provider、MCP 和真实页面已形成 Folder 权限闭环 | v1 user-bound 数据只读兼容窗口需迁移运营方案 |
+| Playbook | Dagu label ownership、父级复核、权限 UI、旧资源只读兼容均已接入 | 真实 Dagu 的跨 Folder/SSE/Artifact 验收待执行 |
+| Agent Session | Session 保持 User-owned；Turn 已发送并校验 Folder context | 仍是单 Actor；approve 因无法恢复可信目标而禁用 |
+| Knowledge/Playbook MCP | 固定 Actor + Folder allowlist；Playbook 写工具默认关闭 | 缺少逐 Turn 用户委托能力，不能开放多用户写工具 |
+| Audit | Plugin Backend 与 Control Plane 已区分 requested/authorized scope | 生产日志投影、脱敏查询和 orphan inventory 待完成 |
 
-已确认的具体代码缺口：
+已完成的关键修正：
 
-1. `grafana-plugin/pkg/plugin/proxy_app.go` 中 action、路径策略、权限缓存前缀都仍是 Knowledge 专用。
-2. `internal/platform/httpserver/playbooks.go` 的写权限依赖 Grafana `Editor/Admin` Role，`PlaybookScopeKey` 只包含
-   Tenant/Org，不包含 Folder。
-3. `grafana-plugin/src/features/playbooks/adapters/resourcePlaybookCrudGateway.ts` 的所有请求都没有 Folder Header。
-4. `grafana-plugin/src/features/workbench/adapters/resourceWorkbenchGateway.ts` 收到 `activeFolder` 后没有把它发送给
-   `turns:stream`；Session CRUD 不发送 Folder 是正确行为，应保持。
-5. `grafana-plugin/src/features/knowledge/adapters/resourceKnowledgeManagementGateway.ts` 使用
-   `/api/v1/knowledge/search`，而 OpenAPI、Control Plane 和 Plugin Backend 使用 `/api/v1/knowledge:search`。
-6. Codex pending Approval 只保存在运行时内存中，只绑定 Thread/Turn，没有稳定的 Folder、目标资源和风险策略
-   事实；浏览器中的 `pendingHITLFolderUidRef` 不能用于服务端授权。
+1. Plugin manifest、Plugin Backend RoutePolicy 和 Control Plane 已统一为 Folder read/write/admin。
+2. Knowledge v2 scope 已去除 User，使同 Folder 用户能够共享；旧 v1 user-bound 数据仅允许原创建者只读。
+3. Playbook Folder ownership 由 Dagu YAML 原生 label 承载，所有子资源操作先恢复 Playbook 并复核 Folder。
+4. Workbench Turn、Playbook CRUD/SSE/Artifact 和 Knowledge Gateway 均发送当前 Folder context；Session CRUD 不发送
+   Folder，保持 User-owned 语义。
+5. 无法持久化可信目标的 Agent approve 返回 `capability_unavailable`；Playbook MCP 写工具默认不注册。
+6. 两层授权日志区分 requested/authorized Folder，拒绝请求不会把浏览器声明提升为可信 scope。
+
+仍未完成且不得绕过的工作：
+
+1. Codex/OpenCode 运行时尚不能安全注入逐 Turn 短期委托；多用户 Agent Folder 工具保持不可用。
+2. Agent Provider 尚不能持久化并恢复原生审批目标；approve 保持 fail-closed，reject 仍可终止等待。
+3. Grafana Folder 与 Provider 根资源的只读 orphan reconciliation 尚未实现。
+4. 三用户、三 Folder 的真实 Grafana + Dagu + Knowledge Provider 生产验收尚未执行。
 
 ## 3. 首版权限矩阵
 

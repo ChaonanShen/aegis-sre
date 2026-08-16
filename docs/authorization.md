@@ -227,17 +227,17 @@ domain-specific action。首版优先保持统一 Folder access，避免每个�
 
 | 功能 | 事实来源 | 目标归属 | 当前状态 | 目标权限 |
 | --- | --- | --- | --- | --- |
-| Session / Message / Turn | Agent Provider | User | 已有单 Actor scope；Folder 不持久化 | owner；Turn 额外校验 Folder |
+| Session / Message / Turn | Agent Provider | User | 单 Actor scope；Turn 已校验请求时 Folder，Folder 不持久化 | owner；Turn 额外校验 Folder |
 | Canvas | Aegis SQLite | Session/User | SQLite 以 Tenant/Org/User/Session 为主键 | 继承 Session owner |
-| Knowledge Base / Document | Knowledge Provider | Folder | 已完成最小 Folder 授权链 | read/write/admin |
+| Knowledge Base / Document | Knowledge Provider | Folder | 已完成通用 Folder 授权、父级复核和 v1 只读兼容 | read/write/admin |
 | 人类 Runbook | Knowledge Provider | Folder | 真实页面暂未形成分类闭环 | 按 Knowledge 文档处理 |
-| Playbook | Dagu YAML | Folder | 当前只有 Org 级 scope，无 Folder/owner | read/write/admin |
-| Run / Step / Artifact | Dagu | Playbook Folder | 当前继承 Org scoped Playbook ID | 继承 Playbook |
+| Playbook | Dagu YAML | Folder | Dagu 原生 label 保存 Folder ownership；旧资源只读兼容 | read/write/admin |
+| Run / Step / Artifact | Dagu | Playbook Folder | 所有操作从 Run 追溯并复核 Playbook Folder | 继承 Playbook |
 | Skill 草稿 | 未接真实 Provider | User | real 模式不可用 | owner |
 | 发布 Skill | 未接真实 Provider | Folder | real 模式不可用 | read/write/admin |
 | Alert Rule / Dashboard | Grafana | Grafana Folder | real 功能尚未完整接通 | Grafana 原生权限 |
-| Approval | Agent/Dagu/目标 Provider | 继承目标 | real 统一工作台尚未完成 | 按目标资源和风险 |
-| Audit | 可观测性/审计事实来源 | 继承事件目标 | 当前为 fixture | Folder/User/Org 投影 |
+| Approval | Agent/Dagu/目标 Provider | 继承目标 | Dagu 按 Playbook Folder；Agent approve 暂时 fail-closed | 按目标资源和风险 |
+| Audit | 可观测性/审计事实来源 | 继承事件目标 | 两层已输出结构化授权日志；页面仍为 fixture | Folder/User/Org 投影 |
 | Plugin Configuration | Grafana Plugin Settings | Org | 当前配置页限 Admin | Org Admin |
 
 ## 6. Workbench、Session 与 Agent
@@ -265,9 +265,11 @@ Session、Message 和 Canvas 是 User-owned。Folder 是每次 Agent Turn 的授
 - `agentscope.Provider` 当前校验部署配置中的固定 Tenant/Org/User，属于单 Actor 过渡实现。
 - Session 公共模型和 `CreateAgentSessionInput` 不持久化 Folder。
 - Control Plane 在 StartTurn 时把可信 Actor Folder 放入 `StartTurnInput.FolderUID`。
-- 真实 Workbench Gateway 当前没有在 `turns:stream` 请求中发送 active Folder Header，因此 Plugin Backend
-  还不能对真实 Turn 建立 Folder 授权上下文。
-- Plugin Backend 当前只对 Knowledge 路径执行 Folder RBAC，Session 路径会直接通过代理。
+- 真实 Workbench Gateway 在 `turns:stream` 请求中发送 active Folder Header，Plugin Backend 要求 Folder read；
+  Session CRUD 不要求 Folder，继续由 Agent Provider 校验 owner。
+- 当前 Codex pending Approval 无法持久化可信 Folder/目标/revision，因此 approve 返回
+  `capability_unavailable`；浏览器状态不会被当作授权事实。reject 仍可用于安全终止等待。
+- 逐 Turn 用户委托尚未落地；固定身份 Playbook MCP 写工具默认关闭，不能用于多用户模式。
 
 ### 6.3 历史会话权限撤销语义
 
@@ -299,21 +301,20 @@ Knowledge Base 是 Folder-owned 根资源，Document、Chunk、检索引用继�
 
 ### 7.2 当前代码状态
 
-Knowledge 是目前最完整的参考链路：
+Knowledge 已形成首版完整参考链路：
 
 - 前端 Gateway 提交 Folder UID Header；
 - Plugin Backend 使用 Grafana scoped action 检查 Folder；
 - Control Plane 要求可信 `X-Aegis-Folder-Access`；
-- Knowledge 公共 ID 和 Provider metadata 绑定 Actor/Folder scope；
+- Knowledge v2 公共 ID 和 Provider metadata 绑定 Tenant/Org/Folder scope，不再绑定创建用户；
 - RAGLite/RAGFlow adapter 在读取和变更时重新校验 scope；
 - Knowledge MCP 使用服务端 Token 绑定固定 Actor 和 Folder allowlist。
 
-当前仍需通用化的部分：
+兼容和验收边界：
 
-- Plugin Backend action 和路由判断仍是 Knowledge 专用；
-- `FolderAccess` 尚未进入统一请求授权上下文，Knowledge handler 直接读取 Header；
-- 当前只有 `read/write`，尚未区分 `admin`；
-- 前端 real 模式的 Folder 选择器尚未开放；
+- 旧 v1 scope 仍绑定 User，仅允许原创建者在同 Folder 只读；所有写操作要求迁移到 v2；
+- Knowledge Base 删除要求 Folder admin，Document 删除要求 write；
+- real 模式 Folder 选择器和 View/Edit/Admin 按钮控制已接入；
 - 真实浏览器到 Provider 的跨 Folder E2E 尚未成为发布门禁。
 
 ## 8. Playbook、Run、Approval 与 Artifact
@@ -343,22 +344,18 @@ Folder
 是否允许 Folder View 用户启动无副作用 Playbook 不在首版展开。默认所有 Run 都可能产生副作用，因此启动
 统一要求 `write`，不能依赖 YAML 中由调用方自由声明的 `side_effect` 字段降低权限。
 
-### 8.2 当前代码状态与缺口
+### 8.2 当前代码状态与兼容边界
 
 - Dagu YAML 是唯一事实来源，Control Plane 不保存副本。
-- 当前 `PlaybookResource` 没有 Folder、owner 或 visibility。
-- 当前公共 ID 只包含 Tenant/Org scope 前缀；Dagu List 只过滤 Org scope。
-- 当前写操作依据 Grafana 全局 Editor/Admin role，不是目标 Folder 权限。
-- 当前真实 Playbook Gateway 不提交 Folder Header。
-- Run/Artifact 的 URL 只包含公共 ID，尚不能从公开契约稳定恢复 Folder。
-
-在实现 Playbook Folder 授权前，必须先通过 ADR 决定 Folder scope 如何由 Dagu 原生事实来源承载：
-
-1. 优先使用固定版本 Dagu 能稳定保存、枚举和回读的原生 metadata/tag；或
-2. 将不可逆 Folder scope 编入 Aegis 管理的公共 ID/文件名命名空间。
-
-不得新增 Playbook ownership 影子表，不得把 fixture 的 `visibility/folder_uid` 自定义字段直接当成
-生产授权事实。已有 Org-scoped Playbook 必须有兼容读取和回退窗口，不能直接删除或隐式改名。
+- `PlaybookResource` 暴露经 Provider 复核的 `folder_uid`；前端拒绝与请求 Folder 不一致的响应。
+- 新 Playbook 公共 ID 使用 Tenant/Org/Folder scope，Dagu YAML 原生 label 保存不可逆 Folder ownership 指纹。
+- List/Get/Run/SSE/Human Task/Approval/Artifact 均先恢复 Playbook，并复核请求 Folder 与原生 label。
+- Plugin Backend、Control Plane 和真实 Playbook Gateway 已统一使用 Folder read/write/admin，不再用 Grafana Org
+  Editor/Admin role 授权 Folder 资源。
+- 配置 `AEGIS_PLAYBOOK_LEGACY_FOLDER_UID` 后，旧 Org-scoped、无 ownership label 的 Playbook 仅可在该 Folder
+  读取一到两个发布周期；所有变更和执行操作均 fail-closed。
+- 未新增 ownership 影子表，也未把 fixture 的 `visibility/folder_uid` 当成生产事实。
+- 真实 Dagu 的多用户跨 Folder、SSE 断线恢复和 Artifact 下载仍需作为生产 E2E 门禁执行。
 
 ## 9. Skill
 
