@@ -59,6 +59,11 @@ func (c *Client) ListCollections(ctx context.Context, scope, folder string) ([]C
 	err := c.doJSON(ctx, http.MethodGet, "/v1/collections?"+url.Values{"folder_uid": {folder}}.Encode(), scope, nil, &out, false)
 	return out.Items, err
 }
+func (c *Client) InventoryCollections(ctx context.Context, scope string) ([]Collection, error) {
+	var out listCollectionsResponse
+	err := c.doJSON(ctx, http.MethodGet, "/v1/admin/ownership-inventory", scope, nil, &out, false)
+	return out.Items, err
+}
 func (c *Client) GetCollection(ctx context.Context, scope, id string) (Collection, error) {
 	var out Collection
 	err := c.doJSON(ctx, http.MethodGet, "/v1/collections/"+url.PathEscape(id), scope, nil, &out, false)

@@ -84,6 +84,20 @@ func TestProviderFiltersNonAegisDAGs(t *testing.T) {
 	}
 }
 
+func TestOwnershipInventoryReportsUnknownFolderKeyAsOrphan(t *testing.T) {
+	labels := expectedOwnershipLabels("deleted-folder")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"dags":[{"fileName":"pbk_abcdefgh","dag":{"labels":["aegis.managed=true","aegis.owner.kind=folder","aegis.owner.version=1","aegis.folder.key=` + labels[labelFolderKey] + `"]}}],"pagination":{"totalPages":1}}`))
+	}))
+	defer server.Close()
+	client, _ := NewClient(server.URL, server.Client())
+	provider, _ := NewProvider(client)
+	items, err := provider.InventoryOwnership(context.Background(), providerTestActor(""), []string{"infra", "payment"})
+	if err != nil || len(items) != 1 || items[0].State != ports.OwnershipOrphan || items[0].OwnerKey != labels[labelFolderKey] {
+		t.Fatalf("items=%+v err=%v", items, err)
+	}
+}
+
 func TestProviderEnforcesStoredFolderOwnershipBeforeReadWriteAndRun(t *testing.T) {
 	t.Parallel()
 	mutations := 0

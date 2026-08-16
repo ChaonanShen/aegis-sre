@@ -366,6 +366,19 @@ func TestListChunksHashesProviderIDsAndMapsPagination(t *testing.T) {
 	}
 }
 
+func TestOwnershipInventoryClassifiesActiveAndOrphanDatasets(t *testing.T) {
+	provider, fake, codec, actor := newTestProvider(t)
+	activeScope, _ := codec.ScopeFingerprint(actor)
+	fake.datasets = []Dataset{
+		testDataset(t, "kbs_active12345", "Active", activeScope),
+		testDataset(t, "kbs_orphan12345", "Orphan", "scp_deleted"),
+	}
+	items, err := provider.InventoryOwnership(context.Background(), actor, []string{actor.FolderUID})
+	if err != nil || len(items) != 2 || items[0].State != ports.OwnershipActive || items[1].State != ports.OwnershipOrphan {
+		t.Fatalf("items=%+v err=%v", items, err)
+	}
+}
+
 func TestFailedDocumentUsesSanitizedReason(t *testing.T) {
 	scope := "scp_abcdefgh"
 	documentID := domain.ID("doc_abcdefgh")

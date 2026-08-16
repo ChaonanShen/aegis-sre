@@ -112,6 +112,10 @@ def create_app(
         items = service.list_collections(actor_scope, folder_uid)
         return {"items": [asdict(item) for item in items], "total": len(items)}
 
+    @app.get("/v1/admin/ownership-inventory")
+    def ownership_inventory(_: str = Depends(scope)):
+        return {"items": [asdict(item) for item in service.inventory_collections()]}
+
     @app.post("/v1/collections", status_code=status.HTTP_201_CREATED)
     def create_collection(body: CollectionCreate, actor_scope: str = Depends(scope)):
         return asdict(

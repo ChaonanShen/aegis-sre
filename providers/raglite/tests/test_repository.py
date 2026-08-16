@@ -75,6 +75,18 @@ def test_collection_scope_migration_is_atomic_for_collection_and_documents(tmp_p
         repository.get_collection("kbs_abcdefgh", "scp_legacy")
 
 
+def test_ownership_inventory_is_not_filtered_by_scope(tmp_path: Path) -> None:
+    repository = new_repository(tmp_path)
+    repository.create_collection(collection("scp_folder_a"))
+    repository.create_collection(
+        Collection(id="kbs_other001", name="Other", folder_uid="folder-b", scope="scp_folder_b")
+    )
+    assert [item.id for item in repository.inventory_collections()] == [
+        "kbs_abcdefgh",
+        "kbs_other001",
+    ]
+
+
 def test_document_cannot_cross_collection_scope(tmp_path: Path) -> None:
     repository = new_repository(tmp_path)
     repository.create_collection(collection())

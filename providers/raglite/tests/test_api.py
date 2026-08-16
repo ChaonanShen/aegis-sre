@@ -125,6 +125,19 @@ def test_scope_migration_moves_collection_without_reuploading_documents(tmp_path
     assert backend.indexed == []
 
 
+def test_admin_ownership_inventory_requires_service_auth_but_not_resource_scope(tmp_path: Path) -> None:
+    client, _, _ = new_client(tmp_path)
+    client.post(
+        "/v1/collections",
+        headers=headers("scp_deleted"),
+        json={"id": "kbs_abcdefgh", "name": "Operations", "folder_uid": "deleted"},
+    )
+    assert client.get("/v1/admin/ownership-inventory").status_code == 401
+    response = client.get("/v1/admin/ownership-inventory", headers=headers("scp_inventory"))
+    assert response.status_code == 200
+    assert response.json()["items"][0]["folder_uid"] == "deleted"
+
+
 def test_invalid_threshold_returns_stable_capability_error(tmp_path: Path) -> None:
     client, _, _ = new_client(tmp_path)
     client.post(

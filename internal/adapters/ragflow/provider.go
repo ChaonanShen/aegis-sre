@@ -69,6 +69,46 @@ func (provider *Provider) Check(ctx context.Context) error {
 	return mapProviderError(err)
 }
 
+func (provider *Provider) InventoryOwnership(ctx context.Context, base domain.ActorContext, folderUIDs []string) ([]ports.RootResourceOwnership, error) {
+	known := make(map[string]string, len(folderUIDs))
+	for _, folderUID := range folderUIDs {
+		actor := base
+		actor.FolderUID = folderUID
+		scope, err := provider.ids.ScopeFingerprint(actor)
+		if err != nil {
+			return nil, invalidArgument(err)
+		}
+		known[scope] = folderUID
+	}
+	datasets, err := provider.listAllDatasets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	output := make([]ports.RootResourceOwnership, 0)
+	for _, dataset := range datasets {
+		if !strings.HasPrefix(dataset.Name, "aegis__kbs_") {
+			continue
+		}
+		id, idErr := knowledgeid.PublicIDFromDatasetName(dataset.Name)
+		metadata, valid := parseDatasetMetadata(dataset.Description)
+		item := ports.RootResourceOwnership{Kind: "knowledge_base", ID: id, State: ports.OwnershipInvalid}
+		if idErr == nil && valid {
+			switch metadata.Version {
+			case legacyMetadataVersion:
+				item.OwnerKey, item.State = metadata.Scope, ports.OwnershipLegacy
+			case metadataVersion:
+				if folderUID := known[metadata.Scope]; folderUID != "" {
+					item.FolderUID, item.State = folderUID, ports.OwnershipActive
+				} else {
+					item.OwnerKey, item.State = metadata.Scope, ports.OwnershipOrphan
+				}
+			}
+		}
+		output = append(output, item)
+	}
+	return output, nil
+}
+
 func (provider *Provider) ListCollections(ctx context.Context, actor domain.ActorContext, folderUID string, page domain.PageRequest) (domain.Page[ports.KnowledgeCollection], error) {
 	if err := requireScope(actor, folderUID); err != nil {
 		return domain.Page[ports.KnowledgeCollection]{}, err
@@ -827,3 +867,4 @@ func isNotFound(err error) bool {
 }
 
 var _ ports.KnowledgeProvider = (*Provider)(nil)
+var _ ports.OwnershipInventoryProvider = (*Provider)(nil)

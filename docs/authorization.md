@@ -713,6 +713,9 @@ Skills 各自解析 Header。Header 名称是平台传输细节，不应散落�
 4. 如需多 Org，先替换当前单 Org 托管 Service Account 假设。
 5. 建立 Folder orphan inventory/reconciliation 和受审计治理入口，不自动级联删除 Provider 数据。
 
+只读 inventory 已由 [`cmd/ownership-inventory`](ownership-inventory.md) 落地：它实时读取 Grafana Folder，枚举
+Dagu/Knowledge Provider 原生 ownership，并输出 active/orphan/legacy/invalid；治理修改入口仍需单独设计和审计。
+
 ## 21. 必须先确认的未决问题
 
 以下首版语义已经冻结：Session 历史采用授权时点快照；Playbook 使用 Dagu 原生 labels 保存 Folder owner；删除

@@ -69,6 +69,9 @@ class KnowledgeService:
     def list_collections(self, scope: str, folder_uid: str) -> list[Collection]:
         return self.repository.list_collections(scope, folder_uid)
 
+    def inventory_collections(self) -> list[Collection]:
+        return self.repository.inventory_collections()
+
     def get_collection(self, collection_id: str, scope: str) -> Collection:
         return self.repository.get_collection(collection_id, scope)
 

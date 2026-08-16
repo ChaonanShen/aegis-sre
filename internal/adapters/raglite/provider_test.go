@@ -200,6 +200,22 @@ func TestProviderRejectsCrossFolderBeforeCallingProvider(t *testing.T) {
 	}
 }
 
+func TestOwnershipInventoryClassifiesCurrentLegacyAndOrphanCollections(t *testing.T) {
+	provider, fake, _, actor := testProvider(t)
+	legacy := fake.collection()
+	legacy.ID, legacy.Scope = "kbs_legacy12345", fake.legacyScope
+	fake.legacyCollection = &legacy
+	items, err := provider.InventoryOwnership(context.Background(), actor, []string{actor.FolderUID})
+	if err != nil || len(items) != 2 || items[0].State != ports.OwnershipActive || items[1].State != ports.OwnershipLegacy {
+		t.Fatalf("items=%+v err=%v", items, err)
+	}
+	fake.legacyCollection.FolderUID = "deleted-folder"
+	items, err = provider.InventoryOwnership(context.Background(), actor, []string{actor.FolderUID})
+	if err != nil || items[1].State != ports.OwnershipOrphan {
+		t.Fatalf("orphan items=%+v err=%v", items, err)
+	}
+}
+
 func assertCode(t *testing.T, err error, code domain.ErrorCode) {
 	t.Helper()
 	var appErr *domain.AppError
@@ -250,6 +266,12 @@ func (f *fakeClient) ListCollections(_ context.Context, scope, _ string) ([]Coll
 		return []Collection{*f.legacyCollection}, nil
 	}
 	return []Collection{f.collection()}, nil
+}
+func (f *fakeClient) InventoryCollections(context.Context, string) ([]Collection, error) {
+	if f.legacyCollection != nil {
+		return []Collection{f.collection(), *f.legacyCollection}, f.err
+	}
+	return []Collection{f.collection()}, f.err
 }
 func (f *fakeClient) GetCollection(_ context.Context, scope, id string) (Collection, error) {
 	f.lastScope = scope

@@ -58,6 +58,55 @@ func (provider *Provider) Check(ctx context.Context) error {
 	return err
 }
 
+func (provider *Provider) InventoryOwnership(ctx context.Context, _ domain.ActorContext, folderUIDs []string) ([]ports.RootResourceOwnership, error) {
+	known := make(map[string]string, len(folderUIDs))
+	for _, folderUID := range folderUIDs {
+		known[folderOwnershipKey(folderUID)] = folderUID
+	}
+	var output []ports.RootResourceOwnership
+	for page := 1; ; page++ {
+		result, err := provider.client.ListDAGs(ctx, page, 200)
+		if err != nil {
+			return nil, err
+		}
+		for _, dag := range result.DAGs {
+			id, validID := playbookIDFromFileName(dag.FileName)
+			labels := parseOwnershipLabels(dag.DAG.Labels)
+			if labels[labelManaged] != "true" {
+				if validID && provider.legacyFolderUID != "" {
+					output = append(output, ports.RootResourceOwnership{Kind: "playbook", ID: id, FolderUID: provider.legacyFolderUID, State: ports.OwnershipLegacy})
+				}
+				continue
+			}
+			ownerKey := labels[labelFolderKey]
+			item := ports.RootResourceOwnership{Kind: "playbook", ID: id, OwnerKey: ownerKey, State: ports.OwnershipInvalid}
+			if validID && labels[labelOwnerKind] == "folder" && labels[labelOwnerVersion] == "1" && len(ownerKey) == 64 {
+				if folderUID := known[ownerKey]; folderUID != "" {
+					item.FolderUID, item.OwnerKey, item.State = folderUID, "", ports.OwnershipActive
+				} else {
+					item.State = ports.OwnershipOrphan
+				}
+			}
+			output = append(output, item)
+		}
+		if result.TotalPages == 0 || page >= result.TotalPages {
+			break
+		}
+	}
+	return output, nil
+}
+
+func parseOwnershipLabels(values []string) map[string]string {
+	parsed := make(map[string]string, len(values))
+	for _, value := range values {
+		key, item, ok := strings.Cut(strings.TrimSpace(value), "=")
+		if ok {
+			parsed[strings.ToLower(strings.TrimSpace(key))] = strings.ToLower(strings.TrimSpace(item))
+		}
+	}
+	return parsed
+}
+
 func (provider *Provider) List(ctx context.Context, actor domain.ActorContext, request domain.PageRequest) (domain.Page[ports.PlaybookResource], error) {
 	limit := request.Limit
 	if limit <= 0 || limit > 200 {
@@ -743,3 +792,4 @@ func stringValue(value any) string {
 }
 
 var _ ports.PlaybookProvider = (*Provider)(nil)
+var _ ports.OwnershipInventoryProvider = (*Provider)(nil)

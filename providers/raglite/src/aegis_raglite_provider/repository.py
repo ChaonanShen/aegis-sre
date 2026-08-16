@@ -119,6 +119,11 @@ class Repository:
             ).fetchall()
         return [self._collection(row) for row in rows]
 
+    def inventory_collections(self) -> list[Collection]:
+        with self._connect() as connection:
+            rows = connection.execute("SELECT * FROM collections ORDER BY id").fetchall()
+        return [self._collection(row) for row in rows]
+
     def get_collection(self, collection_id: str, scope: str) -> Collection:
         with self._connect() as connection:
             row = connection.execute(

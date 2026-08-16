@@ -18,6 +18,7 @@ import (
 type ragliteClient interface {
 	Check(context.Context) error
 	ListCollections(context.Context, string, string) ([]Collection, error)
+	InventoryCollections(context.Context, string) ([]Collection, error)
 	GetCollection(context.Context, string, string) (Collection, error)
 	CreateCollection(context.Context, string, Collection) (Collection, error)
 	UpdateCollection(context.Context, string, string, string, string) (Collection, error)
@@ -47,6 +48,48 @@ func NewProvider(client ragliteClient, ids *knowledgeid.Codec) (*Provider, error
 	return &Provider{client: client, ids: ids}, nil
 }
 func (p *Provider) Check(ctx context.Context) error { return mapProviderError(p.client.Check(ctx)) }
+
+func (p *Provider) InventoryOwnership(ctx context.Context, base domain.ActorContext, folderUIDs []string) ([]ports.RootResourceOwnership, error) {
+	known := make(map[string]string, len(folderUIDs))
+	for _, folderUID := range folderUIDs {
+		actor := base
+		actor.FolderUID = folderUID
+		scope, err := p.ids.ScopeFingerprint(actor)
+		if err != nil {
+			return nil, invalidArgument(err)
+		}
+		known[scope] = folderUID
+	}
+	items, err := p.client.InventoryCollections(ctx, "scp_inventory")
+	if err != nil {
+		return nil, mapProviderError(err)
+	}
+	output := make([]ports.RootResourceOwnership, 0, len(items))
+	for _, item := range items {
+		id := domain.ID(item.ID)
+		entry := ports.RootResourceOwnership{Kind: "knowledge_base", ID: id, State: ports.OwnershipInvalid}
+		if id.Valid() && strings.HasPrefix(item.ID, "kbs_") {
+			if folderUID := known[item.Scope]; folderUID != "" && folderUID == item.FolderUID {
+				entry.FolderUID, entry.State = folderUID, ports.OwnershipActive
+			} else if containsFolder(folderUIDs, item.FolderUID) {
+				entry.OwnerKey, entry.State = item.Scope, ports.OwnershipLegacy
+			} else {
+				entry.OwnerKey, entry.State = item.Scope, ports.OwnershipOrphan
+			}
+		}
+		output = append(output, entry)
+	}
+	return output, nil
+}
+
+func containsFolder(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
 
 func (p *Provider) ListCollections(ctx context.Context, actor domain.ActorContext, folder string, page domain.PageRequest) (domain.Page[ports.KnowledgeCollection], error) {
 	if err := requireFolder(actor, folder); err != nil {
@@ -509,3 +552,4 @@ func resultUnknown(cause error) error {
 }
 
 var _ ports.KnowledgeProvider = (*Provider)(nil)
+var _ ports.OwnershipInventoryProvider = (*Provider)(nil)
