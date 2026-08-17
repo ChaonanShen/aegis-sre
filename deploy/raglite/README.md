@@ -10,6 +10,10 @@ AEGIS_INIT_KNOWLEDGE_SECRETS=1 ./scripts/init-local-secrets.sh
 docker compose -f compose.yaml -f deploy/raglite/compose.yaml up -d --build --wait
 ```
 
+需要从零重建整个本地栈、排查首次模型启动或验收所有容器时，按
+[`docs/runbooks/full-container-rebuild.md`](../../docs/runbooks/full-container-rebuild.md) 执行。该流程保留
+命名卷数据，明确禁止在有数据时使用 `down -v`。
+
 Knowledge 运行时固定使用 RAGLite，不存在 Provider 选择环境变量。启用
 `AEGIS_INIT_KNOWLEDGE_SECRETS=1` 会生成 `knowledge-provider-token`，不需要 RAGFlow API Key。部署前可运行
 `make raglite-deploy-test` 校验 Compose 隔离约束和 RAGLite 密钥初始化行为。
