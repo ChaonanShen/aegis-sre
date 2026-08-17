@@ -25,13 +25,19 @@ RUN apt-get update \
     && mkdir -p /app /var/lib/aegis/raglite \
     && chown -R aegis:aegis /var/lib/aegis/raglite
 COPY --from=build /app/.venv /app/.venv
+# uv 默认以 editable 方式安装本地项目，运行镜像必须同时保留其 /app/src 目标。
+COPY --from=build /app/src /app/src
 COPY internal/adapters/raglite/sidecar/healthcheck.py /usr/local/bin/raglite-healthcheck
 ENV PATH=/app/.venv/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     AEGIS_RAGLITE_DATA_DIR=/var/lib/aegis/raglite \
+    HOME=/app \
     HF_HOME=/var/lib/aegis/raglite/model-cache/huggingface \
     XDG_CACHE_HOME=/var/lib/aegis/raglite/model-cache \
-    XDG_DATA_HOME=/var/lib/aegis
+    XDG_DATA_HOME=/var/lib/aegis/raglite/xdg-data
+# 运行网络为 internal；RAGLite 必需的 DuckDB 扩展必须在构建阶段离线固化。
+RUN python -c 'import duckdb; db = duckdb.connect(); db.execute("INSTALL fts"); db.execute("INSTALL vss")' \
+    && python -c "import aegis_raglite_sidecar"
 VOLUME ["/var/lib/aegis/raglite"]
 EXPOSE 8090
 USER aegis
