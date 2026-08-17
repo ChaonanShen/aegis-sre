@@ -306,11 +306,15 @@
 }
 
 .knowledge-upload-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) auto;
   align-items: center;
   margin: 0 0 14px;
 }
 .knowledge-upload-form input[type='file'] {
-  flex: 1;
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 38px;
 }
 
 .knowledge-document-list {
@@ -465,6 +469,7 @@
   }
   .knowledge-upload-form,
   .knowledge-search-form {
+    display: flex;
     align-items: stretch;
     flex-direction: column;
   }
