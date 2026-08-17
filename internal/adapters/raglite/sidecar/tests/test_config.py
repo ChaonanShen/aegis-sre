@@ -32,3 +32,15 @@ def test_token_source_rejects_empty_or_multiline_secret(tmp_path: Path) -> None:
     token.write_text("first\nsecond")
     with pytest.raises(ValueError):
         source.read()
+
+
+def test_config_requires_absolute_model_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    token = tmp_path / "token"
+    token.write_text("secret")
+    monkeypatch.setenv("AEGIS_RAGLITE_DATA_DIR", str(tmp_path))
+    monkeypatch.setenv("AEGIS_RAGLITE_TOKEN_FILE", str(token))
+    monkeypatch.setenv("AEGIS_RAGLITE_MODEL_DIR", "relative")
+    with pytest.raises(ValueError, match="MODEL_DIR"):
+        Config.from_env()

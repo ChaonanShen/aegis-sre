@@ -83,10 +83,8 @@ export function createResourceKnowledgeManagementGateway(
       for (const tag of input.tags ?? []) {
         form.append('tags', tag);
       }
-      return client().request(`${kbPath(knowledgeBaseId)}/documents`, isDocument, {
+      return client().requestFormData(`${kbPath(knowledgeBaseId)}/documents`, isDocument, form, {
         method: 'POST',
-        data: form,
-        // 浏览器必须自行设置 multipart boundary，不能手工设置 Content-Type。
         headers: { ...headers(folderUid), 'Idempotency-Key': input.idempotencyKey },
         signal,
       });

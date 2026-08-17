@@ -1,5 +1,6 @@
 import { BackendSrv, BackendSrvRequest, FetchResponse } from '@grafana/runtime';
 import { of } from 'rxjs';
+import { ResourceClient } from '../../../adapters/resourcesdk/resourceClient';
 import { createResourceKnowledgeManagementGateway } from './resourceKnowledgeManagementGateway';
 
 const kb = {
@@ -55,7 +56,10 @@ describe('Control Plane Knowledge management gateway', () => {
 
   test('uses caller idempotency keys for create and multipart upload without overriding the boundary', async () => {
     const backend = fakeBackend([kb, document]);
-    const gateway = createResourceKnowledgeManagementGateway({ backendSrv: backend });
+    const browserFetch = jest.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => nativeResponse(document));
+    const gateway = createResourceKnowledgeManagementGateway({
+      resourceClient: new ResourceClient(backend, browserFetch),
+    });
     await gateway.createKnowledgeBase('ops', 'Operations', 'create-kb-123');
     const file = new File(['# guide'], 'guide.md', { type: 'text/markdown' });
     await gateway.uploadDocument('ops', kb.id, {
@@ -73,9 +77,16 @@ describe('Control Plane Knowledge management gateway', () => {
         headers: { 'X-Aegis-Folder-UID': 'ops', 'Idempotency-Key': 'create-kb-123' },
       })
     );
-    expect(requests[1].data).toBeInstanceOf(FormData);
-    expect(requests[1].headers).toEqual({ 'X-Aegis-Folder-UID': 'ops', 'Idempotency-Key': 'upload-doc-123' });
-    expect((requests[1].data as FormData).getAll('tags')).toEqual(['prod', 'guide']);
+    expect(requests).toHaveLength(1);
+    const [, upload] = browserFetch.mock.calls[0];
+    expect(upload?.body).toBeInstanceOf(FormData);
+    expect((upload?.body as FormData).get('file')).toBe(file);
+    expect((upload?.body as FormData).get('service')).toBe('api');
+    expect((upload?.body as FormData).getAll('tags')).toEqual(['prod', 'guide']);
+    const uploadHeaders = upload?.headers as Headers;
+    expect(uploadHeaders.get('X-Aegis-Folder-UID')).toBe('ops');
+    expect(uploadHeaders.get('Idempotency-Key')).toBe('upload-doc-123');
+    expect(uploadHeaders.has('Content-Type')).toBe(false);
   });
 
   test('forwards retry and product search filters without Provider scoring fields', async () => {
@@ -142,4 +153,13 @@ function response(data: unknown): FetchResponse<unknown> {
     headers: new Headers(),
     config: { url: '' },
   } as FetchResponse<unknown>;
+}
+
+function nativeResponse(data: unknown): Response {
+  return {
+    ok: true,
+    status: 202,
+    statusText: 'Accepted',
+    json: async () => data,
+  } as Response;
 }

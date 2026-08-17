@@ -93,8 +93,8 @@ docker inspect "$RAGLITE_CONTAINER_ID" \
 - 非 root 运行用户必须具有可用的 `HOME`。`/nonexistent` 会使 DuckDB 无法确定扩展目录。
 - `aegis-knowledge` 是 internal 网络，运行时不能下载 DuckDB 扩展。因此 `fts` 和 `vss` 必须在镜像
   构建阶段安装，最终镜像还要执行 sidecar import smoke。
-- `XDG_DATA_HOME`、Hugging Face 和通用模型缓存必须落在 `/var/lib/aegis/raglite` 命名卷内，不能依赖
-  容器可写根文件系统。
+- `XDG_DATA_HOME` 仍落在 `/var/lib/aegis/raglite` 数据卷；BGE-M3、SaT 和 tokenizer 必须按固定 revision
+  与 SHA-256 构建到只读 `/opt/aegis/models`，运行时不得访问 Hugging Face。
 
 修改这些约束后，至少运行：
 
@@ -104,28 +104,20 @@ make raglite-image-smoke
 make raglite-deploy-test
 ```
 
-## 5. 首次模型预热
+## 5. 模型构建缓存与离线验收
 
-RAGLite 当前固定使用 BGE-M3 Q4 模型。首次创建 `raglite-data` 卷时，模型缓存约增加 418 MB。
-生产镜像应在发布阶段固化经过校验的模型文件；不要给运行中的 Knowledge 网络永久开放公网出口。
-
-当前 `llama-cpp-python` 的 `from_pretrained` 即使发现本地文件，也可能先访问 Hugging Face 枚举仓库。
-因此，全新卷或全新进程在完全断网时仍可能启动失败。作为本地开发环境的临时引导，可短暂给单个
-sidecar 容器连接默认 bridge，下载固定文件并触发一次长超时健康检查，随后立即断开：
+RAGLite 固定使用 BGE-M3 Q4、SaT 和 XLM-R tokenizer。Dockerfile 将模型阶段与业务源码阶段分离，
+并使用 `aegis-raglite-models` BuildKit cache 保存已通过 SHA-256 校验的文件。首次构建约下载 850 MB；
+同一 builder 的后续构建应直接命中 `models` 两个 `RUN` 层：
 
 ```sh
-RAGLITE_CONTAINER_ID="$(docker compose -f compose.yaml -f deploy/raglite/compose.yaml ps -q raglite-provider)"
-docker network connect bridge "$RAGLITE_CONTAINER_ID"
-docker compose -f compose.yaml -f deploy/raglite/compose.yaml exec -T raglite-provider \
-  python -c 'from huggingface_hub import hf_hub_download; hf_hub_download(repo_id="lm-kit/bge-m3-gguf", filename="bge-m3-Q4_K_M.gguf")'
-docker compose -f compose.yaml -f deploy/raglite/compose.yaml exec -T raglite-provider \
-  python -c 'import urllib.request; print(urllib.request.urlopen("http://127.0.0.1:8090/healthz", timeout=900).read().decode())'
-docker network disconnect bridge "$RAGLITE_CONTAINER_ID"
+docker compose -f compose.yaml -f deploy/raglite/compose.yaml build raglite-provider
+docker compose -f compose.yaml -f deploy/raglite/compose.yaml build raglite-provider
 ```
 
-无论中间步骤是否成功，都要确认临时 bridge 已断开。上述方法只适用于本地启动，不是生产离线部署
-方案，也不能保证以后重新创建容器时完全离线冷启动。后续应把模型 revision、文件校验和离线加载方式
-纳入镜像发布流程，再把“新进程无需临时出口”作为正式发布门禁。
+第二次构建日志中模型下载、模型复制和最终扩展层都应为 `CACHED`。启动后确认 sidecar 只连接
+`aegis-knowledge` internal 网络，日志中没有 Hugging Face/DNS 请求，并在冷启动完成后进入 `healthy`。
+不得再通过临时连接默认 bridge 来预热运行容器。
 
 ## 6. 常见故障定位
 
@@ -135,5 +127,5 @@ docker network disconnect bridge "$RAGLITE_CONTAINER_ID"
 | secret 路径显示为目录 | Docker 在缺失的 bind-mount 源路径创建了目录 | 确认空目录后 `rmdir`，重新运行密钥初始化 |
 | DuckDB 使用 `/nonexistent` 或无法写扩展目录 | 运行用户没有有效 HOME/XDG 目录 | 保持镜像中的 `HOME` 与卷内 XDG 配置 |
 | DuckDB 尝试从公网下载 `fts`/`vss` | 扩展没有在构建阶段固化 | 无缓存重建已修复的 sidecar 镜像 |
-| 首次 health check 超时 | 首次模型下载、mmap 或初始化超过短探针时间 | 查看日志并执行受控预热，不要盲目循环重启 |
+| 首次 health check 较慢 | 镜像内模型 mmap 和数据库索引初始化 | 等待启动探针；日志不得出现模型下载或 Hub/DNS 请求 |
 | `grafana-bootstrap` 已退出 | 一次性初始化任务执行完成 | 退出码为 0 时无需处理 |

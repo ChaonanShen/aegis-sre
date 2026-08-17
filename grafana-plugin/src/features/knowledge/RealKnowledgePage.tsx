@@ -7,6 +7,7 @@ import {
   KnowledgeAvailability,
   KnowledgeDocumentRecord,
   KnowledgeSearchHit,
+  KnowledgeSearchInput,
 } from './managementModel';
 import { KnowledgeManagementGateway } from './ports/KnowledgeManagementGateway';
 import './knowledge.css';
@@ -238,7 +239,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
                 writable={writable}
               />
             )}
-            {tab === 'search' && (
+            <div hidden={tab !== 'search'}>
               <SearchPanel
                 bases={bases.data}
                 folderUid={folderUid}
@@ -256,7 +257,7 @@ export default function RealKnowledgePage({ gateway }: { gateway: KnowledgeManag
                   setTab('documents');
                 }}
               />
-            )}
+            </div>
           </>
         )}
       </section>
@@ -440,7 +441,12 @@ function DocumentsPanel({
             </div>
             <span className={`knowledge-status ${document.status}`}>{document.status}</span>
             <div className="knowledge-document-actions">
-              <button onClick={() => showPassages(document)} type="button">
+              <button
+                disabled={document.status !== 'ready'}
+                onClick={() => showPassages(document)}
+                title={document.status === 'ready' ? undefined : '文档索引完成后才能查看段落'}
+                type="button"
+              >
                 段落
               </button>
               <button aria-label={`下载 ${document.name}`} onClick={() => void download(document)} type="button">
@@ -480,6 +486,7 @@ function DocumentsPanel({
           close={() => setPassages(undefined)}
           document={passages.document}
           focusedOrdinal={passages.ordinal}
+          retry={() => showPassages(passages.document, passages.ordinal)}
           state={passages.state}
         />
       )}
@@ -593,11 +600,13 @@ function PassagesPanel({
   close,
   document,
   focusedOrdinal,
+  retry,
   state,
 }: {
   close: () => void;
   document: KnowledgeDocumentRecord;
   focusedOrdinal?: number;
+  retry: () => void;
   state: Loadable<DocumentPassageRecord[]>;
 }) {
   return (
@@ -611,7 +620,7 @@ function PassagesPanel({
       {state.status === 'loading' ? (
         <State text="正在加载段落…" />
       ) : state.status === 'error' ? (
-        <ErrorState error={state.error} retry={close} />
+        <ErrorState error={state.error} retry={retry} />
       ) : (
         state.data.map((passage) => (
           <article aria-current={passage.ordinal === focusedOrdinal ? 'true' : undefined} key={passage.ordinal}>
@@ -640,6 +649,7 @@ function CitationPassagesPanel({
   ordinal: number;
 }) {
   const [state, setState] = useState<Loadable<DocumentPassageRecord[]>>({ status: 'loading' });
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     void gateway
@@ -650,8 +660,19 @@ function CitationPassagesPanel({
           !isAbortError(error) && setState({ status: 'error', error: toError(error) })
       );
     return () => controller.abort();
-  }, [document.id, folderUid, gateway, knowledgeBaseId]);
-  return <PassagesPanel close={close} document={document} focusedOrdinal={ordinal} state={state} />;
+  }, [attempt, document.id, folderUid, gateway, knowledgeBaseId]);
+  return (
+    <PassagesPanel
+      close={close}
+      document={document}
+      focusedOrdinal={ordinal}
+      retry={() => {
+        setState({ status: 'loading' });
+        setAttempt((value) => value + 1);
+      }}
+      state={state}
+    />
+  );
 }
 
 function SearchPanel({
@@ -675,9 +696,9 @@ function SearchPanel({
   const [state, setState] = useState<Loadable<KnowledgeSearchHit[]> | undefined>();
   const requestRef = useRef(0);
   const searchAbortRef = useRef<AbortController>();
+  const lastSearchRef = useRef<KnowledgeSearchInput>();
   useEffect(() => () => searchAbortRef.current?.abort(), []);
-  const search = async (event: FormEvent) => {
-    event.preventDefault();
+  const executeSearch = async (input: KnowledgeSearchInput) => {
     searchAbortRef.current?.abort();
     const controller = new AbortController();
     searchAbortRef.current = controller;
@@ -686,14 +707,7 @@ function SearchPanel({
     try {
       const hits = await gateway.search(
         folderUid,
-        {
-          query,
-          knowledgeBaseIds,
-          service: service.trim() || undefined,
-          tagsAny: splitTags(tagsAny),
-          tagsAll: splitTags(tagsAll),
-          limit: 10,
-        },
+        input,
         controller.signal
       );
       if (request === requestRef.current) {
@@ -704,6 +718,19 @@ function SearchPanel({
         setState({ status: 'error', error: toError(error) });
       }
     }
+  };
+  const search = (event: FormEvent) => {
+    event.preventDefault();
+    const input: KnowledgeSearchInput = {
+      query,
+      knowledgeBaseIds,
+      service: service.trim() || undefined,
+      tagsAny: splitTags(tagsAny),
+      tagsAll: splitTags(tagsAll),
+      limit: 10,
+    };
+    lastSearchRef.current = input;
+    void executeSearch(input);
   };
   return (
     <section>
@@ -742,7 +769,16 @@ function SearchPanel({
         </button>
       </form>
       {state?.status === 'loading' && <State text="正在检索…" />}
-      {state?.status === 'error' && <ErrorState error={state.error} retry={() => setState(undefined)} />}
+      {state?.status === 'error' && (
+        <ErrorState
+          error={state.error}
+          retry={() => {
+            if (lastSearchRef.current) {
+              void executeSearch(lastSearchRef.current);
+            }
+          }}
+        />
+      )}
       {state?.status === 'success' && (
         <div className="knowledge-search-results">
           {state.data.map((hit, index) => (

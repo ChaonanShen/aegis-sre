@@ -1,4 +1,4 @@
-import { BackendSrv, BackendSrvRequest, getBackendSrv, isFetchError } from '@grafana/runtime';
+import { BackendSrv, BackendSrvRequest, config, getBackendSrv, isFetchError } from '@grafana/runtime';
 import { lastValueFrom } from 'rxjs';
 import type { components } from '../../api/generated/controlPlane';
 import { reportFolderAuthorizationDenied } from '../../app/authorizationEvents';
@@ -15,6 +15,7 @@ export interface ResourceRequestOptions {
 }
 
 type Problem = components['schemas']['Problem'];
+type BrowserFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 /** ResourceClientError 同时保留 HTTP 状态和公共业务码。 */
 export class ResourceClientError extends Error {
@@ -33,7 +34,10 @@ export class ResourceClientError extends Error {
  * 业务 adapter 仍须使用生成的 guard 校验 data，不能在这里猜测 DTO。
  */
 export class ResourceClient {
-  constructor(private readonly backendSrv: BackendSrv = getBackendSrv()) {}
+  constructor(
+    private readonly backendSrv: BackendSrv = getBackendSrv(),
+    private readonly browserFetch: BrowserFetch = (input, init) => globalThis.fetch(input, init)
+  ) {}
 
   async request<T>(path: string, guard: ResourceDataGuard<T>, options: ResourceRequestOptions = {}): Promise<T> {
     const request: BackendSrvRequest = {
@@ -96,6 +100,39 @@ export class ResourceClient {
     }
   }
 
+  /**
+   * Grafana 13 的 BackendSrv 会把 POST FormData 覆盖为 JSON；multipart 请求必须交给浏览器原生编码。
+   */
+  async requestFormData<T>(
+    path: string,
+    guard: ResourceDataGuard<T>,
+    data: FormData,
+    options: Omit<ResourceRequestOptions, 'data'> = {}
+  ): Promise<T> {
+    const headers = multipartHeaders(options.headers);
+    const response = await this.browserFetch(browserResourceURL(path), {
+      method: options.method ?? 'POST',
+      body: data,
+      headers,
+      signal: options.signal,
+      credentials: 'same-origin',
+    });
+
+    const payload: unknown = await response.json().catch(() => undefined);
+    if (!response.ok) {
+      reportDenied(response.status, options.headers);
+      if (isProblem(payload)) {
+        throw new ResourceClientError(
+          response.status,
+          payload.code,
+          payload.detail || payload.title || response.statusText || '请求失败。'
+        );
+      }
+      throw new ResourceClientError(response.status, 0, response.statusText || '请求失败。');
+    }
+    return validateData(payload, response.status, guard);
+  }
+
   async requestBlob(path: string, options: ResourceRequestOptions = {}): Promise<Blob> {
     const request: BackendSrvRequest = {
       url: resourceURL(path),
@@ -143,6 +180,21 @@ function resourceURL(path: string): string {
     throw new ResourceClientError(0, 0, 'Resource 路径必须位于 /api/v1 下。');
   }
   return `${PLUGIN_RESOURCE_BASE_URL}${path}`;
+}
+
+function browserResourceURL(path: string): string {
+  return `${config.appSubUrl.replace(/\/$/, '')}${resourceURL(path)}`;
+}
+
+function multipartHeaders(values: BackendSrvRequest['headers']): Headers {
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(values ?? {})) {
+    // Content-Type 必须由浏览器根据 FormData body 生成，确保 boundary 与正文一致。
+    if (name.toLowerCase() !== 'content-type') {
+      headers.set(name, String(value));
+    }
+  }
+  return headers;
 }
 
 function validateData<T>(data: unknown, status: number, guard: ResourceDataGuard<T>): T {

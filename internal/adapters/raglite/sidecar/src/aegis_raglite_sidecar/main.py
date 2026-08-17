@@ -10,7 +10,7 @@ from aegis_raglite_sidecar.service import KnowledgeService
 config = Config.from_env()
 repository = Repository(config.data_dir / "provider.sqlite")
 originals = OriginalStore(config.data_dir, config.max_upload_bytes)
-backend = RAGLiteBackend(config.data_dir / "raglite.db", config.embedder)
+backend = RAGLiteBackend(config.data_dir / "raglite.db", config.embedder, config.model_dir)
 service = KnowledgeService(
     repository,
     originals,

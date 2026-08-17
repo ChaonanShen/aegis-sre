@@ -171,11 +171,19 @@ func (c *Client) Search(ctx context.Context, scope, query string, collections []
 func (c *Client) SearchProduct(ctx context.Context, scope, query string, knowledgeBaseIDs []string, service string, tagsAny, tagsAll []string, limit int) ([]SearchHit, error) {
 	var out searchResponse
 	body := map[string]any{
-		"query": query, "knowledge_base_ids": knowledgeBaseIDs, "service": service,
-		"tags_any": tagsAny, "tags_all": tagsAll, "limit": limit,
+		"query": query, "knowledge_base_ids": nonNilStrings(knowledgeBaseIDs), "service": service,
+		"tags_any": nonNilStrings(tagsAny), "tags_all": nonNilStrings(tagsAll), "limit": limit,
 	}
 	err := c.doJSON(ctx, http.MethodPost, "/v1/search", scope, body, &out, false)
 	return out.Hits, err
+}
+
+// Provider 搜索协议要求数组字段始终为 JSON 数组；Go nil slice 不能编码成 null。
+func nonNilStrings(values []string) []string {
+	if values == nil {
+		return []string{}
+	}
+	return values
 }
 func (c *Client) DownloadDocument(ctx context.Context, scope, id string) (*http.Response, error) {
 	return c.doRaw(ctx, http.MethodGet, "/v1/documents/"+url.PathEscape(id)+"/content", scope)

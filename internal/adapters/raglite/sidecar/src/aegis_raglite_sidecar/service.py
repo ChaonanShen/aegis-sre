@@ -36,6 +36,8 @@ class KnowledgeService:
         self._worker: threading.Thread | None = None
 
     def start(self) -> None:
+        # 在启动 worker 和开放 HTTP 前完成唯一一次重型模型/索引初始化，避免健康探针并发冷启动。
+        self.backend.check()
         self.repository.recover_running_jobs()
         if self._worker is not None:
             return

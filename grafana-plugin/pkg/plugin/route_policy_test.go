@@ -30,7 +30,10 @@ func TestRoutePolicyFor(t *testing.T) {
 		{name: "document list", method: http.MethodGet, path: "/api/v1/knowledge-bases/kb-1/documents", access: folderAccessRead},
 		{name: "document update", method: http.MethodPatch, path: "/api/v1/knowledge-bases/kb-1/documents/doc-1", access: folderAccessWrite},
 		{name: "document index", method: http.MethodPost, path: "/api/v1/knowledge-bases/kb-1/documents/doc-1:index", access: folderAccessWrite},
+		{name: "document retry index", method: http.MethodPost, path: "/api/v1/knowledge-bases/kb-1/documents/doc-1:retry-index", access: folderAccessWrite},
 		{name: "document chunks", method: http.MethodGet, path: "/api/v1/knowledge-bases/kb-1/documents/doc-1/chunks", access: folderAccessRead},
+		{name: "document passages", method: http.MethodGet, path: "/api/v1/knowledge-bases/kb-1/documents/doc-1/passages", access: folderAccessRead},
+		{name: "document content", method: http.MethodGet, path: "/api/v1/knowledge-bases/kb-1/documents/doc-1/content", access: folderAccessRead},
 		{name: "playbook list", method: http.MethodGet, path: "/api/v1/playbooks", access: folderAccessRead},
 		{name: "playbook create", method: http.MethodPost, path: "/api/v1/playbooks", access: folderAccessWrite},
 		{name: "playbook validate", method: http.MethodPost, path: "/api/v1/playbooks/validate", access: folderAccessWrite},
@@ -74,6 +77,8 @@ func TestRoutePolicyForRejectsUnknownRoutesAndMethods(t *testing.T) {
 		{method: http.MethodGet, path: "/api/v1/playbooks/validate"},
 		{method: http.MethodGet, path: "/api/v1/playbooks/"},
 		{method: http.MethodGet, path: "/api/v1/playbooks/../runs"},
+		{method: http.MethodGet, path: "/api/v1/knowledge-bases/kb-1/documents/doc-1:retry-index"},
+		{method: http.MethodPost, path: "/api/v1/knowledge-bases/kb-1/documents/doc-1/passages"},
 	}
 	for _, test := range tests {
 		if policy, ok := routePolicyFor(&http.Request{Method: test.method, URL: &url.URL{Path: test.path}}); ok {

@@ -125,7 +125,7 @@ func policyForKnowledge(method string, segments []string) (routePolicy, bool) {
 		if segments[2] != "documents" {
 			break
 		}
-		if strings.HasSuffix(segments[3], ":index") || strings.HasSuffix(segments[3], ":stop") {
+		if strings.HasSuffix(segments[3], ":index") || strings.HasSuffix(segments[3], ":retry-index") || strings.HasSuffix(segments[3], ":stop") {
 			return routePolicy{access: folderAccessWrite}, method == http.MethodPost
 		}
 		if methodMatches(method, http.MethodGet) {
@@ -133,7 +133,7 @@ func policyForKnowledge(method string, segments []string) (routePolicy, bool) {
 		}
 		return routePolicy{access: folderAccessWrite}, method == http.MethodPut || method == http.MethodPatch || method == http.MethodDelete
 	case 5:
-		if segments[2] == "documents" && (segments[4] == "chunks" || segments[4] == "content") {
+		if segments[2] == "documents" && (segments[4] == "chunks" || segments[4] == "passages" || segments[4] == "content") {
 			return routePolicy{access: folderAccessRead}, methodMatches(method, http.MethodGet)
 		}
 	}

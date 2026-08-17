@@ -2,12 +2,37 @@ package raglite
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestSearchProductEncodesOptionalListsAsArrays(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {
+		var body map[string]json.RawMessage
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range []string{"knowledge_base_ids", "tags_any", "tags_all"} {
+			if value := string(body[field]); value == "null" || !strings.HasPrefix(value, "[") {
+				t.Fatalf("%s must be encoded as a JSON array, got %s", field, value)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"hits":[]}`)
+	}))
+	defer server.Close()
+	client, err := NewClient(server.URL, func() (string, error) { return "token", nil }, server.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.SearchProduct(context.Background(), "scp_abcdefgh", "query", []string{"kbs_abcdefgh"}, "", nil, nil, 10); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestClientSendsAuthenticationScopeAndUploadMetadata(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, request *http.Request) {

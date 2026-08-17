@@ -120,6 +120,38 @@ describe('ResourceClient', () => {
       })
     );
   });
+
+  test('sends FormData through native fetch without overriding the browser multipart boundary', async () => {
+    const browserFetch = jest.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      nativeResponse(validPayload, 202, 'Accepted')
+    );
+    const client = new ResourceClient({ fetch: jest.fn() } as unknown as BackendSrv, browserFetch);
+    const form = new FormData();
+    form.append('file', new File(['hello'], 'guide.txt', { type: 'text/plain' }));
+    form.append('service', 'api');
+    form.append('tags', 'prod');
+    form.append('tags', 'guide');
+
+    await expect(
+      client.requestFormData('/api/v1/knowledge-bases/kbs_1/documents', isPayload, form, {
+        headers: {
+          'X-Aegis-Folder-UID': 'ops',
+          'Idempotency-Key': 'upload-doc-123',
+          'Content-Type': 'application/json',
+        },
+      })
+    ).resolves.toEqual(validPayload);
+
+    const [url, init] = browserFetch.mock.calls[0];
+    expect(url).toBe('/api/plugins/grafana-plugin-app/resources/api/v1/knowledge-bases/kbs_1/documents');
+    expect(init).toEqual(expect.objectContaining({ method: 'POST', body: form, credentials: 'same-origin' }));
+    expect(init?.body).toBeInstanceOf(FormData);
+    const headers = init?.headers as Headers;
+    expect(headers.get('X-Aegis-Folder-UID')).toBe('ops');
+    expect(headers.get('Idempotency-Key')).toBe('upload-doc-123');
+    expect(headers.has('Content-Type')).toBe(false);
+    expect((init?.body as FormData).getAll('tags')).toEqual(['prod', 'guide']);
+  });
 });
 
 function response<T>(data: T): FetchResponse<T> {
@@ -134,4 +166,13 @@ function response<T>(data: T): FetchResponse<T> {
     url: '',
     config: { url: '' },
   };
+}
+
+function nativeResponse(data: unknown, status: number, statusText: string): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText,
+    json: async () => data,
+  } as Response;
 }

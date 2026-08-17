@@ -81,6 +81,60 @@ describe('real Knowledge management page', () => {
     );
   });
 
+  test('preserves search fields and results while switching tabs', async () => {
+    const gateway = fakeGateway();
+    renderPage(gateway);
+    await screen.findByRole('heading', { name: 'Operations' });
+    fireEvent.click(screen.getByRole('button', { name: '检索测试' }));
+    fireEvent.change(screen.getByLabelText('检索问题'), { target: { value: '如何重启' } });
+    fireEvent.change(screen.getByLabelText('任一标签'), { target: { value: 'prod' } });
+    fireEvent.change(screen.getByLabelText('全部标签'), { target: { value: 'guide' } });
+    fireEvent.change(screen.getByLabelText('筛选服务'), { target: { value: 'checkout' } });
+    fireEvent.click(screen.getByRole('button', { name: '检索' }));
+    expect(await screen.findByText('先检查健康状态。')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '文档' }));
+    fireEvent.click(screen.getByRole('button', { name: '检索测试' }));
+
+    expect(screen.getByLabelText('检索问题')).toHaveValue('如何重启');
+    expect(screen.getByLabelText('任一标签')).toHaveValue('prod');
+    expect(screen.getByLabelText('全部标签')).toHaveValue('guide');
+    expect(screen.getByLabelText('筛选服务')).toHaveValue('checkout');
+    expect(screen.getByText('先检查健康状态。')).toBeInTheDocument();
+  });
+
+  test('retries semantic search with the last submitted input', async () => {
+    const gateway = fakeGateway();
+    const search = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary search failure'))
+      .mockResolvedValueOnce([
+        {
+          text: '重试后返回结果。',
+          citation: {
+            document_id: document.id,
+            knowledge_base_id: kb.id,
+            source_name: document.name,
+            ordinal: 1,
+            location: 'paragraph-4',
+          },
+        },
+      ]);
+    gateway.search = search;
+    renderPage(gateway);
+    await screen.findByRole('heading', { name: 'Operations' });
+    fireEvent.click(screen.getByRole('button', { name: '检索测试' }));
+    fireEvent.change(screen.getByLabelText('检索问题'), { target: { value: '如何重启' } });
+    fireEvent.click(screen.getByRole('button', { name: '检索' }));
+    expect(await screen.findByText('temporary search failure')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+
+    expect(await screen.findByText('重试后返回结果。')).toBeInTheDocument();
+    expect(search).toHaveBeenCalledTimes(2);
+    expect(search.mock.calls[1][1]).toEqual(search.mock.calls[0][1]);
+  });
+
   test('loads and renders document passages without Provider chunk IDs', async () => {
     const gateway = fakeGateway();
     renderPage(gateway);
@@ -89,6 +143,22 @@ describe('real Knowledge management page', () => {
     fireEvent.click(within(list).getByRole('button', { name: '段落' }));
     expect(await screen.findByText('检查实例健康并逐个重启。')).toBeInTheDocument();
     expect(screen.getByText('paragraph-4')).toBeInTheDocument();
+  });
+
+  test('retries a failed passages request without closing the panel', async () => {
+    const gateway = fakeGateway();
+    gateway.listPassages = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('temporary passages failure'))
+      .mockResolvedValueOnce([{ ordinal: 1, text: '重试后可见。', location: 'paragraph-1' }]);
+    renderPage(gateway);
+    await screen.findByText('restart.md');
+    fireEvent.click(screen.getByRole('button', { name: '段落' }));
+
+    expect(await screen.findByText('temporary passages failure')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '重试' }));
+    expect(await screen.findByText('重试后可见。')).toBeInTheDocument();
+    expect(gateway.listPassages).toHaveBeenCalledTimes(2);
   });
 
   test('updates document service and tags through the public metadata contract', async () => {
@@ -115,6 +185,7 @@ describe('real Knowledge management page', () => {
     renderPage(gateway);
 
     expect(await screen.findByText('文档解析失败')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '段落' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: '重试索引' }));
     await waitFor(() =>
       expect(gateway.retryDocumentIndex).toHaveBeenCalledWith('ops', kb.id, document.id)

@@ -6,27 +6,38 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from aegis_raglite_sidecar.offline_models import EMBEDDER
+
 
 @dataclass(frozen=True)
 class Config:
     data_dir: Path
     token_file: Path
+    model_dir: Path = Path("/opt/aegis/models")
     max_upload_bytes: int = 10 * 1024 * 1024
     worker_poll_seconds: float = 0.25
-    embedder: str = "llama-cpp-python/lm-kit/bge-m3-gguf/*Q4_K_M.gguf@512"
+    embedder: str = EMBEDDER
 
     @classmethod
     def from_env(cls) -> Config:
         data_dir = Path(os.environ.get("AEGIS_RAGLITE_DATA_DIR", "/var/lib/aegis/raglite"))
         token_file = Path(os.environ.get("AEGIS_RAGLITE_TOKEN_FILE", ""))
+        model_dir = Path(os.environ.get("AEGIS_RAGLITE_MODEL_DIR", "/opt/aegis/models"))
         if not data_dir.is_absolute():
             raise ValueError("AEGIS_RAGLITE_DATA_DIR must be absolute")
         if not token_file.is_absolute() or not token_file.is_file():
             raise ValueError("AEGIS_RAGLITE_TOKEN_FILE must be a readable regular file")
+        if not model_dir.is_absolute():
+            raise ValueError("AEGIS_RAGLITE_MODEL_DIR must be absolute")
         max_upload = int(os.environ.get("AEGIS_RAGLITE_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
         if max_upload <= 0:
             raise ValueError("AEGIS_RAGLITE_MAX_UPLOAD_BYTES must be positive")
-        return cls(data_dir=data_dir, token_file=token_file, max_upload_bytes=max_upload)
+        return cls(
+            data_dir=data_dir,
+            token_file=token_file,
+            model_dir=model_dir,
+            max_upload_bytes=max_upload,
+        )
 
 
 class TokenSource:

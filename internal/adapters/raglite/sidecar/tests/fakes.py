@@ -16,9 +16,10 @@ class FakeBackend:
         self.fail_delete = False
         self.chunks: dict[str, list[Chunk]] = {}
         self.on_index: Callable[[], None] | None = None
+        self.checks = 0
 
     def check(self) -> None:
-        return None
+        self.checks += 1
 
     def index(self, path: Path, document: Document, collection: Collection) -> None:
         if self.fail_index:

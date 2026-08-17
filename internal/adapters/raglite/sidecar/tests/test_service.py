@@ -50,6 +50,14 @@ def test_worker_indexes_original_and_marks_document_ready(tmp_path: Path) -> Non
     assert service.repository.get_job(job.id).status == "completed"
 
 
+def test_start_initializes_backend_before_worker(tmp_path: Path) -> None:
+    service, backend = new_service(tmp_path)
+    service.start()
+    service.stop()
+
+    assert backend.checks == 1
+
+
 def test_worker_records_failure_without_losing_original(tmp_path: Path) -> None:
     service, backend = new_service(tmp_path)
     backend.fail_index = True

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 from aegis_raglite_sidecar.models import Collection, Document
+from aegis_raglite_sidecar.offline_models import configure_offline_models
 
 
 @dataclass(frozen=True)
@@ -44,22 +46,29 @@ class Backend(Protocol):
 
 
 class RAGLiteBackend:
-    def __init__(self, database_path: Path, embedder: str) -> None:
+    def __init__(self, database_path: Path, embedder: str, model_dir: Path) -> None:
         database_path.parent.mkdir(parents=True, exist_ok=True)
         self._database_path = database_path
         self._embedder = embedder
+        self._model_dir = model_dir
         self._config_instance = None
+        self._config_lock = threading.Lock()
 
     def _config(self):
-        if self._config_instance is None:
-            from raglite import RAGLiteConfig
+        if self._config_instance is not None:
+            return self._config_instance
+        # 健康探针可能并发进入；模型和 RAGLite 配置只能初始化一次，避免重复占用数 GB 内存。
+        with self._config_lock:
+            if self._config_instance is None:
+                from raglite import RAGLiteConfig
 
-            self._config_instance = RAGLiteConfig(
-                db_url=f"duckdb:///{self._database_path.as_posix()}",
-                embedder=self._embedder,
-                reranker=None,
-                vector_search_query_adapter=False,
-            )
+                configure_offline_models(self._model_dir)
+                self._config_instance = RAGLiteConfig(
+                    db_url=f"duckdb:///{self._database_path.as_posix()}",
+                    embedder=self._embedder,
+                    reranker=None,
+                    vector_search_query_adapter=False,
+                )
         return self._config_instance
 
     def check(self) -> None:
